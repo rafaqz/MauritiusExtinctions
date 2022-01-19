@@ -7,9 +7,9 @@ The original search was:
 // gather results
 (
   // query part for: “waterway=stream and waterway=river”
-    node["waterway"="stream"]["waterway"="river"](-20.57943888280347,57.28202819824219,-19.99141740708335,58.00643920898437);
-      way["waterway"="stream"]["waterway"="river"](-20.57943888280347,57.28202819824219,-19.99141740708335,58.00643920898437);
-        relation["waterway"="stream"]["waterway"="river"](-20.57943888280347,57.28202819824219,-19.99141740708335,58.00643920898437);
+    node["waterway"="stream"]["waterway"="tidal_channel"]["waterway"="river"](-20.57943888280347,57.28202819824219,-19.99141740708335,58.00643920898437);
+      way["waterway"="stream"]["waterway"="tidal_channel"]["waterway"="river"](-20.57943888280347,57.28202819824219,-19.99141740708335,58.00643920898437);
+        relation["waterway"="stream"]["waterway"="tidal_channel"]["waterway"="river"](-20.57943888280347,57.28202819824219,-19.99141740708335,58.00643920898437);
         );
 // print results
 out body;

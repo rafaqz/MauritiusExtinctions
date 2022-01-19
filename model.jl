@@ -1,19 +1,17 @@
 using DynamicGrids,
-      GeoJSON,
-      Plots,
+      Dispersal,
+      # GeoJSON,
+      # Plots,
       Rasters,
       Setfield, 
       Shapefile,
-      StaticArrays,
-      NearestNeighbors,
-      StaticBitArrays
+      StaticArrays
+      # StaticBitArrays
 
 include("data.jl")
 
 land_use_category = (;
-    forrested=1,
-    cleared=2,
-    urban=3,
+    forrested=1, cleared=2, urban=3,
 )
 
 # Grid initialisation
@@ -26,26 +24,26 @@ landuse_susceptibility = SArray(rand(size(interaction_matrix))
 landuse = zeros(Bool, S)
 
 
-land_use_effect = Cell{Tuple{:S,:LU},:S}() do data, (p, l), I
-    nh_rings = rings(hood)
-    map(interaction_matrix, s) do i, s
-        if i == zero(i)
-            s
-        else
-            rand() < i ? false : s
-        end
+pa_land_use_stress = Cell{Tuple{:N,:LU},:S}() do data, (native_species, lu), I
+    land_use_stresses[lu]
+end
+
+pa_species_interaction_stress = Cell{Tuple{:N,:S}}() do data, (natives, invasives), I
+    map(species, natives) do interactions, native
+        sum(map(*, interactions, invasives))
     end
 end
 
-species_interaction_effect = Cell{:S}() do data, s, I
-    map(interaction_matrix, s) do i, s
-        if i == zero(i)
-            s
-        else
-            rand() < i ? false : s
-        end
-    end
+pa_human_hunting_stress = Neighbors{:Lu,:S}(Kernel(ExponentialKernel(), Window(5))) do data, hood, lu, I
+    ncleared = sum(x for x in hood if x isa categories[:cleared])
+    map(*, hunting_susceptibiliy, ncleared)
 end
+
+pa_population_loss = Cell{Tuple{:N,:S},:N}() do data, (n, s), I
+    n && rand() < s
+end
+
+stresses = Combine(pa_land_use_stress, pa_species_interaction_stress, pa_human_hunting_stress)
 
 rules = luc, land_clearing_effect, species_interaction_effect
 output = ArrayOutput((species=species, land_use=land_use))
@@ -59,4 +57,3 @@ counters = NamedTuple{map(Symbol, Tuple('a':'j'))}(ntuple(_ -> 0, 10))
 @btime countelements($A, $counters)
 @code_warntype countelements(A, counters)
 @code_native countelements(A, counters)
-
