@@ -14,6 +14,7 @@ using Rasters.LookupArrays
 using Rasters: set, Between, trim
 using Plots
 
+include("functions.jl")
 
 # Land use files
 elevpath = "/home/raf/PhD/Mauritius/Data/Norder/LS factor/DEM/DEM100x100_Resample.img"
