@@ -38,6 +38,10 @@ reverse_data_key = Dict(
 
 data_key = Dict(reverse(p) for p in reverse_data_key)
 
+# Turn classifications from the book into population values 0:3,
+# representing extinct/not arrived, rare, common, abundant.
+#
+# Its not clear how to deal with grouped categories like `rats`
 function filter_population(table)
     periods = names(table)[3:end-1]
     times = map(periods) do p
@@ -134,7 +138,7 @@ function filter_population(table)
     return DataFrame(populations)
 end
 
-
+# Load the transcribed XL file and turn each sheet into a dataframe
 xlfile = "/home/raf/PhD/Mauritius/LostLand/Mauritius_Lost Land of the Dodo_tables_translated symbols.xlsx"
 xl = XLSX.readxlsx(xlfile)
 pops = map(sheetnames) do sheetname
