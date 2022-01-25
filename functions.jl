@@ -1,4 +1,5 @@
 using DynamicGrids.Neighborhoods
+using DynamicGrids.Neighborhoods: Window
 
 abstract type SlopeFilter end
 abstract type SlopeConvolution <: SlopeFilter end
@@ -12,7 +13,7 @@ struct FDFrame <: SlopeConvolution end
 struct SimpleD <: SlopeConvolution end
 
 @inline function slope_filter(method::SlopeConvolution, n::Window)
-    fx, fy = slope_conv(method, w)
+    fx, fy = _slope_conv(method, n)
     return atan(√(fx^2 + fy^2))
 end
 

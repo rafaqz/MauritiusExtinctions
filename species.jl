@@ -10,7 +10,7 @@ const sheetnames = (
     rogrigues_invasive="Appendix 7",
 )
 
-as_dataframe(xl, name::String) = as_dataframe(xl, sheetnames[name])
+as_dataframe(xl, name::Symbol) = as_dataframe(xl, sheetnames[name])
 function as_dataframe(xl, name::String)
     sheet = xl[name]
     return DataFrame(XLSX.eachtablerow(sheet))
@@ -52,12 +52,22 @@ function filter_population(table)
     )
     populations = Dict()
     for i in 1:size(table, 1)
-        popvals = Vector{Union{Missing,Int}}(undef, length(periods))
+        popvals = Vector{Union{Missing,Symbol,Int}}(undef, length(periods))
         popvals .= missing
         started = false
+        rawdata = table[i, 3:end-1] 
         local lastval = missing
+
+        # First, set the final `missing` values to zero, after extinction
+        for j in reverse(eachindex(popvals))
+            rawval = rawdata[j]
+            if ismissing(rawval)
+                popvals[j] = 0 
+            else
+                break
+            end
+        end
         for j in eachindex(popvals)
-            rawdata = table[i, 3:end-1] 
             !started && ismissing(rawdata[j]) && continue
             # @show i j
             rawval = rawdata[j]
@@ -68,22 +78,27 @@ function filter_population(table)
                 @warn "unidentified value in table: $rawval. `missing` used instead"
                 continue
             end
-            pop_estimate = if category == "abundant" 
+            pop_estimate = if ismissing(category)
+                lastval
+            elseif category == "abundant" 
                 1
             elseif category == "common" 
                 2
             elseif category == "rare" 
                 3
+            elseif category == "uncertain" 
+                lastval
             elseif category == "extinction"
                 0
             elseif category == "observed"
-                ismissing(lastval) ? 1 : lastval
+                ismissing(lastval) ? :observed : lastval
             elseif category == "unconfirmed"
-                ismissing(lastval) ? 1 : lastval
+                lastval
             elseif category == "several species unseparated"
                 ismissing(lastval) ? 1 : lastval
             elseif category == "present no record"
-                ismissing(lastval) ? 1 : lastval
+                ismissing(category) && @warn "present but no value"
+                lastval
             elseif category == "not reported"
                 lastval
             elseif category == "recorded"
@@ -93,32 +108,47 @@ function filter_population(table)
             elseif category == "captive only"
                 0
             elseif category == "I dont know what this is"
-                @info "category switch in $(table[i, 1])"
-                1
+                # @info "category switch in $(table[i, 1])"
+                :movein
             elseif category == "move out of category" 
-                @info "category switch in $(table[i, 1])"
-                1
+                # @info "category switch in $(table[i, 1])"
+                :moveout
             elseif category == "move into category"
-                @info "category switch in $(table[i, 1])"
-            elseif category === missing
-                missing
+                # @info "category switch in $(table[i, 1])"
+                :movein
+            else
+                continue
             end
-            popvals[j] == pop_estimate
+            # if table[i, 1] == "Dodo26"
+                # @show category
+                # @show lastval
+            # end
+            lastval = pop_estimate
+            if ismissing(popvals[j])
+                popvals[j] = pop_estimate
+            end
+            started = true
         end
         populations[table[i, 1]] = DimArray(popvals, timedim)
     end
-    return populations
+    return DataFrame(populations)
 end
-
 
 
 xlfile = "/home/raf/PhD/Mauritius/LostLand/Mauritius_Lost Land of the Dodo_tables_translated symbols.xlsx"
 xl = XLSX.readxlsx(xlfile)
 pops = map(sheetnames) do sheetname
-    @show sheetname
     filter_population(as_dataframe(xl, sheetname))
 end;
-nothing
+df = as_dataframe(xl, :mauritius_native)
+filter(x -> x[1] == "Dodo26", df)
+
+
+x = pops[:mauritius_native][!, "Dodo26"]
+# using Plots
+# plot(x)
+
+# pops[:mauritius_invasive]
 
 # using TableView, Blink
 # using ProfileView
@@ -126,4 +156,3 @@ nothing
 # @profview w = Blink.Window()
 # body!(w, TableView.showtable(table))
 
-# pops[:mauritius_native]

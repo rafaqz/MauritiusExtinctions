@@ -24,24 +24,26 @@ landusedir = "/home/raf/PhD/Mauritius/Data/Norder/C factor/"
 waterways_json = "/home/raf/PhD/Mauritius/Data/osm_rivers.geojson"
 
 elevation = Raster(elevpath; missingval=-3.4028235f38)[Band(1)]
+elevpath = replace_missing(elevation)
 rainfall = Raster(rainfallpath)
 
-lakes_shapes = Shapefile.Handle(lakes_path)
-lakesraster = Raster{Int}(undef, dims(r); missingval=0)
+lakes_shapes = Shapefile.Handle(lakespath)
+lakesraster = Raster{Int}(undef, dims(rainfall); missingval=0)
 for i in eachindex(lakes_shapes.shapes)[1:end-1]
-    rasterize!(lakesraster, lakes.shapes[i]; fill=i)
+    rasterize!(lakesraster, lakes_shapes.shapes[i]; fill=i)
 end
 
 soiltypes_shapes = Shapefile.Handle(soiltypespath)
 soilraster = lakesraster .* 0
 for i in eachindex(soiltypes_shapes.shapes)
-    rasterize!(soilraster, soiltypes.shapes[i]; fill=i)
+    rasterize!(soilraster, soiltypes_shapes.shapes[i]; fill=i)
 end
-
+plot(soilraster)
+mask(elevation; with=soilraster)
 
 years = 1638, 1773, 1835, 1872, 1935, "present"
 landuse_shapefiles = map(years) do year
-    path = joinpath(landuse_dir, string(year, ".shp"))
+    path = joinpath(landusedir, string(year, ".shp"))
     Shapefile.Handle(path) 
 end
 
@@ -56,15 +58,14 @@ landuse_snapshots = map(landuse_shapefiles, years) do shapefile, year
 end
 plot(plot.(landuse_snapshots; clims=(0, 2), c=:viridis)...; size=(2000,2000))
 
-# DEM
-mauritius_border = GADM.get("MUS").geom[1]
-
+# Population
 human_pop = CSV.File("/home/raf/PhD/Mauritius/Data/Population/Population.csv") |> DataFrame
 sugar_cane = CSV.File("/home/raf/PhD/Mauritius/Data/Population/Sugarcane.csv") |> DataFrame
 human_pop.Population .*= 1000
 plot(human_pop.Year, human_pop.Population)
 plot(sugar_cane.Year, sugar_cane.Area)
 
+# Elevation
 dem1 = Raster("/home/raf/PhD/Mauritius/Data/DEM/dem_tif_s30e030/s20e055_dem.tif")
 dem2 = Raster("/home/raf/PhD/Mauritius/Data/DEM/dem_tif_s30e030/s25e055_dem.tif")
 border_selectors =  X(Between(57.1, 57.9)), Y(Between(-20.6, -19.949)), Band(1)
@@ -81,12 +82,9 @@ plot(dem; c=:seaborn_icefire_gradient, size=(1000,1000))
 # Rivers
 waterways = GeoJSON.read(read(waterways_json))
 waterways.crs
-
 rivers = boolmask(waterways; to=dem)
 # plot!(rivers; c=:seaborn_icefire_gradient)
 plot!(waterways; c=:green)
-plot!(mauritius_border; fill=nothing)
-
 distance_to_rivers = mask(nearest_distances(rivers); with=dem)
 plot(distance_to_rivers; c=:gist_earth, size=(1000,1000))
 plot(distance_to_rivers; c=:batlow, size=(1000,1000))
@@ -95,19 +93,23 @@ plot!(waterways; c=:green)
 plot!(mauritius_border; fill=nothing)
 # plot!(rivers; c=:seaborn_icefire_gradient)
 
-coast = boolmask(mauritius_border; to=dem, shape=:polygon)
+# Coast
+mauritius_border = GADM.get("MUS").geom[1]
+plot!(mauritius_border; fill=nothing)
+coast = boolmask(mauritius_border; to=dem, shape=:line)
 plot(coast)
-distance_to_coast = mask(nearest_distances(coast); with=dem)
-plot(distance_to_coast; c=:seaborn_icefire_gradient, size=(1000,1000))
+distance_to_coast = nearest_distances(coast)
+masked_distance_to_coast = mask(distance_to_coast; with=dem)
+plot(masked_distance_to_coast; c=:seaborn_icefire_gradient, size=(1000,1000))
 plot!(waterways; c=:green)
 plot!(mauritius_border; fill=nothing)
 distance_to_coast .* distance_to_rivers .* dem |> plot
-# plot!(rivers; c=:seaborn_icefire_gradient)
 
-# using ProfileView
-# @profview slope_ = slope(dem, MaxSlope())
-p1 = plot(slope_; c=:terrain, size=(1000, 1000), clims=(0, 1.0))
-savefig("mauritius_slope.png")
+# Slope
+sloperaster = slope(elevation, MaxSlope())
+sloperaster = slope(elevation, FD2())
+p1 = plot(sloperaster; c=:terrain, size=(1000, 1000), clims=(0, 1.0))
+# savefig("mauritius_slope.png")
 p2 = plot(dem; size=(1000, 1000), clims=(0,5))
 plot(p1, p2; size=(2000, 2000))
-savefig("mauritius_elevation.png")
+# savefig("mauritius_elevation.png")
