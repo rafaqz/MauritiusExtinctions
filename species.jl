@@ -23,12 +23,12 @@ reverse_data_key = Dict(
     "uncertain" => "d",
     "extinction" => "e",
     "observed" => "f",
-    "unconfirmed" => "g",
+    "likely but unconfirmed" => "g",
     "several species unseparated" => "h",
     "present no record" => "i",
     "not reported" => "j",
-    "recorded" => "k",
-    "introduced" => "l",
+    "recorded introduction" => "k",
+    "approximate introduction" => "l",
     "captive only" => "m",
     "I dont know what this is" => "L",
     "move out of category"  =>  "N",
@@ -46,7 +46,7 @@ function filter_population(table)
     periods = names(table)[3:end-1]
     times = map(periods) do p
         s = split(p, '-')
-        parse(Int, s[1]), parse(Int, s[2])
+        Base.parse(Int, s[1]), Base.parse(Int, s[2])
     end
     boundsmatrix = reinterpret(reshape, Int, times)
     timedim = Ti(Sampled(map(first, times);
@@ -61,16 +61,7 @@ function filter_population(table)
         started = false
         rawdata = table[i, 3:end-1] 
         local lastval = missing
-
-        # First, set the final `missing` values to zero, after extinction
-        for j in reverse(eachindex(popvals))
-            rawval = rawdata[j]
-            if ismissing(rawval)
-                popvals[j] = 0 
-            else
-                break
-            end
-        end
+        extinct = false
         for j in eachindex(popvals)
             !started && ismissing(rawdata[j]) && continue
             # @show i j
@@ -79,10 +70,12 @@ function filter_population(table)
             if haskey(data_key, rawval)
                 category = data_key[rawval]
             else
-                @warn "unidentified value in table: $rawval. `missing` used instead"
+                @warn "unidentified value in table: $rawval, for $(table[i, 1]). `missing` used instead"
                 continue
             end
-            pop_estimate = if ismissing(category)
+            pop_estimate = if extinct 
+                0
+            elseif ismissing(category)
                 lastval
             elseif category == "abundant" 
                 1
@@ -93,21 +86,21 @@ function filter_population(table)
             elseif category == "uncertain" 
                 lastval
             elseif category == "extinction"
+                extinct = true
                 0
             elseif category == "observed"
                 ismissing(lastval) ? :observed : lastval
-            elseif category == "unconfirmed"
-                lastval
+            elseif category == "likely but unconfirmed"
+                1
             elseif category == "several species unseparated"
                 ismissing(lastval) ? 1 : lastval
             elseif category == "present no record"
-                ismissing(category) && @warn "present but no value"
                 lastval
             elseif category == "not reported"
                 lastval
-            elseif category == "recorded"
+            elseif category == "recorded introduction"
                 1
-            elseif category == "introduced"
+            elseif category == "approximate introducion"
                 1
             elseif category == "captive only"
                 0
@@ -123,17 +116,14 @@ function filter_population(table)
             else
                 continue
             end
-            # if table[i, 1] == "Dodo26"
-                # @show category
-                # @show lastval
-            # end
             lastval = pop_estimate
             if ismissing(popvals[j])
                 popvals[j] = pop_estimate
             end
             started = true
         end
-        populations[table[i, 1]] = DimArray(popvals, timedim)
+        name = strip(isnumeric, table[i, 1])
+        populations[name] = DimArray(popvals, timedim)
     end
     return DataFrame(populations)
 end
@@ -142,13 +132,14 @@ end
 xlfile = "/home/raf/PhD/Mauritius/LostLand/Mauritius_Lost Land of the Dodo_tables_translated symbols.xlsx"
 xl = XLSX.readxlsx(xlfile)
 pops = map(sheetnames) do sheetname
+    @show sheetname
     filter_population(as_dataframe(xl, sheetname))
 end;
 df = as_dataframe(xl, :mauritius_native)
-filter(x -> x[1] == "Dodo26", df)
+filter(x -> x[1] == "Dodo", df)
 
 
-x = pops[:mauritius_native][!, "Dodo26"]
+x = pops[:mauritius_native][!, "Dodo"]
 # using Plots
 # plot(x)
 
