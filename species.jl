@@ -129,7 +129,7 @@ function filter_population(table)
 end
 
 # Load the transcribed XL file and turn each sheet into a dataframe
-xlfile = "/home/raf/PhD/Mauritius/LostLand/Mauritius_Lost Land of the Dodo_tables_translated symbols.xlsx"
+xlfile = "/home/raf/PhD/Mauritius/Data/LostLand/Mauritius_Lost Land of the Dodo_tables_translated symbols.xlsx"
 xl = XLSX.readxlsx(xlfile)
 pops = map(sheetnames) do sheetname
     @show sheetname
