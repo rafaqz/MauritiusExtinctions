@@ -139,6 +139,7 @@ df = as_dataframe(xl, :mauritius_native)
 filter(x -> x[1] == "Dodo", df)
 
 
+@info "TODO: how to classify extinction point when there is uncertainty"
 x = pops[:mauritius_native][!, "Dodo"]
 # using Plots
 # plot(x)
