@@ -1,80 +1,66 @@
 @time using GLM
 @time using Rasters
-# using ProfileView, Profile
-# using SnoopCompile
 @time using Images
 @time using Makie
 @time using GLMakie
 @time using Colors
 using Rasters.LookupArrays
 using Rasters: Band
-# tinf = @snoopi_deep using Images
-# fg = flamegraph(tinf)
-# ProfileView.view(fg)
 
-# img = load("/home/raf/PhD/Mauritius/Data/reunion_clearing.png")
-# raster = Raster(rotr90(img), (Y, X))
-# raster = aggregate(:center, raster, 4)
-#
-# elevpath = "/home/raf/PhD/Mauritius/Data/Norder/LS factor/DEM/DEM100x100_Resample.img"
-# elevation = Raster(elevpath; missingval=-3.4028235f38)[Band(1), X(1:520)]
-# elev = replace_missing(elevation, 0)
-# elevrgb = RGB24.(replace_missing(elev ./ maximum(elev), 1))
+function selectposclick!(fig, ax, selectedpos)
+    on(events(ax.scene).mousebutton, priority = 0) do event
+        if event.button == Mouse.left
+            if event.action == Mouse.press
+                pos = mouseposition(ax.scene)
+                pos_px = Makie.mouseposition_px(fig.scene)
+                if in(pos_px, ax.scene.px_area[])                    
+                    ipos = round.(Int, pos)
+                    x = findfirst(p -> p == ipos, selectedpos[])
+                    if isnothing(x)
+                        # Add a point
+                        selectedpos[] = push!(selectedpos[], ipos)
+                    else
+                        # Remove a point
+                        deleteat!(selectedpos[], x)
+                    end
+                    notify(selectedpos)
+                end
+            end
+        end        
+        return Consume(false)
+    end
+end
 
-# x = Makie.image(parent(raster));
-# scene = x.plot.parent
-# unknownpoints = []
-# on(scene.events.mousebutton) do event 
-#     x, y = Makie.mouseposition_px(scene)
-#     if event.button == Mouse.left && event.action == Mouse.press
-#         println("Click ", (x, y))
-#         xo, yo = Observable(x), Observable(y)
-#         # scatter!(xo, yo)
-#         push!(unknownpoints, (x, y))
-#     end
-# end
-# scene = Scene(camera=campixel!, raw=true)
-# image!(scene, elevrgb)
+function selectmultiple(A)
+    fig = Figure()
+    ax = Makie.Axis(fig[1,1])
+    selectedpos = Observable(Point2{Int}[])
+    Makie.heatmap!(ax, A)
+    Makie.scatter!(ax, selectedpos, color=:red)
+    selectposclick!(fig, ax, selectedpos)
+    on(selectedpos) do pos
+        @show pos
+    end
+    display(fig)
+    return selectedpos
+end
 
 Aunknown = reverse(replace_missing(soilraster, 0) ./ maximum(soilraster); dims=2)
-x = Makie.heatmap(axes(Aunknown)..., parent(Aunknown));
-scene = x.plot.parent
-unknownpoints = []
-on(scene.events.mousebutton) do event 
-    x, y = Makie.mouseposition(scene)
-    if event.button == Mouse.left && event.action == Mouse.press
-        println("Click ", (x, y))
-        xo, yo = Observable(x), Observable(y)
-        # scatter!(xo, yo)
-        push!(unknownpoints, (x, y))
-    end
-end
-display(scene)
+Aknown = reverse(replace_missing(elevation) ./ maximum(elevation); dims=2)
 
-unknownpoints
+knownpoints = selectmultiple(parent(Aknown))
+unknownpoints = selectmultiple(parent(Aunknown))
+
 unknowntable = (((x, y),) -> (x_unknown=Float64(x), y_unknown=Float64(y))).(unknownpoints)
+knowntable = (((x, y),) -> (x_known=Float64(x), y_known=Float64(y))).(knownpoints) combined = merge.(knowntable, unknowntable)
+CSV.write("known.csv", unknowntable)
 CSV.write("unknown.csv", unknowntable)
-
-Aknown = reverse(replace_missing(elevation) ./ maximum(elevation); dims=1)
-x = Makie.heatmap(map(parent, reverse(dims(Aknown)))..., parent(Aknown));
-scene = x.plot.parent
-knownpoints = []
-on(scene.events.mousebutton) do event 
-    x, y = Makie.mouseposition(scene)
-    if event.button == Mouse.left && event.action == Mouse.press
-        println("Click ", (x, y))
-        xo, yo = Observable(x), Observable(y)
-        # scatter!(xo, yo)
-        push!(knownpoints, (x, y))
-    end
-end
-
-
-
-knownpoints
-knowntable = (((x, y),) -> (x_known=Float64(x), y_known=Float64(y))).(knownpoints)
-combined = merge.(knowntable, unknowntable)
 CSV.write("combined_points.csv", combined)
+
+knowntable = CSV.File("unknown.csv")
+
+
+# Linear models
 x_model = lm(@formula(x_unknown ~ x_known), combined)
 y_model = lm(@formula(y_unknown ~ y_known), combined)
 xs = round.(Int, predict(x_model))
@@ -101,38 +87,3 @@ for (Ik, Iu) in  zip(CartesianIndices(Aknown), zip(xs, ys))
 end
 
 x = Makie.heatmap(axes(Afixed)..., parent(Afixed))
-
-function fitrasters(raster; to)
-    clicks1 = Tuple{Int,Int}[]
-    clicks2 = Tuple{Int,Int}[]
-    button
-        scene = Scene(camera=campixel!, raw=true)
-        display(scene)
-        image!(scene, to)
-        on(scene.events.mousebutton) do button
-            x, y = scene.events.mouseposition_px[]
-            println("Click ", x, y, scene.px_area[].widths)
-            scene = Scene(camera=campixel!, raw=true)
-            image!(scene, r1)
-            xo, yo = Observable(x), Observable(y)
-            scatter!(xo, yo)
-            push!(clicks1, pos)
-        end
-    end
-    @sync begin
-        scene = Scene(camera=campixel!, raw=true)
-        display(scene)
-        image!(scene, raster)
-        on(scene.events.mousebutton) do button
-            pos = scene.events.mouseposition[]
-            println("Click ", pos, scene.px_area[].widths)
-            scene = Scene(camera=campixel!, raw=true)
-            image!(scene, r1)
-            # scatter!(map(i -> [i], pos)...)
-            push!(clicks2, pos)
-        end
-    end
-    return clicks1, clicks2
-end
-
-clicks1, clicks2 = fitrasters(raster; to=elevrgb)
