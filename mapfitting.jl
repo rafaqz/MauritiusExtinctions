@@ -7,6 +7,31 @@
 using Rasters.LookupArrays
 using Rasters: Band
 
+function manualwarp(As::Raster...; to::Raster)
+    As = map(A -> reorder(A, ForwardOrdered), As)
+    A1 = first(As)
+    to = reorder(to, ForwardOrdered)
+    # map(A -> size(A) == size(first(As)), As) || throw(ArgumentError("Intput raster sizes are not the same"))
+    fig = Figure()
+    ax1 = Makie.Axis(fig[1,1]; title="Source raster with known crs/resolution - `to` kw")
+    ax2 = Makie.Axis(fig[1,2]; title="First raster with unknown crs/resolution")
+    knownpoints = selectmultiple(parent(to), fig, ax1)
+    unknownpoints = selectmultiple(parent(A1), fig, ax2)
+    screen = display(fig)
+    println("Select points in rasters, then close the window")
+    while screen.window_open[] 
+        sleep(0.1)
+    end
+    models = _fitlinearmodels(A1, to, (knownpoints, unknownpoints))
+    warped = map(A -> linearwarp(A; to, models), As)
+    display(Makie.heatmap(map(parent, dims(first(warped)))..., parent(first(warped))))
+    if length(warped) == 1
+        return first(warped)
+    else
+        return warped
+    end
+end
+
 function selectposclick!(fig, ax, sct, positions)
     dragging = Ref(false)
     idx = Ref(0)
@@ -63,31 +88,6 @@ function selectmultiple(A, fig, ax)
     sct = Makie.scatter!(ax, positions, color=1:30, colormap=:reds)
     selectposclick!(fig, ax, sct, positions)
     return positions
-end
-
-function manualwarp(As::Raster...; to::Raster)
-    As = map(A -> reorder(A, ForwardOrdered), As)
-    A1 = first(As)
-    to = reorder(to, ForwardOrdered)
-    # map(A -> size(A) == size(first(As)), As) || throw(ArgumentError("Intput raster sizes are not the same"))
-    fig = Figure()
-    ax1 = Makie.Axis(fig[1,1])
-    ax2 = Makie.Axis(fig[1,2])
-    knownpoints = selectmultiple(parent(to), fig, ax1)
-    unknownpoints = selectmultiple(parent(A1), fig, ax2)
-    screen = display(fig)
-    println("Select points in rasters, then close the window")
-    while screen.window_open[] 
-        sleep(0.1)
-    end
-    models = _fitlinearmodels(A1, to, (knownpoints, unknownpoints))
-    warped = map(A -> linearwarp(A; to, models), As)
-    display(Makie.heatmap(map(parent, dims(first(warped)))..., parent(first(warped))))
-    if length(warped) == 1
-        return first(warped)
-    else
-        return warped
-    end
 end
 
 function _fitlinearmodels(A, to, (knownpoints, unknownpoints))
