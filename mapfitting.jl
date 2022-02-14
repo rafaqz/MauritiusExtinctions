@@ -1,11 +1,9 @@
-@time using GLM
-@time using Rasters
-@time using Images
-@time using Makie
-@time using GLMakie
-@time using Colors
+module MakieRasters
+
+using GLM
+using Makie
+using Rasters
 using Rasters.LookupArrays
-using Rasters: Band
 
 function manualwarp(As::Raster...; to::Raster)
     As = map(A -> reorder(A, ForwardOrdered), As)
@@ -119,4 +117,6 @@ function linearwarp(A; to, points=nothing, models::Union{Nothing,Tuple}=nothing)
         end
     end
     return Awarped
+end
+
 end

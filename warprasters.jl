@@ -1,6 +1,10 @@
 # Fix the projection of rasters by manually 
 # warping them to match another raster
 
+@time using GLMakie
+using Rasters
+using Shapefile
+
 include("mapfitting.jl")
 
 # Elevation
@@ -15,7 +19,7 @@ border_selectors =  X(Between(57.1, 57.9)), Y(Between(-20.6, -19.949)), Band(1)
 m1 = view(dem1, border_selectors...)
 m2 = view(dem2, border_selectors...)
 dem = replace_missing(trim(cat(m1, m2; dims=Y); pad=5))
-Plots.plot(dem)
+# Plots.plot(dem)
 
 # Land use files
 elevpath = "/home/raf/PhD/Mauritius/Data/Norder/LS factor/DEM/DEM100x100_Resample.img"
@@ -28,6 +32,7 @@ rainfallraster = Raster(rainfallpath)[Band(1)]
 # Elevation is a slightly larger raster for some reason
 # `crop` doesn't work because the index is slightly different
 elevationraster = Raster(elevpath; missingval=-3.4028235f38)[Band(1), X(1:520)]
+elevationraster = Raster(elevpath; missingval=-3.4028235f38)[Band(1)]
 # Plots.plot(elevation)
 
 lakes_shapes = Shapefile.Handle(lakespath)
@@ -43,9 +48,9 @@ for i in eachindex(soiltypes_shapes.shapes)
     rasterize!(soilraster, soiltypes_shapes.shapes[i]; fill=i)
 end
 elevationraster = mask(elevationraster; with=soilraster)
-Plots.plot(soilraster)
+# Plots.plot(soilraster)
 Plots.plot(elevationraster)
-Plots.plot(lakesraster)
+# Plots.plot(lakesraster)
 
 year = 1935
 years = 1638, 1773, 1835, 1872, 1935, "present"
@@ -62,10 +67,25 @@ landuse_snapshots = map(landuse_shapefiles, years) do shapefile, year
     end
     return landuse
 end
-Plots.plot(Plots.plot.(landuse_snapshots; clims=(0, 2), c=:viridis)...; size=(2000,2000))
+
+landuse_snapshots
+# Plots.plot(Plots.plot.(landuse_snapshots; clims=(0, 2), c=:viridis)...; size=(2000,2000))
+
+i = 1
+ps = map(eachindex(years)[2:end]) do i
+    year = years[i]
+    @show i year
+    p = Plots.plot(elevationraster; c=:viridis, legend=:none, ticks=:none, xguide="", yguide="")
+    ss = boolmask(replace(landuse_snapshots[i], 1 => missingval(landuse_snapshots[i])))
+    plot!(p, ss; c=:black, legend=:none, opacity=0.5, xguide="", yguide="")
+    return p
+end
+
+plot(ps...)
+
 
 wsoilraster, wlakesraster, welevationraster, wlandusesnapshots... = 
-    manualwarp(soilraster, lakesraster, elevationraster, landuse_snapshots...; to=dem)
+    MakieRasters.manualwarp(soilraster, lakesraster, elevationraster, landuse_snapshots...; to=dem)
 write("warpedsoiltypes.tif", wsoilraster)
 write("warpedlakes.tif", wlakesraster)
 write("warpedelevation.tif", welevationraster)
