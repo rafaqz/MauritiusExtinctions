@@ -5,8 +5,10 @@ using Makie
 using Rasters
 using Rasters.LookupArrays
 
-function manualwarp(As::Raster...; to::Raster)
-    As = map(A -> reorder(A, ForwardOrdered), As)
+function manualwarp(As...; to::Raster)
+    if first(As) isa Raster
+        As = map(A -> reorder(A, ForwardOrdered), As)
+    end
     A1 = first(As)
     to = reorder(to, ForwardOrdered)
     # map(A -> size(A) == size(first(As)), As) || throw(ArgumentError("Intput raster sizes are not the same"))

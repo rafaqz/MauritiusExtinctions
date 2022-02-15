@@ -3,9 +3,11 @@
 
 @time using GLMakie
 using Rasters
+using Rasters: Band
 using Shapefile
 
-include("mapfitting.jl")
+includet("mapfitting.jl")
+includet("functions.jl")
 
 # Elevation
 # This is a huge elevation dataset that also happens to be
@@ -81,7 +83,6 @@ ps = map(eachindex(years)[2:end]) do i
     return p
 end
 
-plot(ps...)
 
 
 wsoilraster, wlakesraster, welevationraster, wlandusesnapshots... = 
@@ -92,3 +93,37 @@ write("warpedelevation.tif", welevationraster)
 for i in 1:length(landuse_snapshots)
     write("warped_landuse_snapshot_$i.tif", wlandusesnapshots[i])
 end
+
+
+using Images
+
+img = load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page33.png")
+img = Float64.((x -> x.val).(Gray.(img)))
+rast = Raster(rotr90(img), (X, Y))
+
+counts = Dict{Float64,Int}()
+foreach(rast) do x
+    if haskey(counts, x)
+        counts[x] += 1
+    else
+        counts[x] = 1
+    end
+end
+for (x, c) in counts
+    c > 50000 || delete!(counts, x)
+end
+categories = Tuple(keys(counts))
+
+# warped = MakieRasters.manualwarp(rast; to=dem)
+warped[400, 180]
+
+cleaned = clean_categories(warped; categories, neighborhood=Window{2}())
+cleaned = clean_categories(cleaned; categories, neighborhood=Window{2}())
+heatmap(parent(warped))
+heatmap(parent(cleaned); color=:grays)
+
+heatmap(parent(mask(warped; with=dem)))
+warpeb = rebuild(reverse(warped; dims=2); dims=dims(dem))
+
+dims(warped)
+dims(dem)

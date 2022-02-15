@@ -1,3 +1,4 @@
+using DynamicGrids
 using DynamicGrids.Neighborhoods
 using DynamicGrids.Neighborhoods: Window
 
@@ -106,3 +107,40 @@ function nearest_distances!(
     end
     return distances
 end
+
+
+function clean_categories(src::AbstractArray; categories=(), neighborhood=Window{2,2}(), missingval=missing)
+    counts = zeros(length(categories))
+    ax = unpad_axes(src, neighborhood)
+    dst = similar(src, promote_type(eltype(src), typeof(missingval)))
+    broadcast!(view(dst, ax...), view(src, ax...), CartesianIndices(ax)) do v, I
+        DynamicGrids.Neighborhoods.applyneighborhood(neighborhood, src, I) do hood
+            ismissing(v) && return v
+            catcounts = map(categories) do c
+                acc = zero(first(categories))
+                for (n, d) in zip(neighbors(hood), distances(hood))
+                    if !ismissing(n) && n == c 
+                        acc += 1/d
+                    end
+                end
+                return acc
+            end
+            if v in categories
+                # de-speckle
+                if v in hood 
+                    categories[findmax(catcounts)[2]]
+                else
+                    @show "speckle found"
+                    missingval
+                end
+            else
+                if all(==(0), catcounts)
+                    missingval
+                else
+                    categories[findmax(catcounts)[2]]
+                end
+            end
+        end
+    end
+end
+
