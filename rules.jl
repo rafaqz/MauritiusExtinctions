@@ -12,6 +12,9 @@ using DynamicGrids,
 include("data.jl")
 include("species_data.jl")
 
+
+# Land use rules
+
 land_use_category = (;
     forrested=1, cleared=2, urban=3,
 )
@@ -21,19 +24,6 @@ c = NamedVector(
     cleared=2, 
     # settled=3
 )
-
-# proj = EPSG(4326)
-# projdims = X(Projected(20:0.01:22; crs=proj)),
-#            Y(Projected(9:0.01:11; crs=proj))
-# random_landscape = Raster(rand(MidpointDisplacement(), projdims); missingval=nothing)
-# cf = c .* 1.0
-# landscape = Rasters.classify(random_landscape, 
-#      0..0.5 => c.forest, 
-#      0.5..0.8 => c.cleared;
-#      # 0.8..1.0 => c.settled,
-#      others=typemin(Int), missingval=typemin(Int)
-# ) 
-# plot(plot(random_landscape), plot(landscape; c=:viridis))
 
 counts = broadcast(_ -> zero(c), landscape)
 
@@ -85,16 +75,12 @@ sd = DynamicGrids.SimData(extent, lu_potential_rule)
 sd = step!(sd);
 first.(sd[:suitability])
 
-# Grid initialisation
-S = 100, 100
-species = (SBitArray(UInt16, rand(Bool, 4, 4)) for i in 1:S[1], j in 1:S[2])
-interaction_matrix = SArray(rand(10))
-lu_response_matrix = map(_ -> (; forrested=rand(), cleared=rand(), urban=rand()), interaction_matrix)
-hunting_susceptibility = SArray(rand(size(interaction_matrix))
-landuse_susceptibility = SArray(rand(size(interaction_matrix))
-landuse = zeros(Bool, S)
 
+# Species rules
 
+# Stress-based approach
+# Pros: generic, can be used with presence/absence models
+# Cons: combining stresses is arbitrary
 pa_land_use_stress = Cell{Tuple{:N,:LU},:S}() do data, (native_species, lu), I
     land_use_stresses[lu]
 end
@@ -117,8 +103,26 @@ end
 stresses = Combine(pa_land_use_stress, pa_species_interaction_stress, pa_human_hunting_stress)
 
 rules = luc, land_clearing_effect, species_interaction_effect
+
+# Presence/absebce grid initialisation
+nspecies = 10
+species_presences = (x -> SBitArray(UInt16, false for i in 1:S[1])).suitability
+
+interaction_matrix = SArray(rand(10))
+lu_response_matrix = map(_ -> (; forrested=rand(), cleared=rand(), urban=rand()), interaction_matrix)
+hunting_susceptibility = SArray(rand(size(interaction_matrix))
+landuse_susceptibility = SArray(rand(size(interaction_matrix))
+landuse = zeros(Bool, S)
+
+
+species_pops = (SVector(UInt16, false for i in 1:S[1])
+
+
 output = ArrayOutput((species=species, land_use=land_use))
 sim!(rules)
+
+
+
 
 
 counters = [0, 0, 0]

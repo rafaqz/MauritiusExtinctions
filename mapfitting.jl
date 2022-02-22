@@ -3,7 +3,11 @@ module MakieRasters
 using GLM
 using Makie
 using Rasters
+using GeometryBasics
+
+using Makie
 using Rasters.LookupArrays
+
 
 function manualwarp(As...; to::Raster)
     if first(As) isa Raster
@@ -32,9 +36,33 @@ function manualwarp(As...; to::Raster)
     end
 end
 
-function selectposclick!(fig, ax, sct, positions)
+
+function manualinput(A::Raster; points=Point2{Float32}[])
+    points = Point2{Float32}.(points)
+    A = reorder(A, ForwardOrdered)
+    fig = Figure()
+    ax = Makie.Axis(fig[1,1]; title="Source image")
+    ax.aspect = AxisAspect(1)
+    Makie.heatmap!(ax, parent(A))
+    positions = Observable(points)
+    sct = Makie.lines!(ax, positions; color=:red)
+    sct = Makie.scatter!(ax, positions; color=:red)
+    dragselect!(fig, ax, sct, positions, size(A); caninsert=true)
+    screen = display(fig)
+    println("Select polygons in rasters, then close the window")
+    while screen.window_open[] 
+        sleep(0.1)
+    end
+    return positions[]
+end
+
+function dragselect!(fig, ax, sct, positions, pixelsize; caninsert=false, accuracy=2)
+    accuracy = lift(ax.finallimits) do fl
+        round(Int, maximum(fl.widths) / 200)
+    end
     dragging = Ref(false)
     idx = Ref(0)
+    # Mouse down event
     on(events(fig).mousebutton, priority = 2) do event
         pos = Makie.mouseposition(ax.scene)
         ipos = round.(Int, pos)
@@ -43,15 +71,39 @@ function selectposclick!(fig, ax, sct, positions)
             if event.action == Mouse.press
                 if pos_px in ax.scene.px_area[]                    
                     plt, i = pick(fig.scene, pos...)
-                    if plt == sct
-                        @show i pos
-                        idx[] = i
-                    else
-                        @show pos
-                        push!(positions[], ipos)
-                        idx[] = lastindex(positions[])
-                        notify(positions)
+                    idx[] = i
+                    insert = false
+                    found = pointnear(positions[], ipos, accuracy[]) do i
+                        if isnothing(i) 
+                            return nothing
+                        else
+                            idx[] = i
+                            true
+                        end
                     end
+                    if isnothing(found)
+                        if caninsert && length(positions[]) > 1
+                            lastp = positions[][end]
+                            # Search backwards so we preference recent lines
+                            for i in eachindex(positions[])[end-1:-1:1]
+                                p = positions[][i]
+                                online = ison(Line(Point(lastp...), Point(p...)), Point(ipos...))
+                                @show online
+                                if online
+                                    insert = true
+                                    idx[] = i + 1
+                                    insert!(positions[], i + 1, ipos)
+                                    break
+                                end
+                                lastp = p
+                            end
+                        end
+                        if !insert
+                            push!(positions[], ipos)
+                            idx[] = lastindex(positions[])
+                        end
+                    end
+                    notify(positions)
                     dragging = true 
                 end
             elseif event.action == Mouse.release
@@ -59,16 +111,15 @@ function selectposclick!(fig, ax, sct, positions)
             end
         elseif event.button == Mouse.right
             if pos_px in ax.scene.px_area[]                    
-                x = findfirst(p -> p == ipos, positions[])
-                if !isnothing(x)
-                    # Remove a point
-                    deleteat!(positions[], x)
+                pointnear(positions[], ipos, accuracy[]) do i
+                    isnothing(i) || deleteat!(positions[], i)
                 end
                 notify(positions)
             end
         end
         return Consume(dragging[])
     end
+    # Mouse drag event
     on(events(fig).mouseposition, priority = 2) do mp
         pos = Makie.mouseposition(ax.scene)
         ipos = round.(Int, pos)
@@ -81,12 +132,48 @@ function selectposclick!(fig, ax, sct, positions)
     end
 end
 
+function pointnear(f, positions, ipos, accuracy)
+    @show accuracy
+    for i in eachindex(positions)[end:-1:1]
+        p = positions[i]
+        if p[1] in (ipos[1]-accuracy:ipos[1]+accuracy) && 
+           p[2] in (ipos[2]-accuracy:ipos[2]+accuracy)
+            # Remove a point
+            return f(i)
+            break
+        end
+    end
+    return nothing
+end
+
+function ison(line, point)
+    (x1, y1), (x2, y2) = line
+    x = round(point[1])
+    y = round(point[2])
+    grad = (y2 - y1) / (x2 - x1)
+    if grad in (Inf, -Inf, NaN, NaN32)
+        return x2 == x && inbounds((y1, y2), y)
+    elseif grad == 0
+        return y2 == y && inbounds((x1, x2), x)
+    else
+        inbounds((y1, y2), y) && inbounds((x1, x2), x) || return false
+        if grad > -1 && grad < 1
+            line_y = round(grad * (x - x1) + y1)
+            return y in (line_y - 2):(line_y + 2)
+        else
+            line_x = round((y - y1)/grad + x1)
+            return x in (line_x - 2):(line_x + 2)
+        end
+    end
+end
+
+inbounds((x1, x2), x) = x >= min(x1, x2) && x <= max(x1, x2)
+
 function selectmultiple(A, fig, ax)
-    dragging = Ref(false)
     Makie.heatmap!(ax, A)
     positions = Observable(Point2{Float32}[])
     sct = Makie.scatter!(ax, positions, color=1:30, colormap=:reds)
-    selectposclick!(fig, ax, sct, positions)
+    dragselect!(fig, ax, sct, positions, size(A))
     return positions
 end
 

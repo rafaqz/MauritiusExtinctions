@@ -108,39 +108,114 @@ function nearest_distances!(
     return distances
 end
 
-
-function clean_categories(src::AbstractArray; categories=(), neighborhood=Window{2,2}(), missingval=missing)
+function clean_categories(src::AbstractArray; categories=(), neighborhood=Moore{2,2}(), missingval=missing)
     counts = zeros(length(categories))
     ax = unpad_axes(src, neighborhood)
     dst = similar(src, promote_type(eltype(src), typeof(missingval)))
+    dst .= missingval
+    @show missingval
     broadcast!(view(dst, ax...), view(src, ax...), CartesianIndices(ax)) do v, I
         DynamicGrids.Neighborhoods.applyneighborhood(neighborhood, src, I) do hood
-            ismissing(v) && return v
             catcounts = map(categories) do c
                 acc = zero(first(categories))
                 for (n, d) in zip(neighbors(hood), distances(hood))
-                    if !ismissing(n) && n == c 
+                    if isequal(n, missingval) && n == c 
                         acc += 1/d
                     end
                 end
                 return acc
             end
-            if v in categories
-                # de-speckle
-                if v in hood 
-                    categories[findmax(catcounts)[2]]
+            if all(==(0), catcounts)
+                return missingval
+            end
+            if !isequal(v, missingval) && v in categories
+                if (count(==(v), skipmissing(hood)) > length(hood) / 10)
+                    return v
                 else
-                    @show "speckle found"
-                    missingval
+                    c = categories[findmax(catcounts)[2]]
+                    return c
                 end
             else
-                if all(==(0), catcounts)
-                    missingval
-                else
-                    categories[findmax(catcounts)[2]]
-                end
+                return categories[findmax(catcounts)[2]]
             end
         end
     end
+    return dst
 end
 
+
+lc_categories = [
+  "No Data",
+  "Continuous urban",
+  "Disontinuous urban",
+  "Forest",
+  "Shrub vegetation",
+  "Herbaceaous vegetation",
+  "Mangrove",
+  "Barren land",
+  "Water",
+  "Sugarcane",
+  "Pasture",
+  "",
+  "Other cropland",
+]
+
+function plot_lc(lc_raster)
+    plot(lc_raster; 
+        color=palette(:Paired_12, 12), 
+        clims=(1, 13), size=(2000,2000),
+        colorbar_ticks=1:12,
+    )
+end
+
+function plot_lc_makie(lc_raster)
+    fig = Figure()
+    ax, hm = Makie.heatmap(fig[1, 1], parent(dims(lc_raster, X)), parent(dims(lc_raster, Y)), parent(lc_raster),
+        colormap=cgrad(:cyclic_mygbm_30_95_c78_n256, 13, categorical=true), colorrange=(0, 13)
+    )
+    ax.aspect = AxisAspect(1)
+    Colorbar(fig[1, 2], hm; 
+        ticks=(0:12, lc_categories),
+    )
+    return fig
+end
+
+function rasterize_lc(template, shape_file, crs_file; res=50)
+    lc_shape = Shapefile.Table(shape_file)
+    lc_crs = WellKnownText(readlines(crs_file)[1])
+    lc_df = DataFrame(lc_shape)
+    lc_raster = Raster(similar(template, Int32); missingval=typemin(Int32))
+    lc_raster .= typemin(Int32)
+    lc_raster = read(resample(lc_raster, res; crs=lc_crs))
+    c = Dict(map(=>, lc_categories, 0:12))
+    # Order of rasterization matters?... (probably should calculate areas?)
+    fillvals = [
+        c["No Data"],
+        c["Water"],
+        c["Barren land"],
+        c["Forest"],
+        c["Shrub vegetation"],
+        c["Herbaceaous vegetation"],
+        c["Mangrove"],
+        c["Other cropland"],
+        c["Sugarcane"],
+        c["Pasture"],
+        c["Continuous urban"],
+        c["Disontinuous urban"],
+    ]
+    # @show fillvals
+    for fillval in fillvals
+        rows = filter(x -> x.ocsol_num == fillval, lc_df)
+        if length(rows.geometry) > 0
+            fillname = first(eachrow(rows)).ocsol_name
+            @show fillval, fillname
+            rasterize!(lc_raster, rows.geometry; fill=fillval)
+        else
+            @show fillval
+        end
+    end
+    display(plot_lc_makie(lc_raster))
+    @show typeof(parent(lc_raster))
+    display(parent(lc_raster))
+    return lc_raster
+end

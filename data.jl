@@ -7,10 +7,11 @@ using Setfield
 using Shapefile
 using Rasters
 using Rasters.LookupArrays
-using Rasters: set, Between, trim
+using Rasters: set, Between, trim, Band
+using GeoInterface
 using Plots
-
-include("functions.jl")
+using Makie, GLMakie
+includet("functions.jl")
 years = 1638, 1773, 1835, 1872, 1935, "present"
 
 soilraster = Raster("warpedsoiltypes.tif")[Band(1)]
@@ -64,11 +65,17 @@ savefig("landuse$year.png")
 # the coast and river distance fields.
 dem1 = Raster("/home/raf/PhD/Mauritius/DEM/dem_tif_s30e030/s20e055_dem.tif")
 dem2 = Raster("/home/raf/PhD/Mauritius/DEM/dem_tif_s30e030/s25e055_dem.tif")
-border_selectors =  X(Between(57.1, 57.9)), Y(Between(-20.6, -19.949)), Band(1)
+dem3 = Raster("/home/raf/PhD/Mauritius/DEM/dem_tif_s30e060/s20e060_dem.tif")
+border_selectors = X(Between(57.1, 57.9)), Y(Between(-20.6, -19.949)), Band(1)
+# Mauritius is right over the split in the tiles
 m1 = view(dem1, border_selectors...)
 m2 = view(dem2, border_selectors...)
-dem = replace_missing(trim(cat(m1, m2; dims=Y); pad=5))
-# Plots.plot(dem)
+mauritius_dem = replace_missing(trim(cat(m1, m2; dims=Y); pad=10))
+# Plots.plot(mauritius_dem)
+border_selectors =  X(Between(55.0, 56.0)), Y(Between(-20.0, -22.0)), Band(1)
+reunion_dem = trim(view(dem2, border_selectors...); pad=10)
+border_selectors =  X(63.0..64.0), Y(-20.0..(-19.0)), Band(1)
+rodrigues_dem = trim(view(dem3, border_selectors...); pad=10)
 
 # Coast
 coast = boolmask(mauritius_border; to=soilraster, shape=:line)
@@ -88,19 +95,112 @@ sloperaster = slope(elevation, MaxSlope())
 sloperaster = slope(elevation, FD2())
 p1 = Plots.plot(sloperaster; c=:terrain, size=(1000, 1000), clims=(0, 1.0))
 savefig("mauritius_slope.png")
-p2 = Plots.plot(dem; size=(1000, 1000), clims=(0,5))
+p2 = Plots.plot(mauritius_dem; size=(1000, 1000), clims=(0,5))
 Plots.plot(p1, p2; size=(2000, 2000))
 savefig("mauritius_elevation.png")
 
+lc_categories = [
+  "No Data",
+  "Continuous urban",
+  "Disontinuous urban",
+  "Forest",
+  "Shrub vegetation",
+  "Herbaceaous vegetation",
+  "Mangrove",
+  "Barren land",
+  "Water",
+  "Sugarcane",
+  "Pasture",
+  "",
+  "Other cropland",
+]
+lc_path = "/home/raf/PhD/Mauritius/Data/Landcover/"
+mauritius_shapepath = joinpath(lc_path, "mauritius/cla_maurice_fin.shp")
+mauritius_crspath = joinpath(lc_path, "mauritius/cla_maurice_fin.prj")
+reunion_shapepath = joinpath(lc_path, "reunion/cla_run_2014_fin_2975.shp")
+reunion_crspath = joinpath(lc_path, "reunion/cla_run_2014_fin_2975.prj")
+rodrigues_shapepath = joinpath(lc_path, "rodrigues/cla_rod_fin.shp")
+rodrigues_crspath = joinpath(lc_path, "rodrigues/cla_rod_fin.prj")
 
-# Elevation
-# This is a huge elevation dataset that also happens to be
-# in the right projection. Can be downloaded here:
-# http://hydro.iis.u-tokyo.ac.jp/~yamadai/MERIT_DEM/list_5deg.html
-# I probably wont actually use this but was for now to make
-# the coast and river distance fields.
-dem1 = Raster("/home/raf/PhD/Mauritius/DEM/dem_tif_s30e030/s20e055_dem.tif")
-dem2 = Raster("/home/raf/PhD/Mauritius/DEM/dem_tif_s30e030/s25e055_dem.tif")
-border_selectors =  X(Between(55.0, 56.0)), Y(Between(-20.0, -22.0)), Band(1)
-reunion_dem = trim(view(dem2, border_selectors...))
-plot(reunion_dem)
+mauritius_lc = rasterize_lc(mauritius_dem, mauritius_shapepath, mauritius_crspath);
+plot_lc_makie(mauritius_lc)
+
+reunion_lc = rasterize_lc(reunion_dem, reunion_shapepath, reunion_crspath)
+plot_lc_makie(reunion_lc)
+
+rodrigues_lc = rasterize_lc(rodrigues_dem, rodrigues_shapepath, rodrigues_crspath)
+plot_lc_makie(rodrigues_lc)
+
+x = replace(x -> x == 5 ? x : 0,  mauritius_lc)
+plot_lc_makie(x)
+
+lc_shape = Shapefile.Table(mauritius_shapepath)
+lc_crs = WellKnownText(readlines(mauritius_crspath)[1])
+template = mauritius_dem
+
+lc_df = DataFrame(lc_shape)
+lc_raster = Raster(similar(template, Int32); missingval=typemin(Int32))
+lc_raster .= typemin(Int32)
+lc_raster = read(resample(lc_raster, 100; crs=lc_crs))
+fillval = 3
+rows = filter(x -> x.ocsol_num == fillval, lc_df)
+fillname = first(eachrow(rows)).ocsol_name
+# using ProfileView
+# @time rasterize!(lc_raster, rows.geometry; fill=fillval)
+display(plot_lc(lc_raster))
+display(plot_lc_makie(lc_raster))
+# hv = lc_raster
+
+
+# lc_shape = Shapefile.Table(shape_file)
+# lc_crs = WellKnownText(readlines(crs_file)[1])
+lc_df = DataFrame(lc_shape)
+lc_raster = Raster(similar(template, Int32); missingval=typemin(Int32))
+lc_raster .= typemin(Int32)
+lc_raster = read(resample(lc_raster, 50; crs=lc_crs))
+c = Dict(map(=>, lc_categories, 0:12))
+# Order of rasterization matters?... (probably should calculate areas?)
+fillvals = [
+    c["No Data"],
+    c["Water"],
+    c["Barren land"],
+    c["Forest"],
+    c["Shrub vegetation"],
+    c["Herbaceaous vegetation"],
+    c["Mangrove"],
+    c["Other cropland"],
+    c["Sugarcane"],
+    c["Pasture"],
+    c["Continuous urban"],
+    c["Disontinuous urban"],
+]
+
+
+# @show fillvals
+for fillval in fillvals
+    rows = filter(x -> x.ocsol_num == fillval, lc_df)
+    if length(rows.geometry) > 0
+        fillname = first(eachrow(rows)).ocsol_name
+        @show fillval, fillname
+        rasterize!(lc_raster, rows.geometry; fill=fillval)
+    else
+        @show fillval
+    end
+end
+
+using Makie, GLMakie
+using ProfileView
+A = rand(400, 1000)
+fig = Figure()
+ax, plt = Makie.heatmap(fig[1, 1], A)
+display(fig)
+
+filvals = ["string label" for i in 0:10]
+    # colormap=cgrad(:cyclic_mygbm_30_95_c78_n256, 10, categorical=true), colorrange=(0, 10),
+# )
+# ax.aspect = AxisAspect(1)
+# Colorbar(fig[1, 2], hm; 
+    # ticks=(0:12, lc_categories),
+# )
+
+return lc_raster
