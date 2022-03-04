@@ -31,16 +31,17 @@ human_pop.Population .*= 1000
 # Plots.plot(human_pop.Year, human_pop.Population)
 # Plots.plot(sugar_cane.Year, sugar_cane.Area)
 
-mauritius_border = GADM.get("MUS").geom[1]
+mus_border = GADM.get("MUS").geom[1]
+reu_border = GADM.get("REU").geom[1]
 waterways_json = "/home/raf/PhD/Mauritius/Data/osm_rivers.geojson"
 waterways = GeoJSON.read(read(waterways_json))
 watermask = boolmask(waterways; to=soilraster) .| boolmask(lakesraster)
-plot(watermask)
+Plots.plot(watermask)
 distance_to_water = mask(nearest_distances(watermask); with=elevationraster[Band(1)])[Band(1)]
 Plots.plot(distance_to_water; c=:seaborn_icefire_gradient, size=(1000,1000))
 Plots.plot(elevationraster; c=:seaborn_icefire_gradient, size=(1000,1000))
 Plots.plot!(watermask; c=:black, legend=:none)
-plot!(mauritius_border; fill=nothing)
+plot!(mus_border; fill=nothing)
 
 i = 1
 ps = map(eachindex(years)[2:end]) do i
@@ -78,12 +79,12 @@ border_selectors =  X(63.0..64.0), Y(-20.0..(-19.0)), Band(1)
 rodrigues_dem = trim(view(dem3, border_selectors...); pad=10)
 
 # Coast
-coast = boolmask(mauritius_border; to=soilraster, shape=:line)
+coast = boolmask(mus_border; to=soilraster, shape=:line)
 Plots.plot(coast)
 distance_to_coast = nearest_distances(coast)
 masked_distance_to_coast = mask(distance_to_coast; with=soilraster[Band(1)])
 Plots.plot(masked_distance_to_coast; c=:seaborn_icefire_gradient, size=(1000,1000))
-Plots.plot!(mauritius_border; fill=nothing)
+Plots.plot!(mus_border; fill=nothing)
 normedelevation = 1 .- elevationraster ./ maximum(elevationraster)
 p1 = distance_to_coast .* distance_to_rivers |> plot;
 p2 = plot(elevationraster)
@@ -91,8 +92,8 @@ p3 = plot(landuse_snapshots[5]; c=:viridis)
 plot(p1, p2, p3; layout=(1, 3))
 
 # Slope
-sloperaster = slope(elevation, MaxSlope())
-sloperaster = slope(elevation, FD2())
+sloperaster = slope(mauritius_dem, MaxSlope())
+sloperaster = slope(mauritius_dem, FD2())
 p1 = Plots.plot(sloperaster; c=:terrain, size=(1000, 1000), clims=(0, 1.0))
 savefig("mauritius_slope.png")
 p2 = Plots.plot(mauritius_dem; size=(1000, 1000), clims=(0,5))
@@ -175,7 +176,6 @@ fillvals = [
     c["Disontinuous urban"],
 ]
 
-
 # @show fillvals
 for fillval in fillvals
     rows = filter(x -> x.ocsol_num == fillval, lc_df)
@@ -184,9 +184,8 @@ for fillval in fillvals
         @show fillval, fillname
         rasterize!(lc_raster, rows.geometry; fill=fillval)
     else
-        @show fillval
-    end
-end
+        @show fillval 
+end end
 
 using Makie, GLMakie
 using ProfileView
@@ -203,4 +202,43 @@ filvals = ["string label" for i in 0:10]
     # ticks=(0:12, lc_categories),
 # )
 
-return lc_raster
+
+# Arctos, neotoma, vertnet
+
+using GBIF, CSV, Plots, DataFrames, Rasters, IntervalSets
+species = CSV.File("/home/raf/PhD/Mauritius/mascarine_species.csv") |> DataFrame
+endemics = DataFrames.subset(species, :Origin => ByRow(==("Endemic")); skipmissing=true)
+lats, lons = (-22.0, -18.0), (55.0, 58.0)
+bounds_flags = "decimalLatitude" => lats, "decimalLongitude" => lons
+
+records = map(endemics[!, :Species]) do sp
+    isnothing(sp) || ismissing(sp) && return sp => missing
+    taxon = GBIF.taxon(sp)
+    return sp => isnothing(taxon) ? missing : DataFrame(GBIF.occurrences(taxon, "limit"=>300, bounds_flags...))
+end |> Dict
+
+for (k, v) in records
+    ismissing(v) && continue
+    df = DataFrame(v)
+    if all(ismissing.(df[!, :latitude]))
+        records[k] = missing
+    else
+            @show k length(collect(skipmissing(df.latitude)))
+    end
+end
+
+df = DataFrame(records["Gallinula chloropus"])
+points = collect(zip(skipmissing(df.longitude), skipmissing(df.latitude)))
+
+prec = Raster(WorldClim{Climate}, :prec; month=1, res="30s")
+RasterDataSources.
+prec = Raster(CHELSA{Climate}, :prec; month=1, res)
+mascarines_prec = prec[X = Interval(lons...), Y=Interval(lats...)]
+Plots.plot(mascarines_prec)
+scatter!(points; opacity=0.5, markershape=:circle)
+obs = occurrences(, "limit"=>300)
+
+while length(obs) < size(obs)
+    @show length(obs) size(obs)
+    occurrences!(obs)
+end

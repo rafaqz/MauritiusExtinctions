@@ -78,11 +78,11 @@ function filter_population(table)
             elseif ismissing(category)
                 lastval
             elseif category == "abundant" 
-                1
+                3
             elseif category == "common" 
                 2
             elseif category == "rare" 
-                3
+                1
             elseif category == "uncertain" 
                 lastval
             elseif category == "extinction"
