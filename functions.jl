@@ -142,11 +142,10 @@ function clean_categories(src::AbstractArray; categories=(), neighborhood=Moore{
     return dst
 end
 
-
 lc_categories = [
   "No Data",
   "Continuous urban",
-  "Disontinuous urban",
+  "Discontinuous urban",
   "Forest",
   "Shrub vegetation",
   "Herbaceaous vegetation",

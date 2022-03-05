@@ -70,7 +70,6 @@ ps = map(eachindex(years)[2:end]) do i
 end
 Plots.plot(ps...)
 
-
 wsoilraster, wlakesraster, welevationraster, wrainfalraster, wlandusesnapshots... = 
     MakieRasters.manualwarp(soilraster, lakesraster, elevationraster, rainfallraster, landuse_snapshots...; to=dem)
 write("warpedsoiltypes.tif", wsoilraster)
@@ -81,7 +80,6 @@ for i in 1:length(landuse_snapshots)
     write("warped_landuse_snapshot_$i.tif", wlandusesnapshots[i])
 end
 
-
 # Cleaning re-colored maps
 island_images = (
     mus=map(rotr90, (
@@ -91,12 +89,11 @@ island_images = (
     )),
     reu=map(rotr90, (
         veg=load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page36_reunion_vegetation_colored.png"),
-        ph=load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page145_reunion_phases_colored.png"),
+        phase=load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page145_reunion_phases_colored.png"),
         rem=load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page183_reunion_remnants_colored.png"),
         bulbul=load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page265_reunion_bulbul_colored.png"),
     ))
 )
-
 
 # m_stl = load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page157_mauritius_settlements_colored.png") |> rotr90
 # m_fodies = load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page166_mauritius_fodies_colored.png") |> rotr90
