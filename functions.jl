@@ -4,51 +4,72 @@ using DynamicGrids.Neighborhoods: Window
 
 abstract type SlopeFilter end
 abstract type SlopeConvolution <: SlopeFilter end
+# Not all slope algorithms can provide aspect
+abstract type SlopeAspectConvolution <: SlopeConvolution end
 
 # 
-struct FD2 <: SlopeConvolution end
-struct FD3Reciprocal <: SlopeConvolution end
-struct FD3ReciprocalSquared <: SlopeConvolution end
-struct FD3Linear <: SlopeConvolution end
-struct FDFrame <: SlopeConvolution end
-struct SimpleD <: SlopeConvolution end
+struct FD2 <: SlopeAspectConvolution end
+struct FD3Reciprocal <: SlopeAspectConvolution end
+struct FD3ReciprocalSquared <: SlopeAspectConvolution end
+struct FD3Linear <: SlopeAspectConvolution end
+struct FDFrame <: SlopeAspectConvolution end
+struct SimpleDifference <: SlopeConvolution end
 
-@inline function slope_filter(method::SlopeConvolution, n::Window)
-    fx, fy = _slope_conv(method, n)
-    return atan(√(fx^2 + fy^2))
+@inline function aspect_filter(method::SlopeConvolution, n::Window, val)
+    fx, fy = _slope_conv(method, n, val)
+    return _aspect(fx, fy)
 end
 
-@inline function _slope_conv(::FD2, n::Window)
-    fx = (n[6] - n[4]) / 2n[5]
-    fy = (n[8] - n[2]) / 2n[5] 
+@inline function slope_filter(method::SlopeConvolution, n::Window, val)
+    fx, fy = _slope_conv(method, n, val)
+    return _slope(fx, fy)
+end
+
+@inline function slopeaspect_filter(method::SlopeAspectConvolution, n::Window, val)
+    fx, fy = _slope_conv(method, n, val)
+    return _slope(fx, fy), _aspect(fx, fy)
+end
+
+_slope(fx, fy) = atan(√(fx^2 + fy^2))
+function _aspect(fx, fy)
+    (ismissing(fx) || ismissing(fy)) && return missing
+    # Rotate - we want high Y (north) as the origin
+    # TODO: pass through the Order for X/Y dims 
+    # So the result always has zero at North
+    -atan(fx, fy) 
+end
+
+@inline function _slope_conv(::FD2, n::Window, val)
+    fx = (n[6] - n[4]) / 2val
+    fy = (n[8] - n[2]) / 2val
     return fx, fy
 end
 
-@inline function _slope_conv(::FD3Reciprocal, n::Window)
-    fx = (n[3] -n[1] + √(2(n[6] - n[4])) + n[9] - n[7]) / (4 + 2 * √(2)) * n[5]
-    fy = (n[7] -n[1] + √(2(n[8] - n[2])) + n[9] - n[3]) / (4 + 2 * √(2)) * n[5]
+@inline function _slope_conv(::FD3Reciprocal, n::Window, val)
+    fx = (n[3] -n[1] + √(2(n[6] - n[4])) + n[9] - n[7]) / (4 + 2 * √(2)) * val
+    fy = (n[7] -n[1] + √(2(n[8] - n[2])) + n[9] - n[3]) / (4 + 2 * √(2)) * val
     return fx, fy
 end
 
-@inline function _slope_conv(::FD3Linear, n::Window)
-    fx = (n[3] - n[1] + n[6] - n[4] + n[9] - n[7]) / 6n[5]
-    fy = (n[7] - n[1] + n[8] - n[2] + n[9] - n[3]) / 6n[5]
+@inline function _slope_conv(::FD3Linear, n::Window, val)
+    fx = (n[3] - n[1] + n[6] - n[4] + n[9] - n[7]) / 6val
+    fy = (n[7] - n[1] + n[8] - n[2] + n[9] - n[3]) / 6val
     return fx, fy
 end
 
-@inline function _slope_conv(::FD3ReciprocalSquared, n::Window)
-    fx = (n[3] - n[1] + 2(n[6] - n[4]) + n[9] - n[7]) / 8n[5]
-    fy = (n[7] - n[1] + 2(n[8] - n[2]) + n[9] - n[3]) / 8n[5]
+@inline function _slope_conv(::FD3ReciprocalSquared, n::Window, val)
+    fx = (n[3] - n[1] + 2(n[6] - n[4]) + n[9] - n[7]) / 8val
+    fy = (n[7] - n[1] + 2(n[8] - n[2]) + n[9] - n[3]) / 8val
     return fx, fy
 end
 
-@inline function _slope_conv(::FDFrame, n::Window)
-    fx = (n[3] - n[1] + n[9] - n[7]) / 4n[5]
-    fy = (n[7] - n[1] + n[9] - n[3]) / 4n[5] 
+@inline function _slope_conv(::FDFrame, n::Window, val)
+    fx = (n[3] - n[1] + n[9] - n[7]) / 4val
+    fy = (n[7] - n[1] + n[9] - n[3]) / 4val
     return fx, fy
 end
 
-@inline function _slope_conv(::SimpleD, n::Window)
+@inline function _slope_conv(::SimpleDifference, n::Window, val)
     fy = (n[5] - n[2]) / n[5]
     return fx, fy
 end
@@ -56,32 +77,37 @@ end
 
 struct MaxSlope <: SlopeFilter end
 
-@inline function slope_filter(method::MaxSlope, n::Window)
-    g = n[5] 
-    slopes = (
-        abs((n[5] - n[2]) / g), 
-        abs((n[5] - n[4]) / g),
-        abs((n[5] - n[6]) / g), 
-        abs((n[5] - n[8]) / g), 
-        abs((n[5] - n[1]) / (√(2)*g)), 
-        abs((n[5] - n[3]) / (√(2)*g)), 
-        abs((n[5] - n[7]) / (√(2)*g)), 
-        abs((n[5] - n[9]) / (√(2)*g)), 
-    )
-    xmissing = map(ismissing, slopes)
-    if all(xmissing)
-        return missing
-    elseif any(xmissing)
-        return maximum(skipmissing(slopes))
-    else
-        return maximum(slopes)
-    end
+@inline function slope_filter(method::MaxSlope, n::Window, g)
+    # slopes = (
+    #     abs((g - n[2]) / g), 
+    #     abs((g - n[4]) / g),
+    #     abs((g - n[6]) / g), 
+    #     abs((g - n[8]) / g), 
+    #     abs((g - n[1]) / (√(2)*g)), 
+    #     abs((g - n[3]) / (√(2)*g)), 
+    #     abs((g - n[7]) / (√(2)*g)), 
+    #     abs((g - n[9]) / (√(2)*g)), 
+    # )
+    # xmissing = map(ismissing, slopes)
+    # if all(xmissing)
+    #     return missing
+    # elseif any(xmissing)
+    #     return maximum(skipmissing(slopes))
+    # else
+    #     return maximum(slopes)
+    # end
 end
 
-function slope(elevations::AbstractArray, method=FD2())
-    window = Window{1}()
-    Neighborhoods.broadcast_neighborhood(window, elevations) do w
-        slope_filter(method, w)
+
+for f in (:slope, :aspect, :slopeaspect)
+    f_filter = Symbol(f, :_filter) 
+    @eval begin 
+        function $(f)(elevation::AbstractArray, method=FD2())
+            window = Window{1}()
+            Neighborhoods.broadcast_neighborhood(window, elevation) do w, e
+                $(f_filter)(method, w, e)
+            end
+        end
     end
 end
 
@@ -113,8 +139,8 @@ function clean_categories(src::AbstractArray; categories=(), neighborhood=Moore{
     ax = unpad_axes(src, neighborhood)
     dst = similar(src, promote_type(eltype(src), typeof(missingval)))
     dst .= missingval
-    broadcast!(view(dst, ax...), view(src, ax...), CartesianIndices(ax)) do v, I
-        DynamicGrids.Neighborhoods.applyneighborhood(neighborhood, src, I) do hood
+    broadcast!(view(dst, ax...), CartesianIndices(ax)) do I
+        DynamicGrids.Neighborhoods.applyneighborhood(neighborhood, src, I) do hood, v
             catcounts = map(categories) do c
                 acc = 0
                 for (n, d) in zip(neighbors(hood), distances(hood))
@@ -158,23 +184,23 @@ lc_categories = [
   "Other cropland",
 ]
 
-function plot_lc(lc_raster)
-    plot(lc_raster; 
+function plot_lc(lc_raster::Raster)
+    Plots.plot(lc_raster; 
         color=palette(:Paired_12, 12), 
         clims=(1, 13), size=(2000,2000),
-        colorbar_ticks=1:12,
+        colorbar_ticks=map(Pair, 0:12, lc_categories),
     )
 end
 
-function plot_lc_makie(lc_raster)
-    fig = Figure()
-    ax, hm = Makie.heatmap(fig[1, 1], parent(dims(lc_raster, X)), parent(dims(lc_raster, Y)), parent(lc_raster),
+function plot_lc_makie(lc_raster::Raster)
+    fig = Makie.Figure()
+    ax, hm = Makie.heatmap(fig[1, 1], parent(parent(dims(lc_raster, X))), parent(parent(dims(lc_raster, Y))), parent(read(lc_raster)),
         colormap=cgrad(:cyclic_mygbm_30_95_c78_n256, 13, categorical=true), colorrange=(0, 13)
     )
-    ax.aspect = AxisAspect(1)
-    Colorbar(fig[1, 2], hm; 
-        ticks=(0:12, lc_categories),
-    )
+    # ax.aspect = Makie.AxisAspect(1)
+    # Makie.Colorbar(fig[1, 2], hm; 
+        # ticks=(0:12, lc_categories),
+    # )
     return fig
 end
 
@@ -199,21 +225,15 @@ function rasterize_lc(template, shape_file, crs_file; res=50)
         c["Sugarcane"],
         c["Pasture"],
         c["Continuous urban"],
-        c["Disontinuous urban"],
+        c["Discontinuous urban"],
     ]
     # @show fillvals
     for fillval in fillvals
         rows = filter(x -> x.ocsol_num == fillval, lc_df)
         if length(rows.geometry) > 0
             fillname = first(eachrow(rows)).ocsol_name
-            @show fillval, fillname
             rasterize!(lc_raster, rows.geometry; fill=fillval)
-        else
-            @show fillval
         end
     end
-    display(plot_lc_makie(lc_raster))
-    @show typeof(parent(lc_raster))
-    display(parent(lc_raster))
     return lc_raster
 end
