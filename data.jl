@@ -15,7 +15,6 @@ years = 1638, 1773, 1835, 1872, 1935, "present"
 workdir = "/home/raf/PhD/Mauritius"
 datadir = joinpath(workdir, "Data")
 outputdir = joinpath(datadir, "Generated")
-
 borders = (
     mus=GADM.get("MUS").geom[1],
     reu=GADM.get("REU").geom[1],
@@ -42,7 +41,6 @@ reu_dem = replace_missing(read(trim(view(Raster(reu_tile), border_selectors.reu.
 # rod_tile  = getraster(SRTM; bounds=rod_bounds)[1]
 # rod_dem = trim(view(dem3, border_selectors...); pad=10)
 dems = (mus=mus_dem, reu=reu_dem)
-
 
 soilraster = Raster(joinpath(outputdir, "warpedsoiltypes.tif"))[Band(1)]
 Plots.plot(soilraster)

@@ -13,12 +13,16 @@ using Makie
 using Rasters.LookupArrays
 
 function manualwarp(As...; template::Raster, points=nothing, missingval=missing)
+    points = select_common_points(A1; template, points, missingval)
+    applywarp(As...; template, points, missingval)
+end
+
+function applywarp(As...; template::Raster, points=nothing, missingval=missing)
     A1 = first(As)
     if A1 isa Raster
         As = map(A -> reorder(A, ForwardOrdered), As)
     end
     template = reorder(template, ForwardOrdered)
-    points = select_common_points(A1; template, points, missingval)
     warped = _warp_from_points(As, template, points, missingval)
     # Show updated heatmap
     # display(Makie.heatmap(map(parent, dims(first(warped)))..., parent(first(warped))))

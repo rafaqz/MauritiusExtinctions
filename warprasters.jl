@@ -103,11 +103,9 @@ island_images = (
 # ro_stl = load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page194_rodrigues_settlements.png") |> rotr90
 
 color(name::String) = RGB{N0f8}((Colors.color_names[name] ./ 255)...)
-
-colors = color.(("white", "red", "blue", "green", "yellow", "cyan", "magenta"))
+colors = color.(("white", "red1", "blue1", "green1", "yellow", "cyan", "magenta"))
 white, red, blue, green, yellow, cyan, magenta = maincolors = RGBA{N0f8}.(colors)
 _, darkred, darkblue, darkgreen, darkyellow, darkcyan, darkmagenta = halfcolors = RGBA{N0f8}.(colors ./ 2)
-
 basic_colors = (maincolors..., halfcolors...)
 
 templates = map(dems, borders) do dem, border
@@ -143,17 +141,38 @@ cleaned_island_images = map(island_images) do images
         )
     end
 end
-Makie.image(cleaned_island_images.reu.rem)
 
 # Apply warping to all images
-island_rasters = map(keys(island_images), island_images, cleaned_island_images, island_points) do i, images, cimages, points
-    map(keys(images), images, cimages) do k, A1, A2
-        rs = RasterUtils.manualwarp(A, A2; 
-            template=templates[i], points, missingval=RGBA{N0f8}(1.0,1.0,1.0)
+island_image_rasters = map(keys(island_images), island_images, cleaned_island_images, island_points) do i, images, cimages, layerpoints
+    map(keys(images), images, cimages, layerpoints) do k, A1, A2, points
+        rs = RasterUtils.applywarp(A1, A2; 
+            template=templates[i], points=DataFrame(points), missingval=RGBA{N0f8}(1.0,1.0,1.0)
         )
         (raw=rs[1], cleaned=rs[2])
     end |> NamedTuple{keys(images)}
 end |> NamedTuple{keys(island_images)}
+
+island_rasters = map(island_image_rasters) do ir
+    map(ir) do rs
+        A = rs.cleaned
+        cats = unique(A)
+        rebuild(replace(A, map(=>, cats, UInt16.(0:length(cats)-1))...); missingval=UInt16(0))
+    end
+end
+
+foreach(keys(island_rasters), island_rasters) do i, ir
+    foreach(keys(ir), ir) do k, rs
+        try
+            write(joinpath(outputdir, "$(i)_$(k)_cleaned.tif"), rs) 
+        catch
+            println("$i $k failed to write")
+        end
+    end
+end
+
+write("some.tif", island_rasters.mus.kestrel)
+Plots.plot(island_rasters.mus.kestrel)
+Plots.plot!(borders.mus; fill=nothing)
 
 # Macaque distribution
 mus_macaques = load(joinpath(datadir, "Macaques/macaque_distribution.png")) |> rotr90
