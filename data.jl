@@ -48,8 +48,8 @@ soiltypespath = joinpath(datadir, "Norder/K factor/SoilK.shp")
 soiltypenames = Shapefile.Table(soiltypespath).Soil_Group
 # lakesraster = Raster("warpedlakes.tif")[Band(1)]
 # elevationraster = Raster("warpedelevation.tif")[Band(1)]
-landuse_snapshots = map(1:6) do i
-    Raster(joinpath(outputdir, "warped_landuse_snapshot_$i.tif"))[Band(1)]
+# landuse_snapshots = map(1:6) do i
+    # Raster(joinpath(outputdir, "warped_landuse_snapshot_$i.tif"))[Band(1)]
 end
 # elevationraster = replace(read(elevationraster), elevationraster[10, 10, 1] => -Inf32)
 
@@ -71,9 +71,10 @@ distance_to_water = map(dems, watermasks) do dem, watermask
     mask(nearest_distances(watermask); with=dem)
 end
 
-Plots.plot(distance_to_water.mus; c=:seaborn_icefire_gradient, size=(1000,1000))
+Plots.plot(distance_to_water.reu; c=:seaborn_icefire_gradient, size=(1000,1000))
 Plots.plot(coasts.reu; c=:seaborn_icefire_gradient, size=(1000,1000))
-# Plots.plot!(mus_border; fill=nothing)
+Plots.plot!(watermasks.reu)
+Plots.plot!(borders.reu; fill=nothing)
 # normedelevation = 1 .- elevationraster ./ maximum(elevationraster)
 # p1 = distance_to_coast .* distance_to_rivers |> plot;
 # p2 = plot(elevationraster)
@@ -85,50 +86,44 @@ aspectrasters = map(d -> aspect(d, FD3Linear()), dems)
 sloperasters = map(d -> slope(d, FD3Linear()), dems)
 Plots.plot(Plots.plot(sloperasters.reu), Plots.plot(aspectrasters.reu), Plots.plot(dems.reu))
 Plots.plot(Plots.plot(sloperasters.mus), Plots.plot(aspectrasters.mus), Plots.plot(dems.mus))
-Plots.plot(sloperasters.reu; clims=(0,0.5))
 Plots.plot(aspectrasters.reu)
-sloperasters.reu
-aspectrasters.reu
 
-ps = map(r -> Plots.plot(r; c=:terrain, size=(1000, 1000), clims=(0, 1.0)), sloperasters)
-Plots.plot(ps...)
+# Landcover
+# lc_lookup = Dict(lc_categories .=> 0:12)
 
-lc_lookup = Dict(lc_categories .=> 0:12)
+# lc_dir = joinpath(datadir, "Landcover/")
+# # rod_tile  = RasterDataSources.zipurl(SRTM; bounds=rod_bounds)[1]
+# lc_shapes = (
+#     mus=(
+#         shapepath=joinpath(lc_dir, "mauritius/cla_maurice_fin.shp"),
+#         crspath=joinpath(lc_dir, "mauritius/cla_maurice_fin.prj"),
+#     ),
+#     reu=(
+#         shapepath = joinpath(lc_dir, "reunion/cla_run_2014_fin_2975.shp"),
+#         crspath = joinpath(lc_dir, "reunion/cla_run_2014_fin_2975.prj"),
+#     ),
+#     # rod=(
+#         # shapepath = joinpath(lc_dir, "rodrigues/cla_rod_fin.shp")
+#         # crspath = joinpath(lc_dir, "rodrigues/cla_rod_fin.prj")
+#     # )
+# )
 
-lc_path = joinpath(datadir, "Landcover/")
-# rod_tile  = RasterDataSources.zipurl(SRTM; bounds=rod_bounds)[1]
-lc_shapes = (
-    mus=(
-        shapepath=joinpath(lc_path, "mauritius/cla_maurice_fin.shp"),
-        crspath=joinpath(lc_path, "mauritius/cla_maurice_fin.prj"),
-    ),
-    reu=(
-        shapepath = joinpath(lc_path, "reunion/cla_run_2014_fin_2975.shp"),
-        crspath = joinpath(lc_path, "reunion/cla_run_2014_fin_2975.prj"),
-    ),
-    # rod=(
-        # shapepath = joinpath(lc_path, "rodrigues/cla_rod_fin.shp")
-        # crspath = joinpath(lc_path, "rodrigues/cla_rod_fin.prj")
-    # )
-)
+# lc_rasterized = map(dems, lc_shapes) do dem, (; shapepath, crspath)
+#     rasterize_lc(dem, shapepath, crspath)
+# end
 
-lc_rasterized = map(dems, lc_shapes) do dem, (; shapepath, crspath)
-    rasterize_lc(dem, shapepath, crspath)
-end
-
-lc_dir = joinpath(outputdir, "Landcover")
-mkpath(lc_dir)
-island_keys = NamedTuple{keys(lc_shapes)}(keys(lc_shapes))
-# Masks for each land cover
-foreach(lc_rasterized, island_keys) do lc, island
-    write(joinpath(lc_dir, "$(island)_landcover.tif"), lc)
-    rasters = Dict()
-    for (k, v) in lc_lookup
-        mask = Raster(UInt8.(lc .== v); missingval=nothing)
-        layername = replace(k, " " => "_")
-        write(joinpath(lc_dir, "$(island)_$(layername).tif"), mask)
-    end
-end
+# mkpath(lc_dir)
+# island_keys = NamedTuple{keys(lc_shapes)}(keys(lc_shapes))
+# # Masks for each land cover
+# foreach(lc_rasterized, island_keys) do lc, island
+#     write(joinpath(lc_dir, "$(island)_landcover.tif"), lc)
+#     rasters = Dict()
+#     for (k, v) in lc_lookup
+#         mask = Raster(UInt8.(lc .== v); missingval=nothing)
+#         layername = replace(k, " " => "_")
+#         write(joinpath(lc_dir, "$(island)_$(layername).tif"), mask)
+#     end
+# end
 
 lc_rasterized = map(island_keys) do island
     return Raster(joinpath(lc_dir, "$(island)_landcover.tif"))
@@ -158,3 +153,78 @@ keys(lc_rasters.mus.masks)
 cover_pixels = map(lc_rasters) do island
     Dict(map((k, v) -> k => sum(v), keys(island.masks), values(island.masks)))
 end
+
+cyclones = CSV.File("/home/raf/PhD/Mauritius/ibtracs.since1980.list.v04r00.csv"; skipto=3) |> DataFrame
+cyclones
+using TableView, Blink
+w = Blink.Window()
+body!(w, showtable(cyclones))
+names(cyclones)
+wind_vars = names(cyclones)[occursin.(Ref("WIND"), names(cyclones))]
+collect(skipmissing(cyclones.WMO_WIND))
+
+world = Shapefile.Handle("/home/raf/PhD/Mauritius/world-administrative-boundaries/world-administrative-boundaries.shp")
+
+function fill_cyclones!(A, cyclones)
+    hurricane = 0
+    prevlon = -1000.0
+    prevlat = -1000.0
+    new_hurricane = true
+    fillval = Ref(0.0)
+    fill(x) = max(x, fillval[])
+    for row in eachrow(cyclones)
+        windvals = [
+            row[:WMO_WIND],
+            row[:USA_WIND],
+            row[:TOKYO_WIND],
+            row[:CMA_WIND],
+            row[:HKO_WIND],
+            row[:NEWDELHI_WIND],
+            row[:REUNION_WIND],
+            row[:BOM_WIND],
+            row[:NADI_WIND],
+            row[:WELLINGTON_WIND],
+            row[:DS824_WIND],
+            row[:TD9636_WIND],
+            row[:TD9635_WIND],
+            row[:NEUMANN_WIND],
+            row[:MLC_WIND],
+        ]
+        i = findfirst(x -> x != " ", windvals)
+        isnothing(i) && continue
+        lon = row.LON
+        lat = row.LAT
+        if hurricane != row.SID 
+            hurricane = row.SID
+        else
+            line = (start=(x=prevlon, y=prevlat), stop=(x=lon, y=lat))
+            length = sqrt((line.start.x - line.stop.x)^2 + (line.start.y - line.stop.y)^2)
+            # if length > 3
+                # @show hurricane line
+            # else
+                fillval[] = Base.parse(Float64, windvals[i])
+                Rasters._fill_line!(A, line, fill, (X(), Y()))
+            # end
+        end
+        # cycloneraster[X=Contains(lon), Y=Contains(lat)] = Base.parse(Float64, windval)
+        # @show lon row.LON row.LAT 
+        prevlon = lon
+        prevlat = lat
+    end
+end
+
+cyclone_long = zeros(X(Projected(-360:1:359.5; sampling=Intervals(Start()), crs=EPSG(4326))),
+                     Y(Projected(-90:1:89.5; sampling=Intervals(Start()), crs=EPSG(4326))))
+
+fill_cyclones!(cyclone_long, cyclones)
+
+cycloneraster = cyclone_long[X(180:540)]
+view(cycloneraster, X(1:180)) .= max.(view(cyclone_long, X(541:720)), view(cycloneraster, X(1:180)))
+view(cycloneraster, X(181:360)) .= max.(view(cyclone_long, X(1:180)), view(cycloneraster, X(181:360)))
+
+Plots.plot(cycloneraster .^ 2)
+Plots.plot!(world; fill=nothing)
+
+rasterize!(cycloneraster, world.shapes; fill=1, shape=:line)
+
+

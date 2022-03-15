@@ -142,10 +142,12 @@ function clean_categories(src::AbstractArray; categories=(), neighborhood=Moore{
     broadcast!(view(dst, ax...), CartesianIndices(ax)) do I
         DynamicGrids.Neighborhoods.applyneighborhood(neighborhood, src, I) do hood, v
             catcounts = map(categories) do c
-                acc = 0
-                for (n, d) in zip(neighbors(hood), distances(hood))
-                    if !isequal(n, missingval) && n == c 
-                        acc += 1/d
+                ds = distances(hood)
+                acc = zero(1/first(ds))
+                for i in 1:length(hood)
+                    n = hood[i]
+                    if n !== missingval && n === c 
+                        acc += 1/ds[i]
                     end
                 end
                 return acc

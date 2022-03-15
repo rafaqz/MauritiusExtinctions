@@ -13,7 +13,7 @@ using Makie
 using Rasters.LookupArrays
 
 function manualwarp(As...; template::Raster, points=nothing, missingval=missing)
-    points = select_common_points(A1; template, points, missingval)
+    points = select_common_points(As; template, points, missingval)
     applywarp(As...; template, points, missingval)
 end
 

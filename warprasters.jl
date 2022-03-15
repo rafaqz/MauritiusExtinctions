@@ -85,16 +85,85 @@ includet("functions.jl")
 # Cleaning re-colored maps
 island_images = (
     mus=map(rotr90, (
-        veg=load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page33_mauritius_vegetation_colored.png"),
-        kestrel=load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page252_mauritius_kestrel_colored.png"),
-        rem=load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page159_mauritius_remnants_colored.png"),
+        veg=load(joinpath(datadir, "LostLand/Maps/page33_mauritius_vegetation_colored.png")),
+        phase=load(joinpath(datadir, "LostLand/Maps/page132_mauritius_phases_colored.png")),
+        rem=load(joinpath(datadir, "LostLand/Maps/page159_mauritius_remnants_colored.png")),
+        # kestrel=load(joinpath(datadir, "LostLand/Maps/page252_mauritius_kestrel_colored.png")),
     )),
     reu=map(rotr90, (
-        veg=load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page36_reunion_vegetation_colored.png"),
-        phase=load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page145_reunion_phases_colored.png"),
-        rem=load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page183_reunion_remnants_colored.png"),
-        bulbul=load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page265_reunion_bulbul_colored.png"),
+        veg=load(joinpath(datadir, "LostLand/Maps/page36_reunion_vegetation_colored.png")),
+        phase=load(joinpath(datadir, "LostLand/Maps/page145_reunion_phases_colored.png")),
+        rem=load(joinpath(datadir, "LostLand/Maps/page183_reunion_remnants_colored.png")),
+        # bulbul=load(joinpath(datadir, "LostLand/Maps/page265_reunion_bulbul_colored.png")),
     ))
+)
+
+island_image_classes = (
+    mus=(
+        veg=(
+            red = "semi-dry evergreen forest",
+            green = "open dry palm-rich woodland",
+            blue = "wet forest",
+            cyan = "Pandanus swamp",
+            magenta = "mossy rainforest",
+            yellow = "mangrove",
+            dark_red = "wetland vegetation",
+        ),
+        phase=(
+            magenta = "deforested before 1807",
+            dark_red = "deforested 1807-1835",
+            blue = "deforested 1835-1910",
+            dark_blue = "deforested 1910-1947",
+            green = "deforested 1947-1970",
+            red = "deforested since 1970",
+            yellow = "scrub with native remnants",
+            dark_green = "native vegetation",
+            cyan = "swamp",
+        ),
+        rem=(
+            red = "at least 20% native plants",
+            green = "50%+ native plants",
+            blue = "reservoirs",
+            cyan = "cleared",
+        ),
+    ),
+    reu=(
+        veg=(
+            dark_cyan = "Palm-bejoin savanna",
+            magenta = "Palm-rich dry forest",
+            red = "Lowland mixed evergreen semi-dry tropical forest",
+            yellow = "Lowland mixed evergreen tropical rainforest", 
+            cyan = "Transitional mixed evergreen tropical rainforest",
+            green = "Montane mixed evergreen subtropical rainforest",
+            dark_blue = "Tree-heather formations",
+            dark_green = "Acacia-dominated montane rainforest",
+            dark_red = "Very wet screw-pine formations",
+            blue = "Upper montane temperate heaths",
+            dark_yellow = "Wetland vegetation",
+            dark_magenta = "Unvegetated recent lava flows",
+        ),
+        phase=(
+            blue = "17th century",
+            red = "18th century",
+            green = "19th century",
+            yellow = "20th century",
+            cyan = "not cleared/colonised",
+        ),
+        rem=(
+            red = "Lowland mixed evergreen semi-dry forest",
+            green = "Lowland mixed evergreen tropical forest",
+            blue = "Transitional mixed evergreen tropical rainforest",
+            yellow = "Montane mixed evergreen subtropical rainforest",
+            magenta = "Tree-heather formations",
+            cyan = "Acacia-dominated montane rainforest",
+            dark_red = "Very wet screw-pine formations",
+            dark_green = "Upper montane temperate heaths",
+            dark_blue = "Wetland vegetation",
+            dark_yellow = "Largely unvegetated recent lava flows",
+            dark_magenta = "Cleared",
+        ),
+        # bulbul=load(joinpath(datadir, "LostLand/Maps/page265_reunion_bulbul_colored.png")),
+    )
 )
 
 # m_stl = load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page157_mauritius_settlements_colored.png") |> rotr90
@@ -102,47 +171,55 @@ island_images = (
 # re_stl = load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page176_reunion_settlements.png") |> rotr90
 # ro_stl = load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page194_rodrigues_settlements.png") |> rotr90
 
-color(name::String) = RGB{N0f8}((Colors.color_names[name] ./ 255)...)
-colors = color.(("white", "red1", "blue1", "green1", "yellow", "cyan", "magenta"))
-white, red, blue, green, yellow, cyan, magenta = maincolors = RGBA{N0f8}.(colors)
-_, darkred, darkblue, darkgreen, darkyellow, darkcyan, darkmagenta = halfcolors = RGBA{N0f8}.(colors ./ 2)
-basic_colors = (maincolors..., halfcolors...)
+_color(name::String) = RGB{N0f8}((Colors.color_names[name] ./ 255)...)
+colors_color_names = ("red1", "green1", "blue1", "cyan", "magenta", "yellow")
+main_color_names = Symbol.(strip.(isnumeric, colors_color_names))
+dark_color_names = Symbol.(string.(Ref("dark_"), main_color_names))
+main_colors = NamedTuple{main_color_names}(RGBA{N0f8}.(_color.(colors_color_names)))
+dark_colors = NamedTuple{dark_color_names}(RGBA{N0f8}.(RGB.(values(main_colors)) .* 0.498)) # GIMP rounds round, Colors.jl rounds up...
+color_lookup = merge(main_colors, dark_colors)
 
-templates = map(dems, borders) do dem, border
-    mus=boolmask(border; to=dem, shape=:line)
-end
-
-# Mass point selection for all category filtered images
-foreach(keys(island_images), island_images) do i, images
-    foreach(keys(images), images) do k, A
-        path = joinpath(outputdir, "WarpPoints/$(i)_$(k)_warp_points.csv")
-        points = isfile(path) ? CSV.File(path) : nothing
-        warp_points = RasterUtils.select_common_points(Float64.(Gray.(A));
-            template=templates[i], missingval=missing, points=points
-        )
-        CSV.write(joinpath(outputdir, "WarpPoints/$(i)_$(k)_warp_points.csv"), warp_points)
+island_image_colors = map(island_image_classes) do image_classes
+    map(image_classes) do classes
+        colors = map(c -> color_lookup[c], keys(classes))
     end
 end
+
+templates = map(dems, borders) do dem, border
+    mask(dem; with=boolmask(border; to=dem, shape=:polygon, boundary=:touches))
+    dem
+end
+# Plots.plot(templates.mus)
+
+# Mass point selection for all category filtered images
+# foreach(keys(island_images), island_images) do i, images
+#     foreach(keys(images), images) do k, A
+#         path = joinpath(outputdir, "WarpPoints/$(i)_$(k)_warp_points.csv")
+#         points = isfile(path) ? CSV.File(path) : nothing
+#         warp_points = RasterUtils.select_common_points(Float64.(Gray.(A));
+#             template=templates[i], missingval=missing, points=points
+#         )
+#         CSV.write(joinpath(outputdir, "WarpPoints/$(i)_$(k)_warp_points.csv"), warp_points)
+#     end
+# end
 
 # Load previously selected points
 island_points = map(keys(island_images), island_images) do i, images
     map(keys(images)) do k
         path = joinpath(outputdir, "WarpPoints/$(i)_$(k)_warp_points.csv")
-        @show path
         isfile(path) ? CSV.File(path) : missing
     end |> NamedTuple{keys(images)}
 end |> NamedTuple{keys(island_images)}
 
 # Run the category cleaning filter
-cleaned_island_images = map(island_images) do images
-    map(images) do A
+cleaned_island_images = map(island_images, island_image_colors) do images, image_colors
+    map(images, image_colors) do A, colors
         clean_categories(A; 
-            categories=basic_colors, neighborhood=Moore{2}(), missingval=RGBA{N0f8}(1.0, 1.0, 1.0, 1.0)
+            categories=colors, neighborhood=Moore{3}(), missingval=RGBA{N0f8}(1.0, 1.0, 1.0, 1.0)
         )
     end
 end
-
-# Apply warping to all images
+# Apply warping from raw images to cleaned images
 island_image_rasters = map(keys(island_images), island_images, cleaned_island_images, island_points) do i, images, cimages, layerpoints
     map(keys(images), images, cimages, layerpoints) do k, A1, A2, points
         rs = RasterUtils.applywarp(A1, A2; 
@@ -151,50 +228,58 @@ island_image_rasters = map(keys(island_images), island_images, cleaned_island_im
         (raw=rs[1], cleaned=rs[2])
     end |> NamedTuple{keys(images)}
 end |> NamedTuple{keys(island_images)}
-
-island_rasters = map(island_image_rasters) do ir
-    map(ir) do rs
+# Re-classify cleaned color categories as integers
+island_rasters = map(island_image_rasters, island_image_colors) do ir, ic
+    map(ir, ic) do rs, colors
         A = rs.cleaned
-        cats = unique(A)
-        rebuild(replace(A, map(=>, cats, UInt16.(0:length(cats)-1))...); missingval=UInt16(0))
+        classify(A, map(=>, colors, UInt8.(eachindex(colors)))...; others=UInt8(0), missingval=UInt8(0))
+    end
+end
+# Write images and plots to disk
+foreach(keys(island_rasters), island_rasters, island_image_classes, dems, borders) do i, ir, ic, dem, border
+    foreach(keys(ir), ir, ic) do k, A, classes
+        grad = cgrad([map(c -> color_lookup[c], keys(classes))...])
+        p = Plots.plot(A; c=grad, clims=(1, length(grad)))
+        Plots.plot!(p, border; fill=nothing)
+        savefig(p, joinpath(outputdir, "$(i)_$(k)_cleaned.png"))
+        p = Plots.plot(dem ./ maximum(skipmissing(dem)))
+        Plots.plot!(p, A ./ maximum(A); c=:spring, opacity=0.6)
+        Plots.plot!(p, border; fill=nothing)
+        savefig(p, joinpath(outputdir, "$(i)_$(k)_cleaned_dem.png"))
+        write(joinpath(outputdir, "$(i)_$(k)_cleaned.tif"), A) 
     end
 end
 
-foreach(keys(island_rasters), island_rasters) do i, ir
-    foreach(keys(ir), ir) do k, rs
-        try
-            write(joinpath(outputdir, "$(i)_$(k)_cleaned.tif"), rs) 
-        catch
-            println("$i $k failed to write")
-        end
-    end
-end
-
-write("some.tif", island_rasters.mus.kestrel)
-Plots.plot(island_rasters.mus.kestrel)
-Plots.plot!(borders.mus; fill=nothing)
+# Reload rasters from disk
+island_rasters = map(keys(island_images), island_images) do i, ii
+    map(keys(ii)) do k
+        read(Raster(joinpath(outputdir, "$(i)_$(k)_cleaned.tif")))
+    end |> NamedTuple{keys(ii)}
+end |> NamedTuple{keys(island_images)}
 
 # Macaque distribution
-mus_macaques = load(joinpath(datadir, "Macaques/macaque_distribution.png")) |> rotr90
-mus_macaques_mask = load(joinpath(datadir, "Macaques/macaque_distribution_mask.png")) |> rotr90
-mus_macaques_bool = Float64.(Gray.(mus_macaques)) .< 0.9
-mus_macaque_warp_points = RasterUtils.select_common_points(m_macaques; 
-    template, missingval=RGB{N0f8}(1.0,1.0,1.0),
-    points=DataFrame(mus_macaque_warp_points)
-)
-CSV.write(joinpath(outputdir, "WarpPoints/macaque_warp_points.csv"), mus_macaque_warp_points)
-mus_macaque_warp_points = CSV.File(joinpath(datadir, "Macaques/macaque_warp_points.csv"))
-w_mus_macaques, w_mus_macaques_bool = RasterUtils.manualwarp(mus_macaques, mus_macaques_bool; 
-    template, points=mus_macaque_warp_points, missingval=RGB{N0f8}(1.0,1.0,1.0)
-)
-Plots.plot(Float64.(Gray.(w_mus_macaques)))
-Plots.plot(Float64.(Gray.(mus_macaques_bool)); c=:spring)
-Plots.plot!(borders.mus; fill=nothing)
-write(joinpath(datadir, "Macaques/macaques_mask.tif"), wm_macaques_bool)
+# mus_macaques = load(joinpath(datadir, "Macaques/macaque_distribution.png")) |> rotr90
+# mus_macaques_mask = load(joinpath(datadir, "Macaques/macaque_distribution_mask.png")) |> rotr90
+# mus_macaques_bool = Float64.(Gray.(mus_macaques)) .< 0.9
+# mus_macaque_warp_points = RasterUtils.select_common_points(m_macaques; 
+#     template, missingval=RGB{N0f8}(1.0,1.0,1.0),
+#     points=DataFrame(mus_macaque_warp_points)
+# )
+# CSV.write(joinpath(outputdir, "WarpPoints/macaque_warp_points.csv"), mus_macaque_warp_points)
+# mus_macaque_warp_points = CSV.File(joinpath(datadir, "Macaques/macaque_warp_points.csv"))
+# w_mus_macaques, w_mus_macaques_bool = RasterUtils.manualwarp(mus_macaques, mus_macaques_bool; 
+#     template=templates.mus,
+#     # points=DataFrame(mus_macaque_warp_points),
+#     missingval=RGB{N0f8}(1.0,1.0,1.0)
+# )
+# Plots.plot(Float64.(Gray.(w_mus_macaques)))
+# Plots.plot(Float64.(Gray.(mus_macaques_bool)); c=:spring)
+# Plots.plot!(borders.mus; fill=nothing)
+# write(joinpath(datadir, "Macaques/macaques_mask.tif"), wm_macaques_bool)
 
 # Kestrel distribution
 # Has multiple files so we need to do it separately
-kestrel_warp_points = CSV.File(joinpath(outputdir("WarpPoints/mus_kestrel_warp_points.csv"))
+# kestrel_warp_points = CSV.File(joinpath(outputdir("WarpPoints/mus_kestrel_warp_points.csv")))
 w_mus_kestrel_2001, w_mus_kestrel_cleaned, w_mus_kestrel = RasterUtils.manualwarp(
     mus_kestrel_2001_mask, mus_kestrel_cleaned, mus_kestrel; 
     template=templates.mus, points=kestrel_warp_points, missingval=RGB{N0f8}(1.0,1.0,1.0)
@@ -203,8 +288,39 @@ Plots.plot(Float64.(Gray.(w_mus_kestrel)), c=:spring)
 Plots.plot!(Float64.(Gray.(w_mus_kestrel_2001)); opacity=0.5, c=:spring)
 Plots.plot!(borders.mus; fill=nothing)
 
-# kestrel_1830_1860 = m_kestrel_cleaned .==  
-# kestrel_1930_1950 = m_kestrel_cleaned .== 
-# kestrel_1970_1980 = m_kestrel_cleaned .== 
+Plots.plot(island_rasters.mus.veg)
+keys(island_rasters.mus)
 
-write("/home/raf/PhD/Mauritius/Data/Macaques/kestrel.tif", w_m_kestrel_cleaned)
+map(1:6)
+
+# Vegetation phases as total cleared for each time step
+veg_phases = map(island_rasters, (mus=0:6, reu=0:4)) do island, phaseids
+    map(phaseids) do id
+        classify(island.phase, 1..id => true; others=false, missingval=missing)
+    end
+end
+
+cleared_rasters = map(island_rasters) do i
+    cleared = maximum(i.rem)
+    (x -> x == cleared).(replace_missing(i.rem))
+end
+
+cleared_rem_plots = map(veg_phases, cleared_rasters) do vp, rem
+    Plots.plot(
+        Plots.plot((!).(vp[end]); c=:spring, title="Not cleared"), 
+        Plots.plot((!).(rem); c=:spring, title="Remnant")
+    )
+end
+cleared_rem_plots.reu
+p = cleared_rem_plots.mus
+savefig(p, "not_cleared_mus.png")
+
+
+reu_rem = rebuild((x -> x == 4 ? true : (x > 0 ? false : missing)).(island_rasters.reu.rem); missingval=missing)
+Plots.plot(
+    Plots.plot(veg_phases.mus[end]; c=:spring, title="Not cleared"), 
+    Plots.plot(mus_rem; c=:spring, title="Remnant")
+)
+Plots.plot(veg_phases.reu[end]; c=:spring)
+
+# TODO: this does not match the remnant vegetation map AT ALL!!
