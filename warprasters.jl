@@ -15,10 +15,9 @@ includet("functions.jl")
 # elevpath = "/home/raf/PhD/Mauritius/Data/Norder/LS factor/DEM/DEM100x100_Resample.img"
 # lakespath = "/home/raf/PhD/Mauritius/Data/Norder/LS factor/Lakes/lakes_all.shp"
 # soiltypespath = "/home/raf/PhD/Mauritius/Data/Norder/K factor/SoilK.shp"
-# rainfallpath = "/home/raf/PhD/Mauritius/Data/Norder/R factor/r_annual.img"
-# landusedir = "/home/raf/PhD/Mauritius/Data/Norder/C factor/"
+rainfallpath = "/home/raf/PhD/Mauritius/Data/Norder/R factor/r_annual.img"
 
-# rainfallraster = Raster(rainfallpath)[Band(1)]
+rainfallraster = Raster(rainfallpath)[Band(1)]
 # Elevation is a slightly larger raster for some reason
 # `crop` doesn't work because the index is slightly different
 # elevationraster = Raster(elevpath; missingval=-3.4028235f38)[Band(1), X(1:520)]
@@ -44,12 +43,13 @@ includet("functions.jl")
 
 # year = 1935
 # years = 1638, 1773, 1835, 1872, 1935, "present"
+# landusedir = "/home/raf/PhD/Mauritius/Data/Norder/C factor/"
 # landuse_shapefiles = map(years) do year
 #     path = joinpath(landusedir, string(year, ".shp"))
 #     Shapefile.Handle(path)
 # end
 # landuse_snapshots = map(landuse_shapefiles, years) do shapefile, year
-#     landuse = copy(lakesraster) .= missing
+#     landuse = zeros(Union{Int32,Missing}, dims(rainfallraster)) .= missing
 #     # The forested/cleared order swaps after the first three files
 #     shapes = year in (1773, 1835) ? shapefile.shapes : reverse(shapefile.shapes)
 #     for (n, shape) in enumerate(shapes)
@@ -57,8 +57,7 @@ includet("functions.jl")
 #     end
 #     return landuse
 # end
-
-# landuse_snapshots
+# Plots.plot(landuse_snapshots[1])
 # Plots.plot(Plots.plot.(landuse_snapshots; clims=(0, 2), c=:viridis)...; size=(2000,2000))
 
 # i = 1
@@ -204,51 +203,51 @@ end
 # end
 
 # Load previously selected points
-island_points = map(keys(island_images), island_images) do i, images
-    map(keys(images)) do k
-        path = joinpath(outputdir, "WarpPoints/$(i)_$(k)_warp_points.csv")
-        isfile(path) ? CSV.File(path) : missing
-    end |> NamedTuple{keys(images)}
-end |> NamedTuple{keys(island_images)}
+# island_points = map(keys(island_images), island_images) do i, images
+#     map(keys(images)) do k
+#         path = joinpath(outputdir, "WarpPoints/$(i)_$(k)_warp_points.csv")
+#         isfile(path) ? CSV.File(path) : missing
+#     end |> NamedTuple{keys(images)}
+# end |> NamedTuple{keys(island_images)}
 
-# Run the category cleaning filter
-cleaned_island_images = map(island_images, island_image_colors) do images, image_colors
-    map(images, image_colors) do A, colors
-        clean_categories(A; 
-            categories=colors, neighborhood=Moore{3}(), missingval=RGBA{N0f8}(1.0, 1.0, 1.0, 1.0)
-        )
-    end
-end
-# Apply warping from raw images to cleaned images
-island_image_rasters = map(keys(island_images), island_images, cleaned_island_images, island_points) do i, images, cimages, layerpoints
-    map(keys(images), images, cimages, layerpoints) do k, A1, A2, points
-        rs = RasterUtils.applywarp(A1, A2; 
-            template=templates[i], points=DataFrame(points), missingval=RGBA{N0f8}(1.0,1.0,1.0)
-        )
-        (raw=rs[1], cleaned=rs[2])
-    end |> NamedTuple{keys(images)}
-end |> NamedTuple{keys(island_images)}
-# Re-classify cleaned color categories as integers
-island_rasters = map(island_image_rasters, island_image_colors) do ir, ic
-    map(ir, ic) do rs, colors
-        A = rs.cleaned
-        classify(A, map(=>, colors, UInt8.(eachindex(colors)))...; others=UInt8(0), missingval=UInt8(0))
-    end
-end
-# Write images and plots to disk
-foreach(keys(island_rasters), island_rasters, island_image_classes, dems, borders) do i, ir, ic, dem, border
-    foreach(keys(ir), ir, ic) do k, A, classes
-        grad = cgrad([map(c -> color_lookup[c], keys(classes))...])
-        p = Plots.plot(A; c=grad, clims=(1, length(grad)))
-        Plots.plot!(p, border; fill=nothing)
-        savefig(p, joinpath(outputdir, "$(i)_$(k)_cleaned.png"))
-        p = Plots.plot(dem ./ maximum(skipmissing(dem)))
-        Plots.plot!(p, A ./ maximum(A); c=:spring, opacity=0.6)
-        Plots.plot!(p, border; fill=nothing)
-        savefig(p, joinpath(outputdir, "$(i)_$(k)_cleaned_dem.png"))
-        write(joinpath(outputdir, "$(i)_$(k)_cleaned.tif"), A) 
-    end
-end
+# # Run the category cleaning filter
+# cleaned_island_images = map(island_images, island_image_colors) do images, image_colors
+#     map(images, image_colors) do A, colors
+#         clean_categories(A; 
+#             categories=colors, neighborhood=Moore{3}(), missingval=RGBA{N0f8}(1.0, 1.0, 1.0, 1.0)
+#         )
+#     end
+# end
+# # Apply warping from raw images to cleaned images
+# island_image_rasters = map(keys(island_images), island_images, cleaned_island_images, island_points) do i, images, cimages, layerpoints
+#     map(keys(images), images, cimages, layerpoints) do k, A1, A2, points
+#         rs = RasterUtils.applywarp(A1, A2; 
+#             template=templates[i], points=DataFrame(points), missingval=RGBA{N0f8}(1.0,1.0,1.0)
+#         )
+#         (raw=rs[1], cleaned=rs[2])
+#     end |> NamedTuple{keys(images)}
+# end |> NamedTuple{keys(island_images)}
+# # Re-classify cleaned color categories as integers
+# island_rasters = map(island_image_rasters, island_image_colors) do ir, ic
+#     map(ir, ic) do rs, colors
+#         A = rs.cleaned
+#         classify(A, map(=>, colors, UInt8.(eachindex(colors)))...; others=UInt8(0), missingval=UInt8(0))
+#     end
+# end
+# # Write images and plots to disk
+# foreach(keys(island_rasters), island_rasters, island_image_classes, dems, borders) do i, ir, ic, dem, border
+#     foreach(keys(ir), ir, ic) do k, A, classes
+#         grad = cgrad([map(c -> color_lookup[c], keys(classes))...])
+#         p = Plots.plot(A; c=grad, clims=(1, length(grad)))
+#         Plots.plot!(p, border; fill=nothing)
+#         savefig(p, joinpath(outputdir, "$(i)_$(k)_cleaned.png"))
+#         p = Plots.plot(dem ./ maximum(skipmissing(dem)))
+#         Plots.plot!(p, A ./ maximum(A); c=:spring, opacity=0.6)
+#         Plots.plot!(p, border; fill=nothing)
+#         savefig(p, joinpath(outputdir, "$(i)_$(k)_cleaned_dem.png"))
+#         write(joinpath(outputdir, "$(i)_$(k)_cleaned.tif"), A) 
+#     end
+# end
 
 # Reload rasters from disk
 island_rasters = map(keys(island_images), island_images) do i, ii
@@ -280,18 +279,18 @@ end |> NamedTuple{keys(island_images)}
 # Kestrel distribution
 # Has multiple files so we need to do it separately
 # kestrel_warp_points = CSV.File(joinpath(outputdir("WarpPoints/mus_kestrel_warp_points.csv")))
-w_mus_kestrel_2001, w_mus_kestrel_cleaned, w_mus_kestrel = RasterUtils.manualwarp(
-    mus_kestrel_2001_mask, mus_kestrel_cleaned, mus_kestrel; 
-    template=templates.mus, points=kestrel_warp_points, missingval=RGB{N0f8}(1.0,1.0,1.0)
-)
-Plots.plot(Float64.(Gray.(w_mus_kestrel)), c=:spring)
-Plots.plot!(Float64.(Gray.(w_mus_kestrel_2001)); opacity=0.5, c=:spring)
-Plots.plot!(borders.mus; fill=nothing)
+# w_mus_kestrel_2001, w_mus_kestrel_cleaned, w_mus_kestrel = RasterUtils.manualwarp(
+#     mus_kestrel_2001_mask, mus_kestrel_cleaned, mus_kestrel; 
+#     template=templates.mus, points=kestrel_warp_points, missingval=RGB{N0f8}(1.0,1.0,1.0)
+# )
+# Plots.plot(Float64.(Gray.(w_mus_kestrel)), c=:spring)
+# Plots.plot!(Float64.(Gray.(w_mus_kestrel_2001)); opacity=0.5, c=:spring)
+# Plots.plot!(borders.mus; fill=nothing)
 
-Plots.plot(island_rasters.mus.veg)
-keys(island_rasters.mus)
+# Plots.plot(island_rasters.mus.veg)
+# keys(island_rasters.mus)
 
-map(1:6)
+# map(1:6)
 
 # Vegetation phases as total cleared for each time step
 veg_phases = map(island_rasters, (mus=0:6, reu=0:4)) do island, phaseids
@@ -316,11 +315,3 @@ p = cleared_rem_plots.mus
 savefig(p, "not_cleared_mus.png")
 
 
-reu_rem = rebuild((x -> x == 4 ? true : (x > 0 ? false : missing)).(island_rasters.reu.rem); missingval=missing)
-Plots.plot(
-    Plots.plot(veg_phases.mus[end]; c=:spring, title="Not cleared"), 
-    Plots.plot(mus_rem; c=:spring, title="Remnant")
-)
-Plots.plot(veg_phases.reu[end]; c=:spring)
-
-# TODO: this does not match the remnant vegetation map AT ALL!!

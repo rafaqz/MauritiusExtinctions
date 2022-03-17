@@ -112,7 +112,8 @@ for f in (:slope, :aspect, :slopeaspect)
 end
 
 function nearest_distances(presences::AbstractArray{Bool}) 
-    nearest_distances!(fill(Inf64, dims(presences)), presences)
+    maxval = sqrt(sum(size(presences) .^ 2))
+    nearest_distances!(fill(maxval, dims(presences)), presences)
 end
 function nearest_distances!(
     distances::AbstractArray{<:AbstractFloat}, presences::AbstractArray{Bool}
