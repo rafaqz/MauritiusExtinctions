@@ -22,7 +22,7 @@ end
 # Its not clear how to deal with grouped categories like `rats`
 
 function filter_population(table)
-    periods = names(table)[3:end-1]
+    periods = names(table)[2:end-1]
     times = map(periods) do p
         s = split(p, '-')
         Base.parse(Int, s[1]), Base.parse(Int, s[2])
@@ -38,7 +38,8 @@ function filter_population(table)
         popvals = Vector{Union{Missing,Int}}(undef, length(periods))
         popvals .= missing
         started = false
-        rawdata = table[i, 3:end-1] 
+        rawdata = table[i, 2:end-1]
+        common_name = table[i, 1]
         local lastval = missing
         for j in eachindex(popvals)
             !started && ismissing(rawdata[j]) && continue
@@ -47,7 +48,7 @@ function filter_population(table)
             if haskey(data_key, rawval)
                 category = data_key[rawval]
             else
-                @warn "unidentified value in table: $rawval, for $(table[i, 1]). `missing` used instead"
+                @warn "unidentified value in table: $rawval, for $common_name. `missing` used instead"
                 continue
             end
             pop_estimate = if ismissing(category)
@@ -63,7 +64,8 @@ function filter_population(table)
             elseif category == "extinction/absence"
                 0
             elseif category == "observed"
-                ismissing(lastval) ? missing : lastval
+                @show common_name
+                ismissing(lastval) ? 1 : lastval
             elseif category == "likely but unconfirmed"
                 1
             elseif category == "several species unseparated"
@@ -99,8 +101,12 @@ function filter_population(table)
             end
             started = true
         end
-        name = strip(isnumeric, table[i, 1])
-        populations[name] = DimArray(popvals, timedim)
+        for i in reverse(eachindex(popvals))
+            if ismissing(rawdata[i])
+                popvals[i] = missing
+            end
+        end
+        populations[common_name] = DimArray(popvals, timedim)
     end
     return DataFrame(populations)
 end
@@ -124,7 +130,6 @@ reverse_data_key = Dict(
     "move into category" => "O",
     missing => missing,
 )
-
 data_key = Dict(reverse(p) for p in reverse_data_key)
 
 # Load the transcribed XL file and turn each sheet into a dataframe
@@ -141,6 +146,34 @@ pops = map(island_species) do island
         filter_population(as_dataframe(xl, sheetname))
     end
 end
+pops.mus.native[!, "Vinson`s Day-gecko"]
+names(pops.mus.native)[54]
+
+introductions = map(pops) do island
+    df = island.alien
+    map(names(df)) do name
+        obs = df[!, name]
+        i = findfirst(x -> !ismissing(x), obs)
+        name => (isnothing(i) ? missing : dims(obs, Ti())[i])
+    end |> Dict
+end
+
+extinctions = map(pops) do island
+    df = island.native
+    map(names(df)) do name
+        obs = df[!, name]
+        i = findlast(x -> (!ismissing(x) && x != 0), obs)
+        name => (isnothing(i) ? missing : dims(obs, Ti())[i])
+    end |> Dict
+end
+
+sort([introductions.mus...]; by=last)
+sort([introductions.reu...]; by=last)
+sort([extinctions.mus...]; by=last)[1:40]
+sort([extinctions.reu...]; by=last)[1:40]
+
+
+# Rough ranking of commonness over time
 ranked = map(pops) do origins
     map(origins) do origin
         sort(names(origin) .=> sum.(skipmissing.(eachcol(origin))); by=last, rev=true)
@@ -149,25 +182,28 @@ end
 ranked.reu.alien
 
 key_invasives = [
-    # "goats",
-    # "pigs",
-    # "cats",
+    "goats",
+    "cattle",
+    "pigs",
+    "cats",
     "rats",
     "Norway Rat",
     "Ship Rat",
-    # "Crab-eating Macacque",
+    "Crab-eating Macacque",
 ]
 
 # x = pops[:mauritius_invasive][!, "Black-naped Hare"]
 pops.mus.alien[!, "cats"][At(1740)]
-
 p = Plots.plot(Matrix(pops.rod.alien); labels=permutedims(names(pops.mus.alien)), size=(1200, 1200))
+
 A = Matrix(pops.mus.alien[!, key_invasives])
-p = Plots.plot(A .+ rand(size(A)...) .* 0.1;
+p = Plots.plot(A .+ ((1:size(A, 2))./50)';
     labels=permutedims(key_invasives), opacity=0.5,
+    legend=:bottomleft,
 )
+
 x = "Norway Rat"
-Plots.plot(pops.mus.alien[!, x]; labels=x, size=(1000, 1000))
+Plots.plot(pops.mus.alien[!, x]; labels=x, size=(1000, 1000), ylims=(0, 3))
 
 
 
@@ -242,3 +278,15 @@ while length(obs) < size(obs)
     @show length(obs) size(obs)
     occurrences!(obs)
 end
+
+
+# Tortoise
+# Flat island/Garbriel island had 6000 tortoises. p 205
+tortoise_carry_cap = 6000 / fi_area
+
+# Macaque
+# How large were historic populations?
+# From Sussman and Tattersall
+# 25000 - 35000
+# Prefere secondary forest!
+macaque_1986_pop = 30000

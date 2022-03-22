@@ -17,7 +17,13 @@ function manualwarp(As...; template::Raster, points=nothing, missingval=missing)
     applywarp(As...; template, points, missingval)
 end
 
-function applywarp(As...; template::Raster, points=nothing, missingval=missing)
+function applywarp(As::RasterStack; template, points=nothing, missingval=missing)
+    As = map(A -> reorder(A, ForwardOrdered), As)
+    template = reorder(template, ForwardOrdered)
+    warped = _warp_from_points(As, template, points, missingval)
+    return warped
+end
+function applywarp(As...; template, points=nothing, missingval=missing)
     A1 = first(As)
     if A1 isa Raster
         As = map(A -> reorder(A, ForwardOrdered), As)
@@ -27,13 +33,16 @@ function applywarp(As...; template::Raster, points=nothing, missingval=missing)
     # Show updated heatmap
     # display(Makie.heatmap(map(parent, dims(first(warped)))..., parent(first(warped))))
     if length(warped) == 1
-        display(Makie.image(parent(warped)))
         return first(warped)
     else
         return warped
     end
 end
 
+function _warp_from_points(As::RasterStack, template, points, missingval)
+    rasters = _warp_from_points(values(As), template, points, missingval)
+    RasterStack(rasters)
+end
 function _warp_from_points(As::Tuple, template, points, missingval)
     models = _fitlinearmodels(points)
     return map(A -> linearwarp(A; template, models, missingval), As)
@@ -43,6 +52,10 @@ select_common_points(A; template, kw...) = _select_common_points(A, template; kw
 
 _select_common_points(A, template::Raster; kw...) = 
     _select_common_points(A, parent(reorder(template, ForwardOrdered)); kw...)
+_select_common_points(A::Raster, template; kw...) = 
+    _select_common_points(parent(reorder(A, ForwardOrdered)), template; kw...)
+_select_common_points(A::Raster, template::Raster; kw...) = 
+    _select_common_points(parent(reorder(A, ForwardOrdered)), template; kw...)
 function _select_common_points(A, template::AbstractArray; points=nothing, missingval)
     # map(A -> size(A) == size(first(As)), As) || throw(ArgumentError("Intput raster sizes are not the same"))
     fig = Figure()
@@ -58,7 +71,7 @@ function _select_common_points(A, template::AbstractArray; points=nothing, missi
     end
     @show knownpoints unknownpoints
     knownpoints = selectmultiple(parent(template), fig, ax1; dragging=dragging1, points=knownpoints)
-    unknownpoints = selectmultiple(A, fig, ax2; dragging=dragging2, points=unknownpoints)
+    unknownpoints = selectmultiple(parent(A), fig, ax2; dragging=dragging2, points=unknownpoints)
     @show knownpoints unknownpoints
     finallimits = Ref{Any}(nothing)
     overlay = nothing
@@ -266,6 +279,7 @@ end
 
 inbounds((x1, x2), x) = x >= min(x1, x2) && x <= max(x1, x2)
 
+selectmultiple(A::Raster, fig, ax; kw...) = selectmultiple(parent(A), fig, ax; kw...)
 function selectmultiple(A, fig, ax; transparency=false, points, kw...)
     _heatmap!(ax, A; transparency) 
     positions = Observable(points)
@@ -296,7 +310,7 @@ function linearwarp(A; template, points=nothing, models::Union{Nothing,Tuple}=no
     xs = round.(Int, predict(x_model, pixelpoints))
     ys = round.(Int, predict(y_model, pixelpoints))
     T = promote_type(typeof(missingval), eltype(A))
-    Awarped = similar(template, T)
+    Awarped = Raster(similar(template, T); name=Rasters.name(A))
     Awarped .= missingval
     for (Ik, Iu) in  zip(CartesianIndices(template), CartesianIndex.(zip(xs, ys)))
         if checkbounds(Bool, A, Iu)

@@ -1,6 +1,9 @@
 using DynamicGrids
 using DynamicGrids.Neighborhoods
 using DynamicGrids.Neighborhoods: Window
+using DataFrames
+
+namedkeys(nt::NamedTuple{K}) where K = NamedTuple{K}(K)
 
 abstract type SlopeFilter end
 abstract type SlopeConvolution <: SlopeFilter end
@@ -102,6 +105,12 @@ end
 for f in (:slope, :aspect, :slopeaspect)
     f_filter = Symbol(f, :_filter) 
     @eval begin 
+        function $(f)(elevation::Raster, method=FD2())
+            padded = Neighborhoods.addpadding(parent(elevation), 1; padval=missingval(elevation))
+            newdata = $(f)(padded, FD2())
+            @show size(elevation) size(padded) size(newdata)
+            rebuild(elevation; data=newdata, name=$(QuoteNode(f))) 
+        end
         function $(f)(elevation::AbstractArray, method=FD2())
             window = Window{1}()
             Neighborhoods.broadcast_neighborhood(window, elevation) do w, e
@@ -135,7 +144,7 @@ function nearest_distances!(
     return distances
 end
 
-function clean_categories(src::AbstractArray; categories=(), neighborhood=Moore{2,2}(), missingval=missing)
+function clean_categories(src::AbstractArray; categories=(), neighborhood=Moore{2,2}(), keep_neigborless=false, missingval=missing, despecle=true)
     counts = zeros(length(categories))
     ax = unpad_axes(src, neighborhood)
     dst = similar(src, promote_type(eltype(src), typeof(missingval)))
@@ -154,9 +163,13 @@ function clean_categories(src::AbstractArray; categories=(), neighborhood=Moore{
                 return acc
             end
             if all(==(0), catcounts)
-                return missingval
+                if keep_neigborless
+                    return v
+                else
+                    return missingval
+                end
             end
-            if !isequal(v, missingval) && v in categories
+            if despecle && !isequal(v, missingval) && v in categories
                 if (count(==(v), skipmissing(hood)) > length(hood) / 10)
                     return v
                 else
@@ -170,22 +183,6 @@ function clean_categories(src::AbstractArray; categories=(), neighborhood=Moore{
     end
     return dst
 end
-
-lc_categories = [
-  "No Data",
-  "Continuous urban",
-  "Discontinuous urban",
-  "Forest",
-  "Shrub vegetation",
-  "Herbaceaous vegetation",
-  "Mangrove",
-  "Barren land",
-  "Water",
-  "Sugarcane",
-  "Pasture",
-  "",
-  "Other cropland",
-]
 
 function plot_lc(lc_raster::Raster)
     Plots.plot(lc_raster; 
@@ -207,34 +204,37 @@ function plot_lc_makie(lc_raster::Raster)
     return fig
 end
 
-function rasterize_lc(template, shape_file, crs_file; res=50)
+function rasterize_lc(template, shape_file, crs_file; res=nothing, categories)
     lc_shape = Shapefile.Table(shape_file)
     lc_crs = WellKnownText(readlines(crs_file)[1])
     lc_df = DataFrame(lc_shape)
     lc_raster = Raster(similar(template, Int32); missingval=typemin(Int32))
     lc_raster .= typemin(Int32)
-    lc_raster = read(resample(lc_raster, res; crs=lc_crs))
-    c = Dict(map(=>, lc_categories, 0:12))
+    if !isnothing(res)
+        lc_raster = read(resample(lc_raster, res; crs=lc_crs))
+    end
+    display(dims(lc_raster))
     # Order of rasterization matters?... (probably should calculate areas?)
     fillvals = [
-        c["No Data"],
-        c["Water"],
-        c["Barren land"],
-        c["Forest"],
-        c["Shrub vegetation"],
-        c["Herbaceaous vegetation"],
-        c["Mangrove"],
-        c["Other cropland"],
-        c["Sugarcane"],
-        c["Pasture"],
-        c["Continuous urban"],
-        c["Discontinuous urban"],
+        categories.No_Data,
+        categories.Water,
+        categories.Barren_land,
+        categories.Forest,
+        categories.Shrub_vegetation,
+        categories.Herbaceaous_vegetation,
+        categories.Mangrove,
+        categories.Other_cropland,
+        categories.Sugarcane,
+        categories.Pasture,
+        categories.Continuous_urban,
+        categories.Discontinuous_urban,
     ]
-    # @show fillvals
+    @show fillvals
     for fillval in fillvals
         rows = filter(x -> x.ocsol_num == fillval, lc_df)
         if length(rows.geometry) > 0
             fillname = first(eachrow(rows)).ocsol_name
+            @show fillname fillval
             rasterize!(lc_raster, rows.geometry; fill=fillval)
         end
     end
