@@ -1,0 +1,68 @@
+island_image_classes = (
+    mus=(
+        veg=(
+            red = "semi-dry evergreen forest",
+            green = "open dry palm-rich woodland",
+            blue = "wet forest",
+            cyan = "Pandanus swamp",
+            magenta = "mossy rainforest",
+            yellow = "mangrove",
+            dark_red = "wetland vegetation",
+        ),
+        phase=(
+            magenta = "deforested before 1807",
+            dark_red = "deforested 1807-1835",
+            blue = "deforested 1835-1910",
+            dark_blue = "deforested 1910-1947",
+            green = "deforested 1947-1970",
+            red = "deforested since 1970",
+            yellow = "scrub with native remnants",
+            dark_green = "native vegetation",
+            cyan = "swamp",
+        ),
+        rem=(
+            red = "at least 20% native plants",
+            green = "50%+ native plants",
+            blue = "reservoirs",
+            cyan = "cleared",
+        ),
+    ),
+    reu=(
+        veg=(
+            dark_cyan = "Palm-bejoin savanna",
+            magenta = "Palm-rich dry forest",
+            red = "Lowland mixed evergreen semi-dry tropical forest",
+            yellow = "Lowland mixed evergreen tropical rainforest", 
+            cyan = "Transitional mixed evergreen tropical rainforest",
+            green = "Montane mixed evergreen subtropical rainforest",
+            dark_blue = "Tree-heather formations",
+            dark_green = "Acacia-dominated montane rainforest",
+            dark_red = "Very wet screw-pine formations",
+            blue = "Upper montane temperate heaths",
+            dark_yellow = "Wetland vegetation",
+            dark_magenta = "Unvegetated recent lava flows",
+        ),
+        phase=(
+            blue = "17th century",
+            red = "18th century",
+            green = "19th century",
+            yellow = "20th century",
+            cyan = "not cleared/colonised",
+        ),
+        rem=(
+            red = "Lowland mixed evergreen semi-dry forest",
+            green = "Lowland mixed evergreen tropical forest",
+            blue = "Transitional mixed evergreen tropical rainforest",
+            yellow = "Montane mixed evergreen subtropical rainforest",
+            magenta = "Tree-heather formations",
+            cyan = "Acacia-dominated montane rainforest",
+            dark_red = "Very wet screw-pine formations",
+            dark_green = "Upper montane temperate heaths",
+            dark_blue = "Wetland vegetation",
+            dark_yellow = "Largely unvegetated recent lava flows",
+            dark_magenta = "Cleared",
+        ),
+        # bulbul=load(joinpath(datadir, "LostLand/Maps/page265_reunion_bulbul_colored.png")),
+    )
+)
+
