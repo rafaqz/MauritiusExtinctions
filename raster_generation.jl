@@ -2,7 +2,6 @@ using GeoJSON
 includet("raster_common.jl")
 
 # Distances
-distancedir = joinpath(outputdir, "Distances")
 
 # To coasts
 distance_to_coasts = map(dems, borders) do dem, border 
@@ -107,8 +106,6 @@ distance_to_roads = map(island_keys, dems, highway_masks) do i, dem, highways
     rast = mask(nearest_distances(highways.primary .| highways.secondary); with=dem)
     write(joinpath(distancedir, string(i), "to_secondary_roads.tif"), rast)
 end
-
-
 
 # Landcover
 lc_dir = joinpath(datadir, "Landcover/")

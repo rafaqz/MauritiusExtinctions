@@ -1,6 +1,9 @@
 using CategoricalArrays
 using GLM
 
+categorical_soil = rebuild(soiltypes; data=categorical(parent(soiltypes)), name=:categorical_soiltypes)
+soiltypes = norder_stack[:soiltypes]
+
 # Flat island
 # fi_selectors = X(57.64..57.69), Y(-19.9..(-19.86))
 # plot(dems.mus[fi_selectors...])

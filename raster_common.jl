@@ -16,6 +16,7 @@ lc_year_keys = map(y -> "lc_$y", lc_years)
 workdir = "/home/raf/PhD/Mauritius"
 datadir = joinpath(workdir, "Data")
 outputdir = joinpath(datadir, "Generated")
+distancedir = joinpath(outputdir, "Distances")
 
 island_keys = (; mus=:mus, reu=:reu)
 

@@ -11,8 +11,6 @@ soilmasks = map(soilnums) do v
 end |> RasterStack
 plot(soilmasks; c=:viridis)
 plot(norder_stack[:soiltypes])
-soiltypes = norder_stack[:soiltypes]
-categorical_soil = rebuild(soiltypes; data=categorical(parent(soiltypes)), name=:categorical_soiltypes)
 
 # lakesraster = Raster("warpedlakes.tif")[Band(1)]
 # elevationraster = Raster("warpedelevation.tif")[Band(1)]
@@ -51,8 +49,7 @@ plot(veg_classes.mus.veg; c=:viridis)
 
 # Landcover
 lc_dir = joinpath(datadir, "Landcover/")
-lc_names = (
-  :No_Data,
+lc_names = ( :No_Data,
   :Continuous_urban,
   :Discontinuous_urban,
   :Forest,
