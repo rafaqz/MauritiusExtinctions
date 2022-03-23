@@ -2,31 +2,23 @@
 # warping them to match another raster
 using GLMakie
 using Rasters
-using Rasters: Band
+using Rasters.LookupArrays
+using Rasters: set, Between, trim, Band
 using Shapefile
 using DataFrames
 using Images
 using CSV
+using GeoInterface
 using Colors, ColorVectorSpace
+includet("raster_common.jl")
 includet("mapfitting.jl")
 includet("functions.jl")
 includet("lost_land_images.jl")
 
-# Cleaning re-colored maps
-island_images = (
-    mus=map(rotr90, (
-        veg=load(joinpath(datadir, "LostLand/Maps/page33_mauritius_vegetation_colored.png")),
-        phase=load(joinpath(datadir, "LostLand/Maps/page132_mauritius_phases_colored.png")),
-        rem=load(joinpath(datadir, "LostLand/Maps/page159_mauritius_remnants_colored.png")),
-        # kestrel=load(joinpath(datadir, "LostLand/Maps/page252_mauritius_kestrel_colored.png")),
-    )),
-    reu=map(rotr90, (
-        veg=load(joinpath(datadir, "LostLand/Maps/page36_reunion_vegetation_colored.png")),
-        phase=load(joinpath(datadir, "LostLand/Maps/page145_reunion_phases_colored.png")),
-        rem=load(joinpath(datadir, "LostLand/Maps/page183_reunion_remnants_colored.png")),
-        # bulbul=load(joinpath(datadir, "LostLand/Maps/page265_reunion_bulbul_colored.png")),
-    ))
-)
+templates = map(dems, borders) do dem, border
+    mask(dem; with=boolmask(border; to=dem, shape=:polygon, boundary=:touches))
+    dem
+end
 
 # Land use files
 elevpath = "/home/raf/PhD/Mauritius/Data/Norder/LS factor/DEM/DEM100x100_Resample.img"
@@ -35,8 +27,6 @@ soiltypespath = "/home/raf/PhD/Mauritius/Data/Norder/K factor/SoilK.shp"
 rainfallpath = "/home/raf/PhD/Mauritius/Data/Norder/R factor/r_annual.img"
 
 raw_rainfallraster = Raster(rainfallpath)[Band(1)]
-plot(raw_rainfallraster)
-missingval(raw_rainfallraster)
 # Elevation is a slightly larger raster for some reason
 # `crop` doesn't work because the index is slightly different
 raw_elevationraster = Raster(elevpath; missingval=-3.4028235f38)[Band(1), X(1:520)]
@@ -53,9 +43,6 @@ for i in eachindex(soiltypes_shapes.shapes)
     rasterize!(raw_soilraster, soiltypes_shapes.shapes[i]; fill=i)
 end
 elevationraster = mask(elevationraster; with=soilraster)
-Plots.plot(soilraster)
-Plots.plot(elevationraster)
-# Plots.plot(lakesraster)
 
 landusedir = "/home/raf/PhD/Mauritius/Data/Norder/C factor/"
 landuse_shapefiles = map(years) do year
@@ -72,7 +59,6 @@ raw_landuse_rasters = map(landuse_shapefiles, years) do shapefile, year
     return landuse
 end
 raw_landuse_stack = RasterStack(raw_landuse_rasters; keys=lc_year_keys)
-Plots.plot(raw_landuse_stack; clims=(0, 2), c=:viridis)
 
 raw_norder_stack = merge(RasterStack((
     soiltypes=raw_soilraster,
@@ -106,15 +92,18 @@ warp_points = CSV.File(warp_path)
 warped_norder_stack = RasterUtils.applywarp(raw_norder_stack; 
     template=templates.mus, points=DataFrame(warp_points)
 )
-warped_norder_stack)
-norder_dir = mkpath(joinpath(outputdir, "Norder"))
-write(joinpath(norder_dir, "warped.tif"), warped_norder_stack)
-RasterStack(norder_dir)[:rainfall]
+norder_dir = mkpath(joinpath(outputdir, "Norder/"))
+write(string(norder_dir, "/"), warped_norder_stack; ext=".tif")
+RasterStack(norder_dir)
 
 m_stl = load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page157_mauritius_settlements_colored.png") |> rotr90
 m_fodies = load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page166_mauritius_fodies_colored.png") |> rotr90
 re_stl = load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page176_reunion_settlements.png") |> rotr90
 ro_stl = load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page194_rodrigues_settlements.png") |> rotr90
+# Plots.plot(templates.mus)
+
+
+# Lost Land map images from pdf
 
 _color(name::String) = RGB{N0f8}((Colors.color_names[name] ./ 255)...)
 colors_color_names = ("red1", "green1", "blue1", "cyan", "magenta", "yellow")
@@ -124,15 +113,17 @@ main_colors = NamedTuple{main_color_names}(RGBA{N0f8}.(_color.(colors_color_name
 dark_colors = NamedTuple{dark_color_names}(RGBA{N0f8}.(RGB.(values(main_colors)) .* 0.498)) # GIMP rounds round, Colors.jl rounds up...
 color_lookup = merge(main_colors, dark_colors)
 
-island_image_colors = map(island_image_classes) do image_classes
+lostland_images = map(lostland_image_paths) do island
+    map(rotr90 ∘ load, island)
+end
+lostland_image_colors = map(lostland_image_classes) do image_classes
     map(image_classes) do classes
         colors = map(c -> color_lookup[c], keys(classes))
     end
 end
-# Plots.plot(templates.mus)
 
 # Mass point selection for all category filtered images
-# foreach(keys(island_images), island_images) do i, images
+# foreach(keys(lostland_images), lostland_images) do i, images
 #     foreach(keys(images), images) do k, A
 #         path = joinpath(outputdir, "WarpPoints/$(i)_$(k)_warp_points.csv")
 #         points = isfile(path) ? CSV.File(path) : nothing
@@ -144,51 +135,57 @@ end
 # end
 
 # Load previously selected points
-# island_points = map(keys(island_images), island_images) do i, images
-#     map(keys(images)) do k
-#         path = joinpath(outputdir, "WarpPoints/$(i)_$(k)_warp_points.csv")
-#         isfile(path) ? CSV.File(path) : missing
-#     end |> NamedTuple{keys(images)}
-# end |> NamedTuple{keys(island_images)}
+lostland_points = map(namedkeys(lostland_images), lostland_images) do i, images
+    map(namedkeys(images)) do k
+        path = joinpath(outputdir, "WarpPoints/$(i)_$(k)_warp_points.csv")
+        isfile(path) ? CSV.File(path) : missing
+    end
+end
 
-# # Run the category cleaning filter
-# cleaned_island_images = map(island_images, island_image_colors) do images, image_colors
-#     map(images, image_colors) do A, colors
-#         clean_categories(A; 
-#             categories=colors, neighborhood=Moore{3}(), missingval=RGBA{N0f8}(1.0, 1.0, 1.0, 1.0)
-#         )
-#     end
-# end
-# # Apply warping from raw images to cleaned images
-# island_image_rasters = map(keys(island_images), island_images, cleaned_island_images, island_points) do i, images, cimages, layerpoints
-#     map(keys(images), images, cimages, layerpoints) do k, A1, A2, points
-#         rs = RasterUtils.applywarp(A1, A2; 
-#             template=templates[i], points=DataFrame(points), missingval=RGBA{N0f8}(1.0,1.0,1.0)
-#         )
-#         (raw=rs[1], cleaned=rs[2])
-#     end |> NamedTuple{keys(images)}
-# end |> NamedTuple{keys(island_images)}
-# # Re-classify cleaned color categories as integers
-# island_rasters = map(island_image_rasters, island_image_colors) do ir, ic
-#     map(ir, ic) do rs, colors
-#         A = rs.cleaned
-#         classify(A, map(=>, colors, UInt8.(eachindex(colors)))...; others=UInt8(0), missingval=UInt8(0))
-#     end
-# end
-# # Write images and plots to disk
-# foreach(keys(island_rasters), island_rasters, island_image_classes, dems, borders) do i, ir, ic, dem, border
-#     foreach(keys(ir), ir, ic) do k, A, classes
-#         grad = cgrad([map(c -> color_lookup[c], keys(classes))...])
-#         p = Plots.plot(A; c=grad, clims=(1, length(grad)))
-#         Plots.plot!(p, border; fill=nothing)
-#         savefig(p, joinpath(outputdir, "$(i)_$(k)_cleaned.png"))
-#         p = Plots.plot(dem ./ maximum(skipmissing(dem)))
-#         Plots.plot!(p, A ./ maximum(A); c=:spring, opacity=0.6)
-#         Plots.plot!(p, border; fill=nothing)
-#         savefig(p, joinpath(outputdir, "$(i)_$(k)_cleaned_dem.png"))
-#         write(joinpath(outputdir, "$(i)_$(k)_cleaned.tif"), A) 
-#     end
-# end
+# Run the category cleaning filter
+cleaned_lostland_images = map(lostland_images, lostland_image_colors) do images, image_colors
+    map(images, image_colors) do A, colors
+        clean_categories(A; 
+            categories=colors, neighborhood=Moore{3}(), missingval=RGBA{N0f8}(1.0, 1.0, 1.0, 1.0)
+        )
+    end
+end
+
+# Apply warping from raw images to cleaned images
+lostland_image_rasters = map(keys(lostland_images), lostland_images, cleaned_lostland_images, lostland_points) do i, images, cimages, layerpoints
+    map(keys(images), images, cimages, layerpoints) do k, A1, A2, points
+        rs = RasterUtils.applywarp(A1, A2; 
+            template=templates[i], points=DataFrame(points), missingval=RGBA{N0f8}(1.0,1.0,1.0)
+        )
+        (raw=rs[1], cleaned=rs[2])
+    end |> NamedTuple{keys(images)}
+end |> NamedTuple{keys(lostland_images)}
+# Re-classify cleaned color categories as integers
+lostland_rasters = map(lostland_image_rasters, lostland_image_colors) do ir, ic
+    map(ir, ic) do rs, colors
+        A = rs.cleaned
+        classify(A, map(=>, colors, UInt8.(eachindex(colors)))...; others=UInt8(0), missingval=UInt8(0))
+    end
+end
+# Write images and plots to disk
+
+foreach(keys(lostland_rasters), lostland_rasters, lostland_image_classes, dems, borders) do i, ir, ic, dem, border
+    foreach(keys(ir), ir, ic) do k, A, classes
+        dir = joinpath(outputdir, "LostLand", string(i))
+        plotdir = joinpath(outputdir, "LostLand/Plots", string(i))
+        mkpath(dir)
+        mkpath(plotdir)
+        grad = cgrad([map(c -> color_lookup[c], keys(classes))...])
+        p = Plots.plot(A; c=grad, clims=(1, length(grad)))
+        Plots.plot!(p, border; fill=nothing)
+        savefig(p, joinpath(outputdir, "LostLand/Plots", string(i), "$(k).png"))
+        p = Plots.plot(dem ./ maximum(skipmissing(dem)))
+        Plots.plot!(p, A ./ maximum(A); c=:spring, opacity=0.6)
+        Plots.plot!(p, border; fill=nothing)
+        savefig(p, joinpath(outputdir, "LostLand/Plots", string(i), "$(k)_dem.png"))
+        write(joinpath(outputdir, "LostLand", string(i), "$(k).tif"), A) 
+    end
+end
 
 # Macaque distribution
 # mus_macaques = load(joinpath(datadir, "Macaques/macaque_distribution.png")) |> rotr90
@@ -221,7 +218,7 @@ end
 # Plots.plot!(Float64.(Gray.(w_mus_kestrel_2001)); opacity=0.5, c=:spring)
 # Plots.plot!(borders.mus; fill=nothing)
 
-# Plots.plot(island_rasters.mus.veg)
-# keys(island_rasters.mus)
+# Plots.plot(lostland_rasters.mus.veg)
+# keys(lostland_rasters.mus)
 
 # map(1:6)

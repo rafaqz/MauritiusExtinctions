@@ -102,22 +102,28 @@ struct MaxSlope <: SlopeFilter end
 end
 
 
-for f in (:slope, :aspect, :slopeaspect)
-    f_filter = Symbol(f, :_filter) 
+for (f, filt) in (:slope => :slope_filter, :aspect => :aspect_filter, :_slopeaspect => :slopeaspect_filter)
     @eval begin 
         function $(f)(elevation::Raster, method=FD2())
             padded = Neighborhoods.addpadding(parent(elevation), 1; padval=missingval(elevation))
             newdata = $(f)(padded, FD2())
-            @show size(elevation) size(padded) size(newdata)
             rebuild(elevation; data=newdata, name=$(QuoteNode(f))) 
         end
         function $(f)(elevation::AbstractArray, method=FD2())
             window = Window{1}()
             Neighborhoods.broadcast_neighborhood(window, elevation) do w, e
-                $(f_filter)(method, w, e)
+                $(filt)(method, w, e)
             end
         end
     end
+end
+
+function slopeaspect(elevation, method=FD2())
+    sa = _slopeaspect(elevation, method)
+    slope = first.(sa)
+    aspect = last.(sa)
+    nt = (; slope, aspect)
+    return elevation isa Raster ? RasterStack(nt) : nt
 end
 
 function nearest_distances(presences::AbstractArray{Bool}) 
@@ -144,7 +150,11 @@ function nearest_distances!(
     return distances
 end
 
-function clean_categories(src::AbstractArray; categories=(), neighborhood=Moore{2,2}(), keep_neigborless=false, missingval=missing, despecle=true)
+
+function clean_categories(src::AbstractArray;
+    categories=(), neighborhood=Moore{2,2}(), keep_neigborless=false,
+    missingval=missing, despecle=true,
+)
     counts = zeros(length(categories))
     ax = unpad_axes(src, neighborhood)
     dst = similar(src, promote_type(eltype(src), typeof(missingval)))
@@ -152,7 +162,7 @@ function clean_categories(src::AbstractArray; categories=(), neighborhood=Moore{
     broadcast!(view(dst, ax...), CartesianIndices(ax)) do I
         DynamicGrids.Neighborhoods.applyneighborhood(neighborhood, src, I) do hood, v
             catcounts = map(categories) do c
-                ds = distances(hood)
+                ds = DynamicGrids.distances(hood)
                 acc = zero(1/first(ds))
                 for i in 1:length(hood)
                     n = hood[i]
@@ -218,23 +228,21 @@ function rasterize_lc(template, shape_file, crs_file; res=nothing, categories)
     fillvals = [
         categories.No_Data,
         categories.Water,
-        categories.Barren_land,
-        categories.Forest,
-        categories.Shrub_vegetation,
         categories.Herbaceaous_vegetation,
-        categories.Mangrove,
+        categories.Shrub_vegetation,
+        categories.Barren_land,
         categories.Other_cropland,
         categories.Sugarcane,
         categories.Pasture,
+        categories.Forest,
+        categories.Mangrove,
         categories.Continuous_urban,
         categories.Discontinuous_urban,
     ]
-    @show fillvals
     for fillval in fillvals
         rows = filter(x -> x.ocsol_num == fillval, lc_df)
         if length(rows.geometry) > 0
             fillname = first(eachrow(rows)).ocsol_name
-            @show fillname fillval
             rasterize!(lc_raster, rows.geometry; fill=fillval)
         end
     end

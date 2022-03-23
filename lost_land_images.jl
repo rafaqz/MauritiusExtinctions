@@ -1,14 +1,5 @@
-island_image_classes = (
+lostland_image_classes = (
     mus=(
-        veg=(
-            red = "semi-dry evergreen forest",
-            green = "open dry palm-rich woodland",
-            blue = "wet forest",
-            cyan = "Pandanus swamp",
-            magenta = "mossy rainforest",
-            yellow = "mangrove",
-            dark_red = "wetland vegetation",
-        ),
         phase=(
             magenta = "deforested before 1807",
             dark_red = "deforested 1807-1835",
@@ -26,22 +17,17 @@ island_image_classes = (
             blue = "reservoirs",
             cyan = "cleared",
         ),
+        veg=(
+            red = "semi-dry evergreen forest",
+            green = "open dry palm-rich woodland",
+            blue = "wet forest",
+            cyan = "Pandanus swamp",
+            magenta = "mossy rainforest",
+            yellow = "mangrove",
+            dark_red = "wetland vegetation",
+        ),
     ),
     reu=(
-        veg=(
-            dark_cyan = "Palm-bejoin savanna",
-            magenta = "Palm-rich dry forest",
-            red = "Lowland mixed evergreen semi-dry tropical forest",
-            yellow = "Lowland mixed evergreen tropical rainforest", 
-            cyan = "Transitional mixed evergreen tropical rainforest",
-            green = "Montane mixed evergreen subtropical rainforest",
-            dark_blue = "Tree-heather formations",
-            dark_green = "Acacia-dominated montane rainforest",
-            dark_red = "Very wet screw-pine formations",
-            blue = "Upper montane temperate heaths",
-            dark_yellow = "Wetland vegetation",
-            dark_magenta = "Unvegetated recent lava flows",
-        ),
         phase=(
             blue = "17th century",
             red = "18th century",
@@ -62,7 +48,36 @@ island_image_classes = (
             dark_yellow = "Largely unvegetated recent lava flows",
             dark_magenta = "Cleared",
         ),
+        veg=(
+            dark_cyan = "Palm-bejoin savanna",
+            magenta = "Palm-rich dry forest",
+            red = "Lowland mixed evergreen semi-dry tropical forest",
+            yellow = "Lowland mixed evergreen tropical rainforest", 
+            cyan = "Transitional mixed evergreen tropical rainforest",
+            green = "Montane mixed evergreen subtropical rainforest",
+            dark_blue = "Tree-heather formations",
+            dark_green = "Acacia-dominated montane rainforest",
+            dark_red = "Very wet screw-pine formations",
+            blue = "Upper montane temperate heaths",
+            dark_yellow = "Wetland vegetation",
+            dark_magenta = "Unvegetated recent lava flows",
+        ),
         # bulbul=load(joinpath(datadir, "LostLand/Maps/page265_reunion_bulbul_colored.png")),
     )
 )
 
+# Cleaning re-colored maps
+lostland_image_paths = (
+    mus=(;
+        phase=joinpath(datadir, "LostLand/Maps/page132_mauritius_phases_colored.png"),
+        rem=joinpath(datadir, "LostLand/Maps/page159_mauritius_remnants_colored.png"),
+        veg=joinpath(datadir, "LostLand/Maps/page33_mauritius_vegetation_colored.png"),
+        # kestrel=load(joinpath(datadir, "LostLand/Maps/page252_mauritius_kestrel_colored.png")),
+    ),
+    reu=(;
+        phase=joinpath(datadir, "LostLand/Maps/page145_reunion_phases_colored.png"),
+        rem=joinpath(datadir, "LostLand/Maps/page183_reunion_remnants_colored.png"),
+        veg=joinpath(datadir, "LostLand/Maps/page36_reunion_vegetation_colored.png"),
+        # bulbul=load(joinpath(datadir, "LostLand/Maps/page265_reunion_bulbul_colored.png")),
+    )
+)
