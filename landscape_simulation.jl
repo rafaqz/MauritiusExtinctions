@@ -114,3 +114,7 @@ using StatsPlots
 using Distributions
 plot(Exponential(1))
 pdf(Exponential(1), 10 * 0.1) 
+
+
+mode = RandomConstraintMatch()
+sim(mode, init, target, categories)
