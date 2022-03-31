@@ -12,8 +12,8 @@ lostland_image_classes = (
             cyan = "swamp",
         ),
         rem=(
-            red = "at least 20% native plants",
-            green = "50%+ native plants",
+            red = "native at least 20%",
+            green = "native 50%+",
             blue = "reservoirs",
             cyan = "cleared",
         ),
@@ -29,10 +29,10 @@ lostland_image_classes = (
     ),
     reu=(
         phase=(
-            blue = "17th century",
-            red = "18th century",
-            green = "19th century",
-            yellow = "20th century",
+            blue = "C17",
+            red = "C18",
+            green = "C19",
+            yellow = "C20",
             cyan = "not cleared/colonised",
         ),
         rem=(

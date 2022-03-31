@@ -112,14 +112,19 @@ function points2table(knownpoints::Vector, unknownpoints::Vector)
     return merge.(knowntable, unknowntable)
 end
 
-function table2points(table)
-    knownpoints = Point2{Float32}.(collect(zip(Tables.getcolumn(table, :x_known), Tables.getcolumn(table, :y_known))))
-    unknownpoints = Point2{Float32}.(collect(zip(Tables.getcolumn(table, :x_unknown), Tables.getcolumn(table, :y_unknown))))
+table2points(A::AbstractArray{Point2}; keys=nothing) = A
+table2points(A::AbstractArray{Point2}; keys=nothing) = _table2points(A, keys)
+function _table2points(table, keys::NTuple{4})
+    knownpoints = Point2{Float32}.(collect(zip(Tables.getcolumn(table, keys[1]), Tables.getcolumn(table, keys[2]))))
+    unknownpoints = Point2{Float32}.(collect(zip(Tables.getcolumn(table, keys[3]), Tables.getcolumn(table, keys[4]))))
     return knownpoints, unknownpoints
 end
+function _table2points(table, keys::NTuple{2})
+    return Point2{Float32}.(collect(zip(Tables.getcolumn(table, keys[1]), Tables.getcolumn(table, keys[2]))))
+end
 
-function manualinput(A::Raster; points=Point2{Float32}[])
-    points = Point2{Float32}.(points)
+function manualinput(A::Raster; points=Point2{Float32}[], keys=nothing)
+    points = table2points(points; keys)
     A = reorder(A, ForwardOrdered)
     fig = Figure()
     ax = Makie.Axis(fig[1,1]; title="Source image")

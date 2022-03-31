@@ -1,14 +1,18 @@
 using DynamicGrids
 using LandscapeChange
+using Distributions
 
 # Human Population and species introduction events
 landscape_events = (
-    human = (
+    mus = (
         # (1638, 50, (-20.3754, 57.7228)), # "First Dutch settlement"
         # (1664, 160, (-20.3754, 57.7228)),  # "Second dutch settlement"
         (1721, (-20.3754, 57.7228), 524),  # "Colony at grand port founded", "French", 
         (1721,  (-20.1597, 57.5012), 20#=?=#),  # "Colony at port louie began", "French", 
-        (1735, (-20.1597, 57.5012), ?),  # "Colony at port louie as capital", "French", 
+        (1735, (-20.1597, 57.5012), 20#=?=#),  # "Colony at port louie as capital", "French", 
+    ),
+    reu = (
+        (1665, (-20.1597, 57.5012), 20#=?=#),  # "Colony at port louie as capital", "French", 
     ),
 )
 
@@ -31,36 +35,44 @@ x = parent(sd[:counts])
 exponential1(x) = pdf(Exponential(1), x)
 chi5(x) = pdf(Chisq(4), x)
 
-choice_rasters = (
-    elevation=dems.mus,
-    slope=sloperasters.mus,
-    to_water=distance_to_water.mus,
-    to_coast=distance_to_coasts.mus,
-    to_minor_ports=distance_to_ports.mus.minor,
-    to_major_ports=distance_to_ports.mus.major,
-    to_roads=distance_to_roads.mus.primary,
-)
+choice_stacks = map(distance_stacks, dems, slope_stacks) do dist, dem, slope
+    RasterStack((
+        elevation=dem,
+        slope=slope[:slope],
+        to_water=dist[:to_water],
+        # to_coast=distance_stacks.mus[:to_coast],
+        to_minor_ports=dist[:to_minor_ports],
+        to_major_ports=dist[:to_major_ports],
+        to_roads=dist[:to_primary_roads],
+    ))
+end
+
 choice_parameters = (
     elevation=(f=exponential1, scalar=Param(0.001)),
     slope=(f=exponential1, scalar=Param(4.0)),
     to_water=(f=exponential1, scalar=Param(0.01)),
-    to_coast=(f=exponential1, scalar=Param(0.01)),
+    # to_coast=(f=exponential1, scalar=Param(0.01)),
     to_minor_ports=(f=exponential1, scalar=Param(0.01)),
     to_major_ports=(f=exponential1, scalar=Param(0.001)),
     to_roads=(f=exponential1, scalar=Param(0.03)),
 )
-choice_raster_scaled = map(choice_rasters, choice_parameters) do rast, p
-    broadcast(rast) do x
-        ismissing(x) ? missing : p.f(x * p.scalar)
-    end
-end
-plot(choice_raster_scaled.to_water; c=:viridis)
 
-c = choice_raster_scaled
+choice_stacks_scaled = map(choice_stacks) do stack
+    map(stack, choice_parameters) do rast, p
+        broadcast(rast) do x
+            ismissing(x) ? missing : p.f(x * p.scalar)
+        end
+    end |> RasterStack
+end
+
+plot(choice_stacks_scaled.mus; c=:viridis)
+plot(choice_stacks_scaled.reu; c=:viridis)
+plot(choice_stacks_scaled.mus[:to_water]; c=:viridis)
+
+c = choice_stacks_scaled.mus |> NamedTuple
 plot(c.to_roads .* c.to_water .* c.to_major_ports .* c.to_minor_ports .* c.slope; c=:viridis)
 
-
-suitability = map(Aux, namedkeys(suitability_parameters))
+choice_aux = map(Aux, namedkeys(choice_parameters))
 
 # interaction_matrix = (
 #     forest   = lc -> (forest=Param(0.9),  regrowth=0.0,        cleared=Param(0.1),  settled=0.0)[lc],

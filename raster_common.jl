@@ -1,3 +1,4 @@
+using GeoJSON
 using GADM
 using Shapefile
 using RasterDataSources
@@ -6,17 +7,17 @@ using Plots
 using Rasters: Between
 using Plots: plot, plot!
 
+workdir = "/home/raf/PhD/Mauritius"
+datadir = joinpath(workdir, "Data")
+outputdir = joinpath(datadir, "Generated")
+distancedir = joinpath(outputdir, "Distances")
+
 includet("functions.jl")
 includet("lost_land_images.jl")
 
 years = 1638, 1773, 1835, 1872, 1935, "present"
 lc_years = 1638, 1773, 1835, 1872, 1935, "present"
 lc_year_keys = map(y -> "lc_$y", lc_years)
-
-workdir = "/home/raf/PhD/Mauritius"
-datadir = joinpath(workdir, "Data")
-outputdir = joinpath(datadir, "Generated")
-distancedir = joinpath(outputdir, "Distances")
 
 island_keys = (; mus=:mus, reu=:reu)
 

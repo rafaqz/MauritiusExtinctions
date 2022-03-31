@@ -18,34 +18,64 @@ plot(dems.mus ./ maximum(skipmissing(dems.mus)))
 plot!(norder_stack[:lc_1835]; c=:viridis, opacity=0.4)
 # elevationraster = replace(read(elevationraster), elevationraster[10, 10, 1] => -Inf32)
 
-distance_stack = map(island_keys) do i
+distance_stacks = map(island_keys) do i
     read(RasterStack(joinpath(distancedir, string(i)))[Band(1)])
 end
-distance_stack.mus
+distance_stacks.mus
 
 # Slope
-slope_stack = map(dems) do dem
+slope_stacks = map(dems) do dem
     slopeaspect(dem, FD3Linear()) 
 end
-plot(slope_stack.reu)
+plot(slope_stacks.reu)
 
 # Vegetation maps from "Lost Land of the Dodo"
-lostland_stack = map(namedkeys(lostland_image_classes), lostland_image_classes) do i, rasters
+lostland_stacks = map(namedkeys(lostland_image_classes), lostland_image_classes) do i, rasters
     read(RasterStack(joinpath(outputdir, "LostLand", string(i))))
 end 
-plot(lostland_stack.reu)
+plot(lostland_stacks.reu)
 
 # Vegetation classes
-veg_classes = map(lostland_stack, lostland_image_classes) do stack, classes
+lostland_mask_stacks = map(lostland_stacks, lostland_image_classes) do stack, classes
     map(stack, classes) do r, c
         keys = map(x -> Symbol(replace(x, " " => "_", "-" => "_")), c) |> values
         map((1:length(c)...,)) do id
             classify(r, UInt8(id) => true; others=false, missingval=missing)
         end |> NamedTuple{keys} |> RasterStack
-    end
+    end |> NamedTuple{keys(stack)}
 end
 
-plot(veg_classes.mus.veg; c=:viridis)
+typeof(lostland_image_classes)
+
+# Cumulative deforestation means deforestation
+# by the end of the period. So we rename.
+deforestation_phases = (
+    mus = (
+       by_1807=:deforested_before_1807, 
+       by_1835=:deforested_1807_1835,
+       by_1910=:deforested_1835_1910,
+       by_1947=:deforested_1910_1947,
+       by_1970=:deforested_1947_1970,
+       by_2010=:deforested_since_1970
+    ),
+    reu = (
+       by_1700=:C17, 
+       by_1800=:C18,
+       by_1900=:C19,
+       by_2000=:C20,
+    ),
+)
+
+deforestation = map(lostland_mask_stacks, deforestation_phases) do stack, phases
+    phase_stack = stack.phase[values(phases)]
+    reduce(NamedTuple(phase_stack); init=()) do acc, A
+        acc === () ? (A,) : (acc..., last(acc) .| A) 
+    end |> xs -> RasterStack((missingmask(first(xs)), xs...); keys=(:by_1600, keys(phases)...))
+end
+
+plot(deforestation.mus; c=:viridis)
+plot(deforestation.reu; c=:viridis)
+plot(distance_stacks.mus)
 
 # Landcover
 lc_dir = joinpath(datadir, "Landcover/")
@@ -83,3 +113,5 @@ lc_masks = map(lc_rasterized) do rast
 end
 
 # plot(lc_masks.mus; c=:viridis)
+
+nothing
