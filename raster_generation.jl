@@ -14,49 +14,56 @@ foreach(island_keys, distance_to_coasts) do i, raster
 end
 
 # To ports
+# In both cases we have a shift in the
+# location of the major port.
 ports = (   
-     mus=(;
-         major=(;
-             Port_Louie=(-20.1597, 57.5012),
-         ),
-         minor=(;
-             Albion=(-20.218, 57.402),
-             Baie_du_Cap=(-20.491, 57.377),
-             Bel_Ombre=(-20.503, 57.399),
-             Black_River=(-20.362, 57.372),
-             Cap=(-19.986, 57.621),
-             Flic_en_Flac=(-20.275, 57.371),
-             Grand_Baie=(-20.013, 57.584),
-             Grand_Port=(-20.3754, 57.7228),
-             Grand_River_South_East=(-20.288, 57.784),
-             Grande_Gaube=(-20.009, 57.670),
-             La_Gaulette=(-20.427, 57.360),
-             Mahebourg=(-20.405, 57.709),
-             Port_Louie=(-20.1597, 57.5012),
-             Poste_de_Flacq=(-20.163, 57.743),
-             Poudre_de_Or=(-20.0610, 57.685),
-             Souillac=(-20.518, 57.517),
-             Terre_Rouge=(-20.139, 57.499),
-             Trou_dEau_Douce=(-20.244, 57.787),
-             Turtle_Bay=(-20.0834, 57.516),
-         ),
-     ),
-     reu=(;
-         major=(;
-             Le_Port=(-20.937, 55.293),
-             Saint_Denis=(-20.876, 55.446),
-         ),
-         minor=(;
-             Le_Port=(-20.937, 55.293),
-             Saint_Paul=(-21.008, 55.270),
-             Saint_Benoit=(-21.0392, 55.722),
-             Saint_Denis=(-20.876, 55.446),
-             Saint_Joseph=(-21.389, 55.644),
-             Saint_Pierre=(-21.344, 55.481),
-             Saint_Phillipe=(-21.364, 55.767),
-             Sale=(-21.269, 55.335),
-         ),
-     ),
+    mus=(;
+        major1=(;
+            Grand_Port=(-20.3754, 57.7228),
+        ),
+        major2=(;
+            Port_Louie=(-20.1597, 57.5012),
+        ),
+        minor=(;
+            Albion=(-20.218, 57.402),
+            Baie_du_Cap=(-20.491, 57.377),
+            Bel_Ombre=(-20.503, 57.399),
+            Black_River=(-20.362, 57.372),
+            Cap=(-19.986, 57.621),
+            Flic_en_Flac=(-20.275, 57.371),
+            Grand_Baie=(-20.013, 57.584),
+            Grand_Port=(-20.3754, 57.7228),
+            Grand_River_South_East=(-20.288, 57.784),
+            Grande_Gaube=(-20.009, 57.670),
+            La_Gaulette=(-20.427, 57.360),
+            Mahebourg=(-20.405, 57.709),
+            Port_Louie=(-20.1597, 57.5012),
+            Poste_de_Flacq=(-20.163, 57.743),
+            Poudre_de_Or=(-20.0610, 57.685),
+            Souillac=(-20.518, 57.517),
+            Terre_Rouge=(-20.139, 57.499),
+            Trou_dEau_Douce=(-20.244, 57.787),
+            Turtle_Bay=(-20.0834, 57.516),
+        ),
+    ),
+    reu=(;
+        major1=(;
+            Saint_Denis=(-20.876, 55.446),
+        ),
+        major2=(;
+            Le_Port=(-20.937, 55.293),
+        ),
+        minor=(;
+            Le_Port=(-20.937, 55.293),
+            Saint_Paul=(-21.008, 55.270),
+            Saint_Benoit=(-21.0392, 55.722),
+            Saint_Denis=(-20.876, 55.446),
+            Saint_Joseph=(-21.389, 55.644),
+            Saint_Pierre=(-21.344, 55.481),
+            Saint_Phillipe=(-21.364, 55.767),
+            Sale=(-21.269, 55.335),
+        ),
+    ),
 )
 
 foreach(island_keys, dems, ports) do i, dem, classes
@@ -238,22 +245,44 @@ road_names_1725 = [
 ]
 
 road_names_1764 = [road_names_1725...
-    "A10"
-    "A6"
-    # Grand Port
-    "B28"
-    # "A12"
-    "A15"
-    # Moka
-    "B54"
-    "A17"
+   "A10"
+   "Pont Fer Flyover"
+   "A6"
+   # Port Louie
+   "B143"
+   # Pamplemousses
+   "M2"
+   "B39"
+   "B20"
+   "B119"
+   "Trou aux Biches Road"
+   "Terre Rouge Triolet vGrand Baie Road"
+   "Terre Rouge Triolet Grand Baie Road"
+   "B97"
+   # Grand Port
+   "B28"
+   # "A12"
+   "A15"
+   # Moka
+    "A7"
+   "B54"
+   "A17"
+   "B27"
+   # Flaq
+   "B56"
+   "B60"
+   "B23"
+   "B17"
+   # 
 ]
 
 road_names_1813 = [road_names_1764...
+    # North
+    "B13"
+    "B15"
     # Flacq
     "B27" # Three islots
     # Moka
-    # A7
     "B46"
     "B49"
     "B93"
@@ -268,11 +297,13 @@ road_names_1813 = [road_names_1764...
     "B9"
     "A3"
 ]
-old_road_names = road_names_1813
+
+# old_road_names = road_names_1813
+old_road_names = road_names_1764
 highways = highways_json.mus.features
 selected_roads = [f for f in highways if roadin(f, old_road_names)]
 selected_roads
-plot(dems.mus)
+# plot(dems.mus)
 plot(deforestation.mus[:by_1807]; c=:viridis)
 plot!(selected_roads)
 
@@ -281,8 +312,9 @@ plot(distance_stacks.mus[:to_minor_ports])
 for r in old_road_names
     r in all_road_names || println(r)
 end
-# all_road_names = sort([f.properties["name"] for f in highways if haskey(f.properties, "name")])
-filter(n -> occursin("Gros", n), road_names)
+all_road_names = sort([f.properties["name"] for f in highways if haskey(f.properties, "name")])
+filter(n -> occursin("Triolet", n), all_road_names)
+
 highway_masks = map(dems, highways_json) do dem, highway_type
     map(highway_type) do type
         rebuild(boolmask(type; to=dem); name=:waterways)

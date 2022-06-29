@@ -1,3 +1,22 @@
+using Shapefile, DataFrames, Plots, ColorShemes
+shp = Shapefile.Table("/home/raf/PhD/Mauritius/Data/Priorisation_actions_de_lutte_-_note_explicative/enjeu_invasion_actions.shp")
+shp = Shapefile.Table("/home/raf/PhD/Mauritius/Data/Dominique/Past present vegetation shape files/past_vegetation2.shp")
+gc = df[!, :geometry]
+colors = getindex.(Ref(ColorSchemes.viridis), gc)
+p = plot()
+length()
+for (i, shp) in enumerate(df[!, :geometry])
+    plot!(p, df[!, :geometry][1]; col=colors[i][1])
+end
+display(p)
+
+minimum(gc)
+plot(shp; )
+
+df = DataFrame(shp)
+names(df)
+union(df[!, :Invasion])
+
 includet("raster_common.jl")
 
 norder_dir = mkpath(joinpath(outputdir, "Norder"))
@@ -18,10 +37,19 @@ plot(dems.mus ./ maximum(skipmissing(dems.mus)))
 plot!(norder_stack[:lc_1835]; c=:viridis, opacity=0.4)
 # elevationraster = replace(read(elevationraster), elevationraster[10, 10, 1] => -Inf32)
 
-distance_stacks = map(island_keys) do i
-    read(RasterStack(joinpath(distancedir, string(i)))[Band(1)])
+port_timelines = (
+    mus=[1600, 1708],
+    reu=[1600, 1886],
+)
+distance_stacks = map(island_keys, port_timelines) do i, pti
+    st = read(RasterStack(joinpath(distancedir, string(i)))[Band(1)])
+    to_major_port = Raster(cat(st[:to_major1_ports], st[:to_major2_ports]; dims=Ti(pti)); name=:to_major_ports)
+    return RasterStack(st[(:to_coast, :to_minor_ports, :to_primary_roads,:to_secondary_roads,:to_water)]..., to_major_port) 
 end
-distance_stacks.mus
+distance_stacks.mus[:to_major_ports]
+
+# slope = 1
+# travel_speed = 6 * exp(-3.5*(slope + 0.05))
 
 # Slope
 slope_stacks = map(dems) do dem
@@ -34,6 +62,7 @@ lostland_stacks = map(namedkeys(lostland_image_classes), lostland_image_classes)
     read(RasterStack(joinpath(outputdir, "LostLand", string(i))))
 end 
 plot(lostland_stacks.reu)
+plot(lostland_stacks.mus)
 
 # Vegetation classes
 lostland_mask_stacks = map(lostland_stacks, lostland_image_classes) do stack, classes
@@ -65,7 +94,6 @@ deforestation_phases = (
        by_2000=:C20,
     ),
 )
-
 deforestation = map(lostland_mask_stacks, deforestation_phases) do stack, phases
     phase_stack = stack.phase[values(phases)]
     reduce(NamedTuple(phase_stack); init=()) do acc, A

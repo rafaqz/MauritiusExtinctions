@@ -20,29 +20,30 @@ templates = map(dems, borders) do dem, border
     dem
 end
 
-# Land use files
+# Norder land use files
 elevpath = "/home/raf/PhD/Mauritius/Data/Norder/LS factor/DEM/DEM100x100_Resample.img"
 lakespath = "/home/raf/PhD/Mauritius/Data/Norder/LS factor/Lakes/lakes_all.shp"
 soiltypespath = "/home/raf/PhD/Mauritius/Data/Norder/K factor/SoilK.shp"
 rainfallpath = "/home/raf/PhD/Mauritius/Data/Norder/R factor/r_annual.img"
 
-raw_rainfallraster = Raster(rainfallpath)[Band(1)]
+raw_rainfallraster = Raster(rainfallpath, crs=EPSG(3337))[Band(1)]
 # Elevation is a slightly larger raster for some reason
 # `crop` doesn't work because the index is slightly different
-raw_elevationraster = Raster(elevpath; missingval=-3.4028235f38)[Band(1), X(1:520)]
+raw_elevationraster = Raster(elevpath; missingval=-3.4028235f38, crs=EPSG(3337))[Band(1), X(1:520)]
 
 lakes_shapes = Shapefile.Handle(lakespath)
-raw_lakesraster = zeros(Union{Int32,Missing}, dims(raw_rainfallraster))
-raw_lakesraster .= missing
+raw_lakesraster = zeros(Int32, dims(raw_rainfallraster); missingval=typemin(Int32))
+raw_lakesraster .= typemin(Int32)
 for i in eachindex(lakes_shapes.shapes)[1:end-2]
     rasterize!(raw_lakesraster, lakes_shapes.shapes[i]; fill=i)
 end
 soiltypes_shapes = Shapefile.Handle(soiltypespath)
-raw_soilraster = replace_missing(similar(raw_rainfallraster, Int32)) .= missing
+raw_soilraster = replace_missing(similar(raw_rainfallraster, Int32), typemin(Int32)) .= typemin(Int32)
 for i in eachindex(soiltypes_shapes.shapes)
     rasterize!(raw_soilraster, soiltypes_shapes.shapes[i]; fill=i)
 end
-elevationraster = mask(elevationraster; with=soilraster)
+plot(raw_soilraster)
+raw_elevationraster = mask(raw_elevationraster; with=raw_soilraster)
 
 landusedir = "/home/raf/PhD/Mauritius/Data/Norder/C factor/"
 landuse_shapefiles = map(years) do year
@@ -50,7 +51,7 @@ landuse_shapefiles = map(years) do year
     Shapefile.Handle(path)
 end
 raw_landuse_rasters = map(landuse_shapefiles, years) do shapefile, year
-    landuse = zeros(Union{Int32,Missing}, dims(raw_rainfallraster)) .= missing
+    landuse = zeros(Int32, dims(raw_rainfallraster); missingval=typemin(Int32)) .= typemin(Int32)
     # The forested/cleared order swaps after the first three files
     shapes = year in (1773, 1835) ? shapefile.shapes : reverse(shapefile.shapes)
     for (n, shape) in enumerate(shapes)
@@ -67,34 +68,10 @@ raw_norder_stack = merge(RasterStack((
     rainfall=raw_rainfallraster,
 )), raw_landuse_stack)
 
-# Plots.plot(raw_norder_stack; c=:viridis)
-
-# i = 1
-# ps = map(eachindex(years)[2:end]) do i
-#     year = years[i]
-#     @show i year
-#     p = Plots.plot(elevationraster; c=:viridis, legend=:none, ticks=:none, xguide="", yguide="")
-#     ss = boolmask(replace(landuse_snapshots[i], 1 => missingval(landuse_snapshots[i])))
-#     Plots.plot!(p, ss; c=:black, legend=:none, opacity=0.5, xguide="", yguide="")
-#     return p
-# end
-# Plots.plot(ps...)
-
-warp_path = joinpath(outputdir, "WarpPoints/norder.csv")
-if !isfile(warp_path)
-    warp_points = RasterUtils.select_common_points(raw_soilraster;
-        template=templates.mus, missingval=missing, points=points
-    )
-    CSV.write(warp_path, warp_points)
-end
-warp_points = CSV.File(warp_path)
-
-warped_norder_stack = RasterUtils.applywarp(raw_norder_stack; 
-    template=templates.mus, points=DataFrame(warp_points)
-)
+warped_norder_stack = resample(raw_norder_stack; to=dems.mus, filename="test.tif")
 norder_dir = mkpath(joinpath(outputdir, "Norder/"))
 write(string(norder_dir, "/"), warped_norder_stack; ext=".tif")
-RasterStack(norder_dir)
+plot(RasterStack(norder_dir)[Band(1)]; c=:viridis)
 
 m_stl = load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page157_mauritius_settlements_colored.png") |> rotr90
 m_fodies = load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page166_mauritius_fodies_colored.png") |> rotr90
