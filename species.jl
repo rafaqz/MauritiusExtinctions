@@ -1,6 +1,8 @@
 using XLSX, DataFrames
-using Plots
+using Plots, StatsPlots
 using DimensionalData, DimensionalData.LookupArrays
+using OrderedCollections
+using IntervalSets
 
 island_species = (
     mus=(native="Appendix 2", alien="Appendix 5"),
@@ -33,7 +35,7 @@ function filter_population(table)
         span=Explicit(boundsmatrix),
         sampling=Intervals(Start())),
     )
-    populations = Dict()
+    populations = Dict{Symbol,Any}()
     for i in 1:size(table, 1)
         popvals = Vector{Union{Missing,Int}}(undef, length(periods))
         popvals .= missing
@@ -106,12 +108,12 @@ function filter_population(table)
                 popvals[i] = missing
             end
         end
-        populations[common_name] = DimArray(popvals, timedim)
+        populations[Symbol(common_name)] = DimArray(popvals, timedim)
     end
-    return DataFrame(populations)
+    return DataFrame(:period => periods, populations...)
 end
 
-reverse_data_key = Dict(
+reverse_data_key = OrderedDict(
     "abundant" => "a",
     "common" => "b",
     "rare" => "c",
@@ -130,48 +132,135 @@ reverse_data_key = Dict(
     "move into category" => "O",
     missing => missing,
 )
-data_key = Dict(reverse(p) for p in reverse_data_key)
+data_key = OrderedDict(reverse(p) for p in reverse_data_key)
 
+using CSV
+species = CSV.File("/home/raf/PhD/Mauritius/mascarine_species.csv") |> DataFrame
+lostland_names = collect(skipmissing(species[!, :LostLand_name]))
+island_species = names(pops.mus.native)
+map(x -> !in(x, lostland_names) ? x : missing, island_animals) |> skipmissing |> collect
 # Load the transcribed XL file and turn each sheet into a dataframe
 xlfile = "/home/raf/PhD/Mauritius/Data/LostLand/Mauritius_Lost Land of the Dodo_tables_translated symbols.xlsx"
 # run(`libreoffice $xlfile`)
 xl = XLSX.readxlsx(xlfile)
-# df = as_dataframe(xl, :ms_native)
-# df = as_dataframe(xl, :mus_invasive)
 # filter(x -> x[1] == "Dodo", df)
-
 pops = map(island_species) do island
     map(island) do sheetname
         @show sheetname
         filter_population(as_dataframe(xl, sheetname))
     end
 end
-pops.mus.native[!, "Vinson`s Day-gecko"]
-names(pops.mus.native)[54]
 
-introductions = map(pops) do island
-    df = island.alien
-    map(names(df)) do name
-        obs = df[!, name]
-        i = findfirst(x -> !ismissing(x), obs)
-        name => (isnothing(i) ? missing : dims(obs, Ti())[i])
-    end |> Dict
+timeline = pops.mus.alien
+periods = timeline[!, 1]
+groupnames = sort(unique(species.group))
+cschemes = (:Purples, :Blues, :Oranges, :Greens, :Greys, :Reds)
+groupcolors = Dict(groupnames .=> cschemes[1:length(groupnames)])
+species_traits = filter(r -> !ismissing(r.LostLand_name) && r.LostLand_name in names(timeline), species)
+select_timelines = timeline[!, in.(names(timeline), Ref(species_traits.LostLand_name))]
+order = [findfirst(r -> r.LostLand_name == n, Tables.rows(species_traits)) for n in names(select_timelines) ]
+selected_species_traits = species_traits[order, :]
+abundance = Matrix(select_timelines)
+# groupnums = [groupkey[g] for g in grouped.group]
+# sorted_names = species_names[order]
+# sorted_abundance = abundance[:, order]
+groups = selected_species_traits.group
+groupheatmaps = map(groupnames) do gn
+    isingroup = groups .== gn
+    labels = names(select_timelines)[isingroup]
+    selected_abundance = abundance[:, isingroup]
+    kw = gn == first(groupnames) ? (;) : (; yaxis=nothing) 
+    heatmap(labels, periods, selected_abundance; 
+        xguide=gn, c=groupcolors[gn], colorbar=:none,
+        xrotation=45, xticks=(eachindex(labels), labels),
+        tickfontsize=10, xtickfontvalign=:bottom, xtickdirection=:none,
+        yflip=true, kw...
+    )
 end
+widths = [count(==(g), groups) for g in groupnames] ./ length(groups)
+plot(groupheatmaps...; 
+    layout=grid(1, length(widths); widths),
+    size=(2000, 2000),
+)
 
-extinctions = map(pops) do island
-    df = island.native
-    map(names(df)) do name
-        obs = df[!, name]
+species = map(pops) do island
+    dfn = island.native
+    extinction = map(names(dfn)) do name
+        obs = dfn[!, name]
         i = findlast(x -> (!ismissing(x) && x != 0), obs)
         name => (isnothing(i) ? missing : dims(obs, Ti())[i])
-    end |> Dict
+    end |> OrderedDict
+    dfa = island.alien
+    introduction = map(names(dfa)) do name
+        obs = dfa[!, name]
+        i = findfirst(x -> !ismissing(x), obs)
+        name => (isnothing(i) ? missing : dims(obs, Ti())[i])
+    end |> OrderedDict
+    (; extinction, introduction)
 end
 
-sort([introductions.mus...]; by=last)
-sort([introductions.reu...]; by=last)
-sort([extinctions.mus...]; by=last)[1:40]
-sort([extinctions.reu...]; by=last)[1:40]
 
+species_years = map(species) do island
+    map(island) do class
+        filter(sort(collect(class); by=last)) do x
+            !ismissing(x[2]) && x[2] < 2000
+        end
+    end
+end
+
+declen = 10
+decades = 1590:decade:1990
+groups = map(species_years) do island
+    map(island) do class
+        groups = []
+        for d in decades
+            group = [s for s in class if s[2] in d..(d+declen-1)]
+            push!(groups, group)
+        end
+        groups
+    end
+end
+
+decade_counts = map(groups) do island
+    map(class -> length.(class), island)
+end
+decade_annotations = map(groups) do island
+    map(island) do class
+        map(class) do x
+            names = first.(x)
+            join(names, ", ")
+        end
+    end
+end
+labels = [string.(keys(groups))...;;]
+count_matrxs = map((introduction=:introduction, extinction=:extinction)) do key
+    hcat(map(x -> getfield(x, key), values(decade_counts))...)
+end
+
+valigns = (mus=:bottom, reu=:center, rod=:top)
+anns = map(decade_counts, decade_annotations, valigns) do cs, ts, valign
+    offset = 2.5
+    shift = valign == :top ? offset : valign == :bottom ? -offset : 0
+    map(cs, ts) do c, t
+        t = text.(t; pointsize=6, halign=:left)
+        tuple.(0, decades .+ shift, t) 
+    end
+end
+ann = anns.mus
+kw = (linealpha=0, orientation=:horizontal, yflip=true, labels)
+int = groupedbar(decades, count_matrxs.introduction; 
+    xlab="Introductions", legend=:none, kw...
+)
+annotate!(int, anns.mus.introduction)
+annotate!(int, anns.reu.introduction)
+annotate!(int, anns.rod.introduction)
+ext = groupedbar(decades, count_matrxs.extinction;
+    xlab="Extinctions", yticks=:none, kw...
+)
+annotate!(ext, anns.mus.extinction)
+annotate!(ext, anns.reu.extinction)
+annotate!(ext, anns.rod.extinction)
+plot(int, ext; size=(1000, 2000))#; layout=(2, 1))
 
 # Rough ranking of commonness over time
 ranked = map(pops) do origins
@@ -180,6 +269,7 @@ ranked = map(pops) do origins
     end
 end
 ranked.reu.alien
+
 
 key_invasives = [
     "goats",
@@ -212,7 +302,6 @@ Plots.plot(pops.mus.alien[!, x]; labels=x, size=(1000, 1000), ylims=(0, 3))
 # GBIF alternatives
 # Arctos, neotoma, vertnet
 using GBIF, Plots, Rasters, IntervalSets
-species = CSV.File("/home/raf/PhD/Mauritius/mascarine_species.csv") |> DataFrame
 
 # Google search all species, opening the next when the browser is closed.
 for row in eachrow(subset(species, :Origin => ByRow(==("Endemic"))))
