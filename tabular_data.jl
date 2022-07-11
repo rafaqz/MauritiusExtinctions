@@ -26,7 +26,7 @@ sugar_cane = CSV.File(joinpath(datadir, "Population/Sugarcane.csv")) |> DataFram
 
 mus_census_pop = CSV.File(joinpath(datadir, "Population/lutz_census.csv")) |> DataFrame
 mus_early_pop = CSV.File(joinpath(datadir, "Population/early_population.csv")) |> DataFrame
-mus_pop = reduce(vcat, [early_pop, census_pop])
+mus_pop = reduce(vcat, [mus_early_pop, mus_census_pop])
 all_years = 1600:2020
 
 reu_pop = CSV.File("/home/raf/PhD/Mauritius/Data/Population/reunion_population.csv") |> DataFrame
