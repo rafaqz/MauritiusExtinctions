@@ -3,8 +3,10 @@ using Plots, StatsPlots
 using DimensionalData, DimensionalData.LookupArrays
 using OrderedCollections
 using IntervalSets
+using DimensionalData
+using DimensionalData.LookupArrays
 
-island_species = (
+lost_land_appendices = (
     mus=(native="Appendix 2", alien="Appendix 5"),
     reu=(native="Appendix 3", alien="Appendix 6"),
     rod=(native="Appendix 4", alien="Appendix 7"),
@@ -87,13 +89,13 @@ function filter_population(table)
                 # :movein
                 missing
             elseif category == "move out of category" 
+                lastval
                 # @info "category switch in $(table[i, 1])"
                 # :moveout
-                missing
             elseif category == "move into category"
+                lastval
                 # @info "category switch in $(table[i, 1])"
                 # :movein
-                missing
             else
                 continue
             end
@@ -125,9 +127,8 @@ reverse_data_key = OrderedDict(
     "present no record" => "i",
     "not reported" => "j",
     "recorded introduction" => "k",
-    "approximate introduction" => "l",
+    "approximate introduction" => "L",
     "captive only" => "m",
-    "I dont know what this is" => "L",
     "move out of category"  =>  "N",
     "move into category" => "O",
     missing => missing,
@@ -144,43 +145,107 @@ xlfile = "/home/raf/PhD/Mauritius/Data/LostLand/Mauritius_Lost Land of the Dodo_
 # run(`libreoffice $xlfile`)
 xl = XLSX.readxlsx(xlfile)
 # filter(x -> x[1] == "Dodo", df)
-pops = map(island_species) do island
+pops = map(lost_land_appendices) do island
     map(island) do sheetname
         @show sheetname
         filter_population(as_dataframe(xl, sheetname))
     end
 end
 
-timeline = pops.mus.alien
-periods = timeline[!, 1]
-groupnames = sort(unique(species.group))
-cschemes = (:Purples, :Blues, :Oranges, :Greens, :Greys, :Reds)
-groupcolors = Dict(groupnames .=> cschemes[1:length(groupnames)])
-species_traits = filter(r -> !ismissing(r.LostLand_name) && r.LostLand_name in names(timeline), species)
-select_timelines = timeline[!, in.(names(timeline), Ref(species_traits.LostLand_name))]
-order = [findfirst(r -> r.LostLand_name == n, Tables.rows(species_traits)) for n in names(select_timelines) ]
-selected_species_traits = species_traits[order, :]
-abundance = Matrix(select_timelines)
-# groupnums = [groupkey[g] for g in grouped.group]
-# sorted_names = species_names[order]
-# sorted_abundance = abundance[:, order]
-groups = selected_species_traits.group
-groupheatmaps = map(groupnames) do gn
-    isingroup = groups .== gn
-    labels = names(select_timelines)[isingroup]
-    selected_abundance = abundance[:, isingroup]
-    kw = gn == first(groupnames) ? (;) : (; yaxis=nothing) 
-    heatmap(labels, periods, selected_abundance; 
-        xguide=gn, c=groupcolors[gn], colorbar=:none,
-        xrotation=45, xticks=(eachindex(labels), labels),
-        tickfontsize=10, xtickfontvalign=:bottom, xtickdirection=:none,
-        yflip=true, kw...
+function plottimeline(island, category)
+    timeline = getproperty(getproperty(pops, island), category)
+    periods = timeline[!, 1]
+    period_ranges = map(split.(periods, '-')) do (f, l)
+        parse(Int, f):parse(Int, l)-1
+    end
+    period_intervals = map(split.(periods, '-')) do (f, l)
+        Interval{:closed,:open}(parse(Int, f), parse(Int, l))
+    end
+    timerange = first(first(period_ranges)):last(last(period_ranges))
+    groupnames = sort(unique(species.group))
+    cschemes = (:purple, :dodgerblue, :orange, :green4, :yellow3, :firebrick)
+    groupcolors = Dict(groupnames .=> cschemes[1:length(groupnames)])
+    species_traits = filter(r -> !ismissing(r.LostLand_name) && r.LostLand_name in names(timeline), species)
+    selected_timelines = timeline[!, in.(names(timeline), Ref(species_traits.LostLand_name))]
+    order = [findfirst(r -> r.LostLand_name == n, Tables.rows(species_traits)) for n in names(selected_timelines) ]
+    selected_species_traits = species_traits[order, :]
+    abundance = zeros(Union{Int,Missing}, 
+        Dim{:species}(names(selected_timelines)),
+        Ti(timerange), 
+    )
+    for (i, interval) in enumerate(period_intervals)
+        abundance[species=:, Ti=interval] .= Vector(selected_timelines[i, :])
+    end
+    scheme = cgrad([:grey, :white, :red], [0.1, 0.5, 0.4])
+    groups = selected_species_traits.group
+    groupheatmaps = map(groupnames) do gn
+        kw = if gn == last(groupnames)
+            (; xguide="") 
+        else
+            (; xguide="", xaxis=nothing) 
+        end
+        isingroup = groups .== gn
+        scheme = cgrad([:lightgrey, :white, groupcolors[gn]], [0.01, 0.59, 0.4])
+        any(isingroup) || return heatmap(; yticks=:none, showaxis=false, kw...)
+        # TODO split up terrestrial and aquatic birds and animals
+        ab = abundance[species=isingroup][
+        perm = sortperm(selected_species_traits[isingroup, :], :Location)
+        mask = falses(dims(abundance))
+        if category == :native
+            map(eachslice(ab, dims=:species), eachslice(mask, dims=:species)) do a, m
+                any(x -> !ismissing(x), a) || return
+                for i in eachindex(a)
+                    !ismissing(a[i]) && break
+                    a[i] = -1
+                end
+            end
+        end
+        p = heatmap(ab;
+            c=scheme,
+            colorbar=:none,
+            clims=(-1, 3),
+            yguide=gn, yguidefontsize=14, yguide_position=:left, guidefontalign=:left,
+            ytickdirection=:none, grid=:none,
+            tickfontsize=9, ytickfontvalign=:vcenter,
+            kw...
+        )
+    end
+    animal_plot_fraction = 0.85
+    animal_plot_heights = [count(==(g), groups) + 1 for g in groupnames] ./ 
+        (length(groups) + length(groupnames)) .* animal_plot_fraction
+    human_pop_plot = plot(getproperty(human_pop_timeline, island); 
+        title=titlecase("$island $category"),
+        c=:black, fill=(0, :grey),
+        yguidefontrotation=-90,
+        legend=:topleft, ticks=:none, xguide=""
+    )
+    sugar_plot = plot(sugar_timeline; 
+        c=:navajowhite3, fill=(0, :beige),
+        yguidefontrotation=-90, yguidefonthalign=:left,
+        legend=:topleft, ticks=:none, xguide=""
+    )
+    other_plots = ()# (human_pop_plot, sugar_plot)
+    other_plot_heights = map(_ -> (1 - animal_plot_fraction) / length(other_plots), other_plots)
+    heights = [other_plot_heights..., animal_plot_heights...]
+    plot(other_plots..., groupheatmaps...; 
+        layout=grid(length(heights), 1; heights),
+        size=(2000, 1000),
+        link=:x,
     )
 end
-widths = [count(==(g), groups) for g in groupnames] ./ length(groups)
-plot(groupheatmaps...; 
-    layout=grid(1, length(widths); widths),
+
+timelineplots = map(NamedTuple{keys(lost_land_appendices)}(keys(lost_land_appendices))) do island
+    map(NamedTuple{keys(first(lost_land_appendices))}(keys(first(lost_land_appendices)))) do category
+        p = plottimeline(island, category)
+        savefig(p, "$(island)_$category.png")
+        p
+    end
+end
+timelineplots.mus.native
+plot(timelineplots.mus...;
+    layout=grid(2, 1),
     size=(2000, 2000),
+    link=:x,
 )
 
 species = map(pops) do island
@@ -318,10 +383,12 @@ for row in eachrow(subset(species, :Origin => ByRow(==("Endemic"))))
     # run(`chromium https\://www.google.com/search\?tbm=isch\&q=$(search)`)
 end
 
-for sp in species.Species
+for row in Tables.rows(species)
+    sp = row.Species
+    row.Origin == "Alien" || continue
     ismissing(sp) && continue
     search = replace(sp, " " => "+")
-    run(`chromium https\://www.google.com/search\?q=$(search)`)
+    run(`chromium https\://www.google.com/search\?q=$(search)+pet`)
     # run(`chromium https\://www.google.com/search\?tbm=isch\&q=$(search)`)
 end
 
