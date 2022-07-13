@@ -1,4 +1,4 @@
-using Shapefile, DataFrames, Plots, ColorShemes
+using Rasters, Shapefile, DataFrames, Plots, ColorShemes
 shp = Shapefile.Table("/home/raf/PhD/Mauritius/Data/Priorisation_actions_de_lutte_-_note_explicative/enjeu_invasion_actions.shp")
 shp = Shapefile.Table("/home/raf/PhD/Mauritius/Data/Dominique/Past present vegetation shape files/past_vegetation2.shp")
 gc = df[!, :geometry]

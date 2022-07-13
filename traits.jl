@@ -4,34 +4,63 @@ using GBIF2
 using Chain
 using TerminalPager
 
-island_species = @chain CSV.File("/home/raf/PhD/Mauritius/mascarine_species.csv") begin
+mascarene_species = @chain CSV.File("/home/raf/PhD/Mauritius/mascarine_species.csv") begin
     DataFrame
     filter(:Binomial=> !ismissing, _)
 end
-m1 = GBIF2.species_match(island_species.Binomial[1])
-taxa = map(island_species.Binomial) do sci
-    @show sci
+m1 = GBIF2.species_match(mascarene_species.Binomial[1])
+gbif_species_vec = GBIF2.Species[]
+
+taxa = map(mascarene_species.Binomial) do sci
+    println(sci)
     m = GBIF2.species_match(sci)
     if isnothing(m)
         map(_ -> missing, NamedTuple(m1))
     else
-        NamedTuple(m)
+        s = GBIF2.species(m)
+        push!(gbif_species_vec, s)
+        NamedTuple(s)
     end
-end |> DataFrame
-island_taxa = hcat(island_species, taxa)
-island_taxa.species
-names(island_taxa)
+end
+mascarene_taxa = hcat(mascarene_species, taxa)
 
-occurrence_download(; creator="rafaelschouten@gmail.com", species_Key=2486791)
-using GBIF2
-occurrence_download("0383754-210914110416597")
+gbif_species = GBIF2.Table(gbif_species_vec)
+CSV.write("gbif_species.csv", gbif_species)
 
-@time pan_theria = CSV.read("/home/raf/PhD/Traits/PanTHERIA/ECOL_90_184/PanTHERIA_1-0_WR05_Aug2008.txt", DataFrame; missingstring=["-999.00", "-999"]) 
-@time elton_mammals = CSV.read("/home/raf/PhD/Traits/EltonTraits/MamFuncDat.txt", DataFrame)
-@time elton_birds = CSV.read("/home/raf/PhD/Traits/EltonTraits/BirdFuncDat.txt", DataFrame)
-@time lizards = CSV.File("/home/raf/PhD/Traits/Lizards/Appendix S1 - Lizard data version 1.0.csv") |> DataFrame
-@time avonet = CSV.File("/home/raf/PhD/Traits/ELEData/ELEData/TraitData/AVONET1_BirdLife.csv") |> DataFrame
-@time combine = CSV.File("/home/raf/PhD/Traits/Combine/COMBINE_archives/trait_data_imputed.csv") |> DataFrame
+# occurrences = map((mus=:MU, reu=:RE)) do country
+#     map(gbif_species) do sp
+#         ocs = occurrence_search(sp; country, limit=5000)
+#         println(sp.species, " in $country")
+#         ocs
+#     end
+# end;
+# occurrence_dfs = map(occurrences) do ocs
+#     select!(DataFrame(reduce(vcat, ocs)), Not(:institutionKey))
+# end
+# map(keys(occurrences), occurrence_dfs) do k, df
+#     CSV.write("/home/raf/PhD/Mauritius/Data/Occurrences/$(k)_occurrences.csv", df)
+# end
+occurrence_dfs = map((mus=:mus, reu=:reu)) do k
+    CSV.read("/home/raf/PhD/Mauritius/Data/Occurrences/$(k)_occurrences.csv", DataFrame)
+end
+
+x = DataFrames.subset(occurrence_dfs.mus, 
+    :species => ByRow(x -> occursin("Psittacula echo", x)))
+plot(dems.mus)
+scatter!(x.decimalLongitude, x.decimalLatitude)
+
+
+iucn_reptiles = CSV.read("/home/raf/PhD/Traits/IUCN data/Reptile IUCN/assessments.csv", DataFrame)
+names(iucn_reptiles)
+
+@time pan_theria = CSV.read("/home/raf/PhD/Mauritius/Data/Traits/PanTHERIA/ECOL_90_184/PanTHERIA_1-0_WR05_Aug2008.txt", DataFrame; missingstring=["-999.00", "-999"]) 
+@time elton_mammals = CSV.read("/home/raf/PhD/Mauritius/Data/Traits/EltonTraits/MamFuncDat.txt", DataFrame)
+@time elton_birds = CSV.read("/home/raf/PhD/Mauritius/Data/Traits/EltonTraits/BirdFuncDat.txt", DataFrame)
+@time lizards = CSV.File("/home/raf/PhD/Mauritius/Data/Traits/Lizards/Appendix S1 - Lizard data version 1.0.csv") |> DataFrame
+@time avonet = CSV.File("/home/raf/PhD/Mauritius/Data/Traits/ELEData/ELEData/TraitData/AVONET1_BirdLife.csv") |> DataFrame
+@time combine = CSV.File("/home/raf/PhD/Mauritius/Data/Traits/Combine/COMBINE_archives/trait_data_imputed.csv") |> DataFrame
+
+DataFrames.subset(lizards, :Binomial => ByRow(x -> x === "Leiolopisma mauritiana"))
 names(avonet)
 names(combine)
 names(pan_theria)
@@ -42,29 +71,29 @@ combine.iucn2020_binomial
 avonet.Species1
 filter(x -> x.Species1 == target, avonet)
 target = "Lalage newtoni"
-filter(x -> !ismissing(x) && x.Binomial ==(target), island_taxa)
+filter(x -> !ismissing(x) && x.Binomial ==(target), mascarene_taxa)
 filter(x -> !ismissing(x) && x.Species1 ==(target), avonet)
-ilisland_birds = innerjoin(island_taxa, avonet;
+ilisland_birds = innerjoin(mascarene_taxa, avonet;
     on=:Binomial => :Species1, matchmissing=:notequal, makeunique=true,
 )
-# island_mammals = innerjoin(island_taxa, elton_mammals; on = :species => :Scientific, matchmissing=:notequal)
-# island_birds = innerjoin(island_taxa, elton_birds; on = :species => :Scientific, matchmissing=:notequal)
-island_mammals = innerjoin(island_taxa, combine;
+# island_mammals = innerjoin(mascarene_taxa, elton_mammals; on = :species => :Scientific, matchmissing=:notequal)
+# island_birds = innerjoin(mascarene_taxa, elton_birds; on = :species => :Scientific, matchmissing=:notequal)
+island_mammals = innerjoin(mascarene_taxa, combine;
     on=:Binomial => :iucn2020_binomial, matchmissing=:notequal, makeunique=true,
 )
-ilisland_birds = innerjoin(island_taxa, avonet;
+ilisland_birds = innerjoin(mascarene_taxa, avonet;
     on=:Binomial => :Species1, matchmissing=:notequal, makeunique=true,
 )
-island_lizards = innerjoin(island_taxa, lizards;
+island_lizards = innerjoin(mascarene_taxa, lizards;
     on=:species => :Binomial, matchmissing=:notequal, makeunique=true
 )
-# island_lizards = innerjoin(island_taxa, lizards;
+# island_lizards = innerjoin(mascarene_taxa, lizards;
     # on=:Binomial => :Binomial, matchmissing=:notequal, makeunique=true
 # )
 
 found = vcat(island_lizards.Common, island_birds.Common, island_mammals.Common)
 notfound = symdiff(found, island_species.Common)
-notfoundtaxa = filter(x -> x.Common in notfound, island_taxa)
+notfoundtaxa = filter(x -> x.Common in notfound, mascarene_taxa)
 pager(sort(notfoundtaxa, :Binomial))
 
 
