@@ -7,8 +7,8 @@ using OffsetArrays
 function _initialise_cost!(active, acc, origins, hood)
     for I in CartesianIndices(origins)
         if @inbounds origins[I] > zero(eltype(origins))
-            # Add index if it has any neighbors not in `origins`
-            # as we only need to use the edges of the origin areas.
+            # Add an index to the `active` set if it has any neighbors not
+            # in `origins` as we only need to use the edges of the origin areas.
             Neighborhoods.apply_neighborhood(hood, origins, I) do hood, val
                 @inbounds acc[I] = zero(eltype(acc))
                 if any(map(==(zero(eltype(origins))), hood))
@@ -46,7 +46,9 @@ function cost_distance(f=meancost; costs, origins, kw...)
     acc = OffsetArray(fill(typemax(Float64), size(origins) .+ 2), map(s -> 0:s+1, size(origins)))
     # Write the cost-distance to the accumulator grid
     cost_distance!(f, acc; origins, costs, kw...)
-    if costs isa AbstractDimArray
+    # Remove the padding edge, and wrap the output as an AbstractRaster
+    # if costs was one, updating the name and `missingval`.
+    if costs isa AbstractRaster
         return rebuild(costs; data=Neighborhoods.unpad_view(acc, 1), name=:cost, missingval=typemax(Float64))
     else
         return Neighborhoods.unpad_view(acc, 1)
@@ -71,7 +73,9 @@ function cost_distance!(f, acc;
     # reducing cost-distance somewhere on the grid.
     while n_active > 0
         for I in active 
+            # Get the current accumulated cost
             @inbounds a = acc[I]
+            # Get the cell cost (may be a NamedTuple if costs is a RasterStack)
             @inbounds cell_cost = costs[I]
             # Missing cells are skipped
             checkmissing(cell_cost) && continue
