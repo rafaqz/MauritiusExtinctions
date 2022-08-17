@@ -1,3 +1,4 @@
+using Rasters
 using DimensionalData
 using DynamicGrids
 using DynamicGrids.Neighborhoods
@@ -7,10 +8,10 @@ using OffsetArrays
 function _initialise_cost!(active, acc, origins, hood)
     for I in CartesianIndices(origins)
         if @inbounds origins[I] > zero(eltype(origins))
+            @inbounds acc[I] = zero(eltype(acc))
             # Add an index to the `active` set if it has any neighbors not
             # in `origins` as we only need to use the edges of the origin areas.
-            Neighborhoods.apply_neighborhood(hood, origins, I) do hood, val
-                @inbounds acc[I] = zero(eltype(acc))
+            Neighborhoods.applyneighborhood(hood, origins, I) do hood, val
                 if any(map(==(zero(eltype(origins))), hood))
                     push!(active, I)
                 end
@@ -55,7 +56,7 @@ function cost_distance(f=meancost; costs, origins, kw...)
     end
 end
 function cost_distance!(f, acc;
-    origins, costs, cellsize=1, checkmissing=isequal(missingval(costs)),
+    origins, costs, cellsize=1, missingval=missingval(costs),
 )
     # The neighborood is a simple 3 * 3 moore neighborhood (ring)
     hood = Moore{1}()
@@ -78,7 +79,7 @@ function cost_distance!(f, acc;
             # Get the cell cost (may be a NamedTuple if costs is a RasterStack)
             @inbounds cell_cost = costs[I]
             # Missing cells are skipped
-            checkmissing(cell_cost) && continue
+            ismissingval(cell_cost, missingval) && continue
             # Loop over the neighborhood offsets and distances from center cell
             for (O, d) in zip(Neighborhoods.cartesian_offsets(hood), Neighborhoods.distances(hood))
                 NI = O + I
@@ -86,7 +87,7 @@ function cost_distance!(f, acc;
                 checkbounds(Bool, costs, NI) || continue
                 @inbounds neighbor_cost = costs[NI]
                 # Missing values neighbors are skipped
-                checkmissing(neighbor_cost) && continue
+                ismissingval(neighbor_cost, missingval) && continue
                 @inbounds cur_cost = acc[NI]
                 # Calculate the new cost by adding the cost to get to the
                 # neighbor to the cost to get to the current cell
@@ -109,6 +110,10 @@ function cost_distance!(f, acc;
     end
     return acc
 end
+
+ismissingval(val, missingval) = val === missingval
+ismissingval(vals::NamedTuple, missingval) = any(map(val -> ismissingval(val, missingval), vals))
+ismissingval(vals::NamedTuple, missingvals::NamedTuple) = any(map(ismissingval, vals, missingvals)) 
 
 """
     meancost(a, b, distance)
