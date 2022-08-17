@@ -8,6 +8,7 @@ function _initialise_cost!(active, acc, origins, hood)
     for I in CartesianIndices(origins)
         if @inbounds origins[I] > zero(eltype(origins))
             # Add index if it has any neighbors not in `origins`
+            # as we only need to use the edges of the origin areas.
             Neighborhoods.apply_neighborhood(hood, origins, I) do hood, val
                 @inbounds acc[I] = zero(eltype(acc))
                 if any(map(==(zero(eltype(origins))), hood))
@@ -38,44 +39,71 @@ The function `f` accept 3 parameters: `a`, `b`, and `distance`:
 By default, `f=meancost` so that `costs` taken as a grid of travel costs.
 """
 function cost_distance(f=meancost; costs, origins, kw...)
+    # Create a grid we will update cost distance into.
+    # The initial cost is the maximum `Float64` value. This will later
+    # be the `missingval`, as it will remain in any cells that were not touched by
+    # the algorithm (because one of the other arrays has missing values there).
     acc = OffsetArray(fill(typemax(Float64), size(origins) .+ 2), map(s -> 0:s+1, size(origins)))
+    # Write the cost-distance to the accumulator grid
     cost_distance!(f, acc; origins, costs, kw...)
+    if costs isa AbstractDimArray
+        return rebuild(costs; data=Neighborhoods.unpad_view(acc, 1), name=:cost, missingval=typemax(Float64))
+    else
+        return Neighborhoods.unpad_view(acc, 1)
+    end
 end
 function cost_distance!(f, acc;
     origins, costs, cellsize=1, checkmissing=isequal(missingval(costs)),
 )
+    # The neighborood is a simple 3 * 3 moore neighborhood (ring)
     hood = Moore{1}()
+    # The active cells are a `Set` of `CartesianIndices` linking 
+    # to positions in acc/origins/costs.
+    # "active" means assigned their lowest cost in the last round, 
+    # but with neighbors whose cost has not been recalulated.
     active = Set{CartesianIndex{2}}()
     new_active = Set{CartesianIndex{2}}()
+    # We add the first active cells from the `origins` array
     _initialise_cost!(active, acc, origins, hood)
+    # And calculate how many active cells there are
     n_active = length(active)
+    # Now loop while there are still active cells that are
+    # reducing cost-distance somewhere on the grid.
     while n_active > 0
         for I in active 
             @inbounds a = acc[I]
             @inbounds cell_cost = costs[I]
+            # Missing cells are skipped
             checkmissing(cell_cost) && continue
+            # Loop over the neighborhood offsets and distances from center cell
             for (O, d) in zip(Neighborhoods.cartesian_offsets(hood), Neighborhoods.distances(hood))
                 NI = O + I
+                # Out of bounds cells are skipped
                 checkbounds(Bool, costs, NI) || continue
                 @inbounds neighbor_cost = costs[NI]
+                # Missing values neighbors are skipped
                 checkmissing(neighbor_cost) && continue
                 @inbounds cur_cost = acc[NI]
+                # Calculate the new cost by adding the cost to get to the
+                # neighbor to the cost to get to the current cell
                 new_cost = a + f(cell_cost, neighbor_cost, d * cellsize)
+                # Update the costs if the new cost is lower than any previous path
                 if cur_cost > new_cost
                     @inbounds acc[NI] = new_cost
                     push!(new_active, NI)
                 end
             end
         end
+        # Remove the active cells, their neighbors have been calculated and 
+        # added to new_active, so they are done unless a cheaper path reaches 
+        # them again later on.
         empty!(active)
+        # Swap the active and new active Dicts for the next round of calculations
         active, new_active = new_active, active
+        # Update how many cells we are calculating next round
         n_active = length(active)
     end
-    if costs isa AbstractDimArray
-        return rebuild(costs; data=Neighborhoods.unpad_view(acc, 1), name=:cost, missingval=typemax(Float64))
-    else
-        return Neighborhoods.unpad_view(acc, 1)
-    end
+    return acc
 end
 
 """
