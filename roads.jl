@@ -31,12 +31,6 @@ ways_json = map(island_keys) do ik
     GeoJSON.read(read(json_path))
 end
 
-waterways_path = joinpath(datadir, "water.geojson")
-waterways_fc = GeoJSON.read(read(waterways_path))
-watermasks = map(dems) do dem 
-    rebuild(boolmask(waterways_fc; to=dem); name=:waterways)
-end
-
 mus_way_names_1725 = [
     # Port Louis
     "Royal Road Grand River"
@@ -384,10 +378,10 @@ mus_way_names = mus_way_names_1725
 # mus_way_names = mus_way_names_1813
 # mus_way_names = mus_way_names_1880
 reu_way_names = reu_way_names_1804
-ways = map(x -> x.features, ways_json)
+ways = map(x -> GeoJSON.features(x), ways_json)
 way_names = (mus=mus_way_names, reu=reu_way_names)
 plot(dems.reu)
-plot!(select_ways(ways.mus, way_names.mus))
+plot!(select_ways(ways.reu, way_names.reu))
 # plot_ways(ways.reu, way_names.reu, dems.reu)
 
 ag = Raster("/home/raf/PhD/Mauritius/Data/Deforestation-Mauritius/rasters/agr_suitab/agr_suitab_h/w001001.adf"; crs=EPSG(3337))
