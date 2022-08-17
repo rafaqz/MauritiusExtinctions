@@ -4,10 +4,10 @@ using Shapefile
 using RasterDataSources
 using Rasters
 using Plots
-using Rasters: Between
+using Rasters: Between, trim
 using Plots: plot, plot!
 
-workdir = "/home/raf/PhD/Mauritius"
+workdir = "/home/raf/PhD/Mascarenes"
 datadir = joinpath(workdir, "Data")
 outputdir = joinpath(datadir, "Generated")
 distancedir = joinpath(outputdir, "Distances")

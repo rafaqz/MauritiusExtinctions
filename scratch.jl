@@ -181,3 +181,31 @@ watermasks.mus .& lc_masks.mus[:Sugarcane] |> plot
 #         plot((!).(rem); c=:spring, title="Remnant")
 #     )
 # end
+
+includet("cost_distance.jl")
+
+m = typemin(Int)
+costs = [
+    1 3 4 4 3 2
+    4 6 2 3 7 6         
+    5 8 7 5 6 6
+    1 4 5 m 5 1 
+    4 7 5 m 2 6
+    1 2 2 1 3 4
+]
+origins = [
+    0 1 1 0 0 0
+    0 0 1 0 0 0         
+    0 0 0 0 0 0
+    0 0 0 0 0 0 
+    0 0 0 0 0 0
+    2 0 0 0 0 0
+]
+cost_distance(; origins, costs, missingval=typemin(Int))
+
+using ProfileView
+using Cthulhu
+using BenchmarkTools
+@btime cost_distance(; origins, costs, missingval=typemin(Int))
+@profview for _ in 1:10000 cost_distance(source, costs; missingval=typemin(Int)) end
+

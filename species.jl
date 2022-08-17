@@ -12,25 +12,26 @@ include("tabular_data.jl")
 include("plots.jl")
 include("lostland_filter.jl")
 
-plants_csv = "/home/raf/PhD/Mauritius/tassim_reunion_plant_introductions.csv"
-# run(`libreoffice $plants_csv`)
-reu_plants = @chain begin
-    CSV.File(plants_csv)
-    DataFrame
-    dropmissing(_, :Introduction_date)
-    sort(_, :Introduction_date)
-end
-reu_plants[!, :Introduction_date] = map(reu_plants.Introduction_date) do d
-    length(d) >= 4 ? parse(Int, d[end-3:end]) : missing
-end
-reu_plants = dropmissing(reu_plants, :Introduction_date)
-
 years = 1600:2007
-counts = zeros(axes(years))
-for (i, y) in enumerate(years)
-    counts[i] = count(==(y), reu_plants.Introduction_date)
-end
-plant_introductions = DimArray(cumsum(counts), Ti(years); name=:num_alien_plants)
+
+# plants_csv = joinpath(workdir, "tassim_reunion_plant_introductions.csv")
+# run(`libreoffice $plants_csv`)
+# reu_plants = @chain begin
+#     CSV.File(plants_csv)
+#     DataFrame
+#     dropmissing(_, :Introduction_date)
+#     sort(_, :Introduction_date)
+# end
+# reu_plants[!, :Introduction_date] = map(reu_plants.Introduction_date) do d
+#     length(d) >= 4 ? parse(Int, d[end-3:end]) : missing
+# end
+# reu_plants = dropmissing(reu_plants, :Introduction_date)
+
+# counts = zeros(axes(years))
+# for (i, y) in enumerate(years)
+#     counts[i] = count(==(y), reu_plants.Introduction_date)
+# end
+# plant_introductions = DimArray(cumsum(counts), Ti(years); name=:num_alien_plants)
 
 lost_land_appendices = (
     mus=(native="Appendix 2", alien="Appendix 5"),
@@ -44,8 +45,8 @@ lost_land_appendices = (
 # Its not clear how to deal with grouped categories like `rats`
 
 using CSV
-mascarine_species = CSV.File("/home/raf/PhD/Mauritius/mascarine_species.csv") |> DataFrame
-xlfile = "/home/raf/PhD/Mauritius/Data/LostLand/Mauritius_Lost Land of the Dodo_tables_translated symbols.xlsx"
+mascarine_species = CSV.File(joinpath(workdir, "mascarine_species.csv")) |> DataFrame
+xlfile = joinpath(datadir, "LostLand/Mauritius_Lost Land of the Dodo_tables_translated symbols.xlsx")
 # run(`libreoffice $xlfile`)
 xl = XLSX.readxlsx(xlfile)
 pops = map(lost_land_appendices) do island
@@ -71,8 +72,6 @@ plot(timelineplots.reu..., introplot;
     size=(2000, 2000),
     link=:x,
 )
-
-
 
 species = map(pops) do island
     dfn = island.native

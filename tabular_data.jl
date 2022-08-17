@@ -21,7 +21,8 @@ end
 
 # Population
 # human_pop = CSV.File(joinpath(workdir, "Data/Population/Population.csv")) |> DataFrame
-datadir = "/home/raf/PhD/Mauritius/Data"
+workdir = "/home/raf/PhD/Mascarenes/"
+datadir = joinpath(workdir, "Data")
 sugar_cane = CSV.File(joinpath(datadir, "Population/Sugarcane.csv")) |> DataFrame
 
 mus_census_pop = CSV.File(joinpath(datadir, "Population/lutz_census.csv")) |> DataFrame
@@ -29,7 +30,7 @@ mus_early_pop = CSV.File(joinpath(datadir, "Population/early_population.csv")) |
 mus_pop = reduce(vcat, [mus_early_pop, mus_census_pop])
 all_years = 1600:2020
 
-reu_pop = CSV.File("/home/raf/PhD/Mauritius/Data/Population/reunion_population.csv") |> DataFrame
+reu_pop = CSV.File(joinpath(datadir, "Population/reunion_population.csv")) |> DataFrame
 
 human_pop_timeline = map((mus=mus_pop, reu=reu_pop, rod=reu_pop)) do pop
     pop_vec = interpolate_years(pop, (:Year, :Population))

@@ -1,6 +1,9 @@
-using Rasters, Shapefile, DataFrames, Plots, ColorShemes
-shp = Shapefile.Table("/home/raf/PhD/Mauritius/Data/Priorisation_actions_de_lutte_-_note_explicative/enjeu_invasion_actions.shp")
-shp = Shapefile.Table("/home/raf/PhD/Mauritius/Data/Dominique/Past present vegetation shape files/past_vegetation2.shp")
+# using Rasters, Shapefile, DataFrames, Plots, ColorShemes
+includet("raster_common.jl")
+includet("cost_distance.jl")
+
+# shp = Shapefile.Table(joinpath(datadir, "Priorisation_actions_de_lutte_-_note_explicative/enjeu_invasion_actions.shp"))
+# shp = Shapefile.Table(joinpath(datadir, "Dominique/Past present vegetation shape files/past_vegetation2.shp"))
 gc = df[!, :geometry]
 colors = getindex.(Ref(ColorSchemes.viridis), gc)
 p = plot()
@@ -16,8 +19,6 @@ plot(shp; )
 df = DataFrame(shp)
 names(df)
 union(df[!, :Invasion])
-
-includet("raster_common.jl")
 
 norder_dir = mkpath(joinpath(outputdir, "Norder"))
 norder_stack = mask(replace_missing(RasterStack(norder_dir)[Band(1)]); with=dems.mus)
@@ -47,15 +48,50 @@ distance_stacks = map(island_keys, port_timelines) do i, pti
     return RasterStack(st[(:to_coast, :to_minor_ports, :to_primary_roads,:to_secondary_roads,:to_water)]..., to_major_port) 
 end
 distance_stacks.mus[:to_major_ports]
+plot(distance_stacks.mus[:to_secondary_roads])
 
-# slope = 1
-# travel_speed = 6 * exp(-3.5*(slope + 0.05))
 
 # Slope
 slope_stacks = map(dems) do dem
-    slopeaspect(dem, FD3Linear()) 
+    slopeaspect(dem, FD3Linear())
 end
 plot(slope_stacks.reu)
+
+# Gives a weird answer
+# slopecost(slope) = 6 / exp(-3.5 * (slope + 0.05))
+# slopecost(0.1)
+using BenchmarkTools
+using ProfileView
+
+_contains((y, x)) = Y(Contains(y)), X(Contains(x))
+function _costs(dems, ports)
+    map(dems, ports) do costs, ports
+        origins = zeros(Int, dims(costs))
+        # map(ports[(:major1, :major2)]) do ps
+        map(ports) do ps
+            map(ps) do p
+                origins[_contains(p)...] = 1
+            end
+        end
+        costfunc = CombinedCost((dem=SlopeCost(slopefactor=-3.5, distfactor=0.05), roads=meancost), *)
+        cost_distance(costfunc; origins, costs, cellsize=90)
+    end
+end
+
+includet("ports.jl")
+ag = 2
+@time costs = _costs(dems, ports)
+@time agcosts = _costs(agdems, ports)
+agcosts2 = map(d -> Rasters.aggregate(mean, d, ag), costs)
+costmean = maximum((maximum(skipmissing(agcosts.reu)), maximum(skipmissing(agcosts2.reu))))
+plot((agcosts.reu .- agcosts2.reu) / costmean; )
+
+c_d.mus
+clims = (0, 3000)
+color = :magma
+plot(plot(c_d.reu; clims, color, title="mus cost"), plot(c_d.mus; clims, color, title="reu cost"); size=(1000,1000))
+
+savefig("costdistance_allports.png")
 
 # Vegetation maps from "Lost Land of the Dodo"
 lostland_stacks = map(namedkeys(lostland_image_classes), lostland_image_classes) do i, rasters

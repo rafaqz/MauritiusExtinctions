@@ -10,7 +10,6 @@ abstract type SlopeConvolution <: SlopeFilter end
 # Not all slope algorithms can provide aspect
 abstract type SlopeAspectConvolution <: SlopeConvolution end
 
-# 
 struct FD2 <: SlopeAspectConvolution end
 struct FD3Reciprocal <: SlopeAspectConvolution end
 struct FD3ReciprocalSquared <: SlopeAspectConvolution end
@@ -105,7 +104,7 @@ end
 for (f, filt) in (:slope => :slope_filter, :aspect => :aspect_filter, :_slopeaspect => :slopeaspect_filter)
     @eval begin 
         function $(f)(elevation::Raster, method=FD2())
-            padded = Neighborhoods.addpadding(parent(elevation), 1; padval=missingval(elevation))
+            padded = Neighborhoods.pad_array(parent(elevation), 1; padval=missingval(elevation))
             newdata = $(f)(padded, FD2())
             rebuild(elevation; data=newdata, name=$(QuoteNode(f))) 
         end
@@ -160,7 +159,7 @@ function clean_categories(src::AbstractArray;
     dst = similar(src, promote_type(eltype(src), typeof(missingval)))
     dst .= missingval
     broadcast!(view(dst, ax...), CartesianIndices(ax)) do I
-        DynamicGrids.Neighborhoods.applyneighborhood(neighborhood, src, I) do hood, v
+        DynamicGrids.Neighborhoods.apply_neighborhood(neighborhood, src, I) do hood, v
             catcounts = map(categories) do c
                 ds = DynamicGrids.distances(hood)
                 acc = zero(1/first(ds))

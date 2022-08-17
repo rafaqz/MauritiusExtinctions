@@ -49,6 +49,37 @@ x = DataFrames.subset(occurrence_dfs.mus,
 plot(dems.mus)
 scatter!(x.decimalLongitude, x.decimalLatitude)
 
+using Interfaces
+@interface ArrayInterface (
+    mandatory = (
+        size = x -> length(x) == prod(size(x)),
+        indices = (
+            x -> length(eachindex(IndexLinear(), x)) == length(x),
+            x -> length(CartesianIndices(axes(x))) == length(x),
+            x -> map((l, c) -> x[l] == x[c], CartesianIndices(axes(x)), eachindex(IndexLinear(), x)) 
+        ) 
+    ),
+    optional = (
+        setindex! = x -> false # need to write these...,
+        broadcast = x -> false,
+    )
+)
+
+using Test
+function test_array_indices(x)
+    lininds = eachindex(IndexLinear(), x)
+    carinds = CartesianIndices(axes(x))
+    for (li,ci) = zip(lininds,carinds)
+        @test x[li] == x[ci]
+    end
+    length(lininds) == length(carinds) == length(x) == prod(size(x))
+end
+
+@interface ArrayInterface (mandatory=(indices=test_array_indices,), optional=())
+
+@implements ArrayInterface Array [zeros(10, 10)]
+Interfaces.implements(ArrayInterface, Array)
+Interfaces.implements(ArrayInterface{:setindex!}, Array)
 
 iucn_reptiles = CSV.read("/home/raf/PhD/Traits/IUCN data/Reptile IUCN/assessments.csv", DataFrame)
 names(iucn_reptiles)
@@ -60,7 +91,8 @@ names(iucn_reptiles)
 @time avonet = CSV.File("/home/raf/PhD/Mauritius/Data/Traits/ELEData/ELEData/TraitData/AVONET1_BirdLife.csv") |> DataFrame
 @time combine = CSV.File("/home/raf/PhD/Mauritius/Data/Traits/Combine/COMBINE_archives/trait_data_imputed.csv") |> DataFrame
 
-DataFrames.subset(lizards, :Binomial => ByRow(x -> x === "Leiolopisma mauritiana"))
+x = DataFrames.subset(lizards, :Binomial => ByRow(x -> x === "Leiolopisma mauritiana"))
+NamedTuple(pairs(x[1, :]))
 names(avonet)
 names(combine)
 names(pan_theria)
