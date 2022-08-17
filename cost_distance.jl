@@ -82,18 +82,19 @@ function cost_distance!(f, acc;
             ismissingval(cell_cost, missingval) && continue
             # Loop over the neighborhood offsets and distances from center cell
             for (O, d) in zip(Neighborhoods.cartesian_offsets(hood), Neighborhoods.distances(hood))
+                # Get the index of the neighboring cell
                 NI = O + I
-                # Out of bounds cells are skipped
+                # Out of bounds cells are skipped because our costs are not padded
                 checkbounds(Bool, costs, NI) || continue
                 @inbounds neighbor_cost = costs[NI]
-                # Missing values neighbors are skipped
+                # Missing valued neighbors are skipped
                 ismissingval(neighbor_cost, missingval) && continue
                 @inbounds cur_cost = acc[NI]
                 # Calculate the new cost by adding the cost to get to the
                 # neighbor to the cost to get to the current cell
                 new_cost = a + f(cell_cost, neighbor_cost, d * cellsize)
                 # Update the costs if the new cost is lower than any previous path
-                if cur_cost > new_cost
+                if new_cost < cur_cost
                     @inbounds acc[NI] = new_cost
                     push!(new_active, NI)
                 end
