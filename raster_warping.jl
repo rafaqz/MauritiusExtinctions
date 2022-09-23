@@ -1,17 +1,19 @@
 # Fix the projection of rasters by manually 
 # warping them to match another raster
-using GLMakie
 using Rasters
 using Rasters.LookupArrays
 using Rasters: set, Between, trim, Band
+using RasterUtils
 using Shapefile
 using DataFrames
 using Images
 using CSV
 using GeoInterface
 using Colors, ColorVectorSpace
+using Statistics
+using GLMakie
+
 includet("raster_common.jl")
-includet("mapfitting.jl")
 includet("functions.jl")
 includet("lost_land_images.jl")
 
@@ -21,10 +23,10 @@ templates = map(dems, borders) do dem, border
 end
 
 # Norder land use files
-elevpath = "/home/raf/PhD/Mauritius/Data/Norder/LS factor/DEM/DEM100x100_Resample.img"
-lakespath = "/home/raf/PhD/Mauritius/Data/Norder/LS factor/Lakes/lakes_all.shp"
-soiltypespath = "/home/raf/PhD/Mauritius/Data/Norder/K factor/SoilK.shp"
-rainfallpath = "/home/raf/PhD/Mauritius/Data/Norder/R factor/r_annual.img"
+elevpath = "$datadir/Norder/LS factor/DEM/DEM100x100_Resample.img"
+lakespath = "$datadir/Norder/LS factor/Lakes/lakes_all.shp"
+soiltypespath = "$datadir/Norder/K factor/SoilK.shp"
+rainfallpath = "$datadir/Norder/R factor/r_annual.img"
 
 raw_rainfallraster = Raster(rainfallpath, crs=EPSG(3337))[Band(1)]
 # Elevation is a slightly larger raster for some reason
@@ -45,7 +47,7 @@ end
 plot(raw_soilraster)
 raw_elevationraster = mask(raw_elevationraster; with=raw_soilraster)
 
-landusedir = "/home/raf/PhD/Mauritius/Data/Norder/C factor/"
+landusedir = "$datadir/Norder/C factor/"
 landuse_shapefiles = map(years) do year
     path = joinpath(landusedir, string(year, ".shp"))
     Shapefile.Handle(path)
@@ -73,12 +75,13 @@ norder_dir = mkpath(joinpath(outputdir, "Norder/"))
 write(string(norder_dir, "/"), warped_norder_stack; ext=".tif")
 plot(RasterStack(norder_dir)[Band(1)]; c=:viridis)
 
-m_stl = load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page157_mauritius_settlements_colored.png") |> rotr90
-m_fodies = load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page166_mauritius_fodies_colored.png") |> rotr90
-re_stl = load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page176_reunion_settlements.png") |> rotr90
-ro_stl = load("/home/raf/PhD/Mauritius/Data/LostLand/Maps/page194_rodrigues_settlements.png") |> rotr90
+m_stl = load("$datadir/LostLand/Maps/page157_mauritius_settlements_colored.png") |> rotr90
+m_fodies = load("$datadir/LostLand/Maps/page166_mauritius_fodies_colored.png") |> rotr90
+re_stl = load("$datadir/LostLand/Maps/page176_reunion_settlements.png") |> rotr90
+ro_stl = load("$datadir/LostLand/Maps/page194_rodrigues_settlements.png") |> rotr90
 # Plots.plot(templates.mus)
 
+m_stl = load("$datadir/LostLand/Maps/page157_mauritius_settlements_colored.png") |> rotr90
 
 # Lost Land map images from pdf
 
@@ -199,3 +202,31 @@ end
 # keys(lostland_rasters.mus)
 
 # map(1:6)
+
+rem = load("$datadir/LostLand/Maps/page159_mauritius_remnants.png") |> rotr90
+RasterUtils.selectcolors(rem)
+
+using GLMakie
+display(plot(rand(10, 10)))
+fig = Figure()
+
+ax = Axis(fig[1, 1])
+fig[2, 1] = buttongrid = GridLayout(tellwidth = false)
+
+counts = Node([1, 4, 3, 7, 2])
+
+buttonlabels = [lift(x -> "Count: $(x[i])", counts) for i in 1:5]
+
+buttons = buttongrid[1, 1:5] = [Button(fig, label = l) for l in buttonlabels]
+
+for i in 1:5
+    on(buttons[i].clicks) do n
+        counts[][i] += 1
+        notify(counts)
+    end
+end
+
+barplot!(counts, color = cgrad(:Spectral)[LinRange(0, 1, 5)])
+ylims!(ax, 0, 20)
+
+fig
