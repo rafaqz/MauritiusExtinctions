@@ -2,6 +2,8 @@ using DynamicGrids
 using LandscapeChange
 using Distributions
 
+include("tabular_data.jl")
+
 # Human Population and species introduction events
 landscape_events = (
     mus = (

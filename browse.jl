@@ -13,13 +13,15 @@ for row in eachrow(subset(species, :Origin => ByRow(==("Endemic"))))
     run(`chromium https\://www.google.com/search\?q=$(search)`)
     # run(`chromium https\://www.google.com/search\?tbm=isch\&q=$(search)`)
 end
-
-for row in Tables.rows(species)
+mascarine_species
+for row in Tables.rows(mascarine_species)
     sp = row.Species
-    row.Origin == "Alien" || continue
+    row.Origin === "Alien" && continue
+    (!ismissing(row.Reunion) && row.Reunion == "TRUE") || continue
     ismissing(sp) && continue
     search = replace(sp, " " => "+")
-    run(`chromium https\://www.google.com/search\?q=$(search)+pet`)
+    clipboard(row.Common_name)
+    run(`chromium https\://www.google.com/search\?q=$(search)\&tbm=isch\&tbs=isz:cl`)
     # run(`chromium https\://www.google.com/search\?tbm=isch\&q=$(search)`)
 end
 

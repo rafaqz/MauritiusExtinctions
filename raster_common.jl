@@ -4,7 +4,7 @@ using Shapefile
 using RasterDataSources
 using Rasters
 using Plots
-using Rasters: Between, trim
+using Rasters: Between, trim, Band
 using Plots: plot, plot!
 
 workdir = "/home/raf/PhD/Mascarenes"
@@ -21,11 +21,13 @@ lc_year_keys = map(y -> "lc_$y", lc_years)
 
 island_keys = (; mus=:mus, reu=:reu)
 
-borders = (
+gdal_borders = (
     mus=GADM.get("MUS").geom[1],
     reu=GADM.get("REU").geom[1],
     # rod=GADM.get("MUS").geom[1],
 )
+borders = (mus=GeoInterface.convert(MultiPolygon, gdal_borders.mus),
+           reu=MultiPolygon([GeoInterface.convert(Polygon, gdal_borders.reu)]))
 bbox = (
     # mus=((57.1, 57.9), (-20.6, -19.8)), # with islands
     mus=((57.1, 57.9), (-20.6, -19.949)),
@@ -48,3 +50,7 @@ reu_dem = replace_missing(read(trim(view(Raster(reu_tile), border_selectors.reu.
 # rod_tile  = getraster(SRTM; bounds=rod_bounds)[1]
 # rod_dem = trim(view(dem3, border_selectors...); pad=10)
 dems = (mus=mus_dem, reu=reu_dem)
+
+mauritius_proj_dem = Raster("/home/raf/PhD/Mascarenes/Data/Norder/LS factor/DEM/DEM100x100_Resample.img"; crs=EPSG(3337))
+mauritius_proj_dem = rebuild(mauritius_proj_dem; missingval=minimum(mauritius_proj_dem))
+plot(mauritius_proj_dem)

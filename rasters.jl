@@ -179,3 +179,66 @@ end
 # plot(lc_masks.mus; c=:viridis)
 
 nothing
+
+
+
+using Colors, GeometryBasics
+using GLMakie
+using CairoMakie
+using XML
+xml = XML.Document("/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/forest.svg");
+
+allpaths = filter(children(xml.root)) do e
+    e isa Element && tag(e) == "path"
+end
+
+color_strings = map(allpaths) do x
+    hasproperty(x, :fill) ? x.fill : "none"
+end |> union
+
+category_paths = map(color_strings) do color_string
+    color = if color_string == "none"
+        RGB(0.0, 0.0, 0.0)
+    else
+        RGB(map(s -> parse(Float64, s) / 100, split(color_string[5:end-2], "%, "))...)
+    end
+    paths = filter(x -> x.fill == color_string, allpaths)
+    path_strings = map(p -> p.d, paths)
+    linestrings = Vector{Tuple{Float64,Float64}}[]
+    geoms = map(path_strings) do p
+        points = map(filter(!isempty, split(p, "L "))) do c
+            points = map(x -> parse(Float64, x), filter(!in(("", "Z", "M")), split(c, " ")))
+            Point2(points[1], points[2])
+        end |> x -> filter(!isempty, x)
+        if occursin("Z", p)
+            Polygon(points)
+        else
+            LineString(points)
+        end
+    end |> x -> filter(!isempty, x)
+    (; color, geoms)
+end
+
+colors = getproperty.(category_paths, :color)
+fig = GLMakie.Figure(resolution = (1800,1600))
+fig[1,1] = ax = Axis(fig)
+ax.xreversed = false
+ax.yreversed = false
+c = category_paths[2]
+CairoMakie.lines!(ax, c.geoms; color=c.color)
+for c in category_paths[4:7]
+    if typeof(first(c.geoms)) <: Polygon
+        GLMakie.poly!(ax, c.geoms; color=c.color)
+    else
+        GLMakie.lines!(ax, c.geoms; color=c.color)
+    end
+end
+display(fig)
+
+save("plot.png", fig, px_per_unit = 4)
+
+
+
+methodswith(typeof(first(eachelement(r))))
+elements(r)
+namespace(r)

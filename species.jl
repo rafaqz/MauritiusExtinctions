@@ -7,10 +7,10 @@ using IntervalSets
 using DimensionalData
 using DimensionalData.LookupArrays
 
-pyplot()
-include("tabular_data.jl")
-include("plots.jl")
-include("lostland_filter.jl")
+# pyplot()
+includet("tabular_data.jl")
+includet("plots.jl")
+includet("lostland_filter.jl")
 
 years = 1600:2007
 
@@ -21,7 +21,7 @@ years = 1600:2007
 #     DataFrame
 #     dropmissing(_, :Introduction_date)
 #     sort(_, :Introduction_date)
-# end
+# end\zz
 # reu_plants[!, :Introduction_date] = map(reu_plants.Introduction_date) do d
 #     length(d) >= 4 ? parse(Int, d[end-3:end]) : missing
 # end
@@ -45,7 +45,7 @@ lost_land_appendices = (
 # Its not clear how to deal with grouped categories like `rats`
 
 using CSV
-mascarine_species = CSV.File(joinpath(workdir, "mascarine_species.csv")) |> DataFrame
+mascarine_species = CSV.File(joinpath(workdir, "Tables/mascarine_species.csv")) |> DataFrame
 xlfile = joinpath(datadir, "LostLand/Mauritius_Lost Land of the Dodo_tables_translated symbols.xlsx")
 # run(`libreoffice $xlfile`)
 xl = XLSX.readxlsx(xlfile)

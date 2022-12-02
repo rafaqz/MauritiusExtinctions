@@ -32,7 +32,7 @@ function plottimeline(speciesdata, island, category)
         end
         isingroup = groups .== gn
         scheme = cgrad([:lightgrey, groupcolors[gn]])
-        any(isingroup) || return heatmap(; yticks=:none, showaxis=false, kw...)
+        any(isingroup) || return Plots.heatmap(; yticks=:none, showaxis=false, kw...)
         # TODO split up terrestrial and aquatic birds and animals
         ab = abundance[species=isingroup]
         perm = sortperm(selected_species_traits[isingroup, :], :Location)
@@ -46,7 +46,7 @@ function plottimeline(speciesdata, island, category)
                 end
             end
         end
-        p = heatmap(ab;
+        p = Plots.heatmap(ab;
             c=scheme,
             clims=(-1, 3), colorbar=:none, 
             yguide=gn, yguidefontsize=14, yguide_position=:left,

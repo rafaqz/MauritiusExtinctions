@@ -25,11 +25,10 @@ workdir = "/home/raf/PhD/Mascarenes/"
 datadir = joinpath(workdir, "Data")
 sugar_cane = CSV.File(joinpath(datadir, "Population/Sugarcane.csv")) |> DataFrame
 
+all_years = 1600:2020
 mus_census_pop = CSV.File(joinpath(datadir, "Population/lutz_census.csv")) |> DataFrame
 mus_early_pop = CSV.File(joinpath(datadir, "Population/early_population.csv")) |> DataFrame
 mus_pop = reduce(vcat, [mus_early_pop, mus_census_pop])
-all_years = 1600:2020
-
 reu_pop = CSV.File(joinpath(datadir, "Population/reunion_population.csv")) |> DataFrame
 
 human_pop_timeline = map((mus=mus_pop, reu=reu_pop, rod=reu_pop)) do pop
@@ -40,5 +39,6 @@ end
 sugar_vec = interpolate_years(sugar_cane, (:Year, :Area))
 sugar_timeline = DimArray(sugar_vec, Ti(all_years); name=:Area_Sugar)
 
-# Plots.plot(human_pop.Year, human_pop.Population)
-# Plots.plot(sugar_cane.Year, sugar_cane.Area)
+# Plot
+# Plots.plot(human_pop_timeline.mus)
+# Plots.plot(sugar_timeline)
