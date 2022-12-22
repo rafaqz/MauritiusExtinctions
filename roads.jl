@@ -1,10 +1,12 @@
-includet("raster_common.jl")
-includet("waynames.jl")
 using Dates, DataStructures
 using DimensionalData.LookupArrays
-
+using GeometryBasics
+using GeoInterface
 using GeoInterfaceRecipes
 GeoInterfaceRecipes.@enable_geo_plots GeoJSON.Feature
+
+includet("raster_common.jl")
+includet("waynames.jl")
 
 # To roads
 function namelike(names, feature)
@@ -34,7 +36,6 @@ function rasterize_ways(ways, way_names; to)
     rasterize(selected_ways; to, fill=true) 
 end
 
-
 ways = map(island_keys) do ik
     json_path = joinpath(datadir, "Roads", "$(ik)_ways.geojson")
     GeoJSON.read(read(json_path))
@@ -42,6 +43,7 @@ end
 
 way_names_sequences = (; 
     mus = (
+        1667=>mus_way_names_1667,
         1725=>mus_way_names_1725,
         1764=>mus_way_names_1764,
         1813=>mus_way_names_1813,
@@ -54,8 +56,6 @@ way_names_sequences = (;
 )
 
 selected_ways = select_ways(ways.mus, way_names_sequences.mus[4][2])
-using GeometryBasics
-using GeoInterface
 
 road_lines = map(ways) do island_ways
     map(island_ways) do way
@@ -68,22 +68,13 @@ road_lines = map(ways) do island_ways
     end |> skipmissing |> collect
 end 
 
-waterways_lakes = map(waterways_fc) do feature
-    geom = GeoInterface.geometry(feature)
-    if geom isa GeoJSON.Polygon
-        GeoInterface.convert(GeometryBasics.Polygon, geom)
-    else
-        missing
-    end
-end |> skipmissing |> collect
-
 way_masks = map(ways, way_names_sequences, dems) do w, seq, dem
     map(seq) do (year, way_names)
         selected_ways = select_ways(w, way_names)
         Raster(boolmask(selected_ways; to=dem, shape=:line); name = Symbol("ways_$year"))
     end |> RasterStack
 end
-plot(way_masks.reu)
+plot(way_masks.mus)
 
 # distance_to_roads = map(island_keys, dems, way_masks) do i, dem, ways
 #     rast = mask(nearest_distances(ways.primary); with=dem)

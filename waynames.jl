@@ -1,4 +1,12 @@
-mus_way_names_1725 = [
+mus_way_names_1667 = [
+    # Flacq
+    "B117"
+    "B61"
+    "way/22956430" # "B23"
+    # Grand River South East
+    "Grand River South East Road"
+]
+mus_way_names_1725 = [mus_way_names_1667...
     # Port Louis
     "Royal Road Grand River"
     "Brabant Street"

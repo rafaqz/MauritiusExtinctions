@@ -1,6 +1,5 @@
-using DynamicGrids
-using DynamicGrids.Neighborhoods
-using DynamicGrids.Neighborhoods: Window
+using Neighborhoods
+using Neighborhoods: Window
 using DataFrames
 
 abstract type SlopeFilter end
@@ -15,18 +14,18 @@ struct FD3Linear <: SlopeAspectConvolution end
 struct FDFrame <: SlopeAspectConvolution end
 struct SimpleDifference <: SlopeConvolution end
 
-@inline function aspect_filter(method::SlopeConvolution, n::Window, val)
-    fx, fy = _slope_conv(method, n, val)
+@inline function aspect_filter(method::SlopeConvolution, n::Window, d)
+    fx, fy = _slope_conv(method, n, d)
     return _aspect(fx, fy)
 end
 
-@inline function slope_filter(method::SlopeConvolution, n::Window, val)
-    fx, fy = _slope_conv(method, n, val)
+@inline function slope_filter(method::SlopeConvolution, n::Window, d)
+    fx, fy = _slope_conv(method, n, d)
     return _slope(fx, fy)
 end
 
-@inline function slopeaspect_filter(method::SlopeAspectConvolution, n::Window, val)
-    fx, fy = _slope_conv(method, n, val)
+@inline function slopeaspect_filter(method::SlopeAspectConvolution, n::Window, d)
+    fx, fy = _slope_conv(method, n, d)
     return _slope(fx, fy), _aspect(fx, fy)
 end
 
@@ -39,39 +38,39 @@ function _aspect(fx, fy)
     -atan(fx, fy) 
 end
 
-@inline function _slope_conv(::FD2, n::Window, val)
-    fx = (n[6] - n[4]) / 2val
-    fy = (n[8] - n[2]) / 2val
+@inline function _slope_conv(::FD2, n::Window, d)
+    fx = (n[6] - n[4]) / 2d
+    fy = (n[8] - n[2]) / 2d
     return fx, fy
 end
 
-@inline function _slope_conv(::FD3Reciprocal, n::Window, val)
-    fx = (n[3] -n[1] + √(2(n[6] - n[4])) + n[9] - n[7]) / (4 + 2 * √(2)) * val
-    fy = (n[7] -n[1] + √(2(n[8] - n[2])) + n[9] - n[3]) / (4 + 2 * √(2)) * val
+@inline function _slope_conv(::FD3Reciprocal, n::Window, d)
+    fx = (n[3] -n[1] + √(2(n[6] - n[4])) + n[9] - n[7]) / (4 + 2 * √(2)) * d
+    fy = (n[7] -n[1] + √(2(n[8] - n[2])) + n[9] - n[3]) / (4 + 2 * √(2)) * d
     return fx, fy
 end
 
-@inline function _slope_conv(::FD3Linear, n::Window, val)
-    fx = (n[3] - n[1] + n[6] - n[4] + n[9] - n[7]) / 6val
-    fy = (n[7] - n[1] + n[8] - n[2] + n[9] - n[3]) / 6val
+@inline function _slope_conv(::FD3Linear, n::Window, d)
+    fx = (n[3] - n[1] + n[6] - n[4] + n[9] - n[7]) / 6d
+    fy = (n[7] - n[1] + n[8] - n[2] + n[9] - n[3]) / 6d
     return fx, fy
 end
 
-@inline function _slope_conv(::FD3ReciprocalSquared, n::Window, val)
-    fx = (n[3] - n[1] + 2(n[6] - n[4]) + n[9] - n[7]) / 8val
-    fy = (n[7] - n[1] + 2(n[8] - n[2]) + n[9] - n[3]) / 8val
+@inline function _slope_conv(::FD3ReciprocalSquared, n::Window, d)
+    fx = (n[3] - n[1] + 2(n[6] - n[4]) + n[9] - n[7]) / 8d
+    fy = (n[7] - n[1] + 2(n[8] - n[2]) + n[9] - n[3]) / 8d
     return fx, fy
 end
 
-@inline function _slope_conv(::FDFrame, n::Window, val)
-    fx = (n[3] - n[1] + n[9] - n[7]) / 4val
-    fy = (n[7] - n[1] + n[9] - n[3]) / 4val
+@inline function _slope_conv(::FDFrame, n::Window, d)
+    fx = (n[3] - n[1] + n[9] - n[7]) / 4d
+    fy = (n[7] - n[1] + n[9] - n[3]) / 4d
     return fx, fy
 end
 
-@inline function _slope_conv(::SimpleDifference, n::Window, val)
-    fy = (n[5] - n[2]) / n[5]
-    return fx, fy
+@inline function _slope_conv(::SimpleDifference, n::Window, d)
+    fy = (n[5] - n[2]) / d
+    return fy, fy # No aspect
 end
 
 
@@ -101,22 +100,25 @@ end
 
 for (f, filt) in (:slope => :slope_filter, :aspect => :aspect_filter, :_slopeaspect => :slopeaspect_filter)
     @eval begin 
-        function $(f)(elevation::Raster, method=FD2())
-            padded = Neighborhoods.pad_array(parent(elevation), 1; padval=missingval(elevation))
-            newdata = $(f)(padded, FD2())
+        function $(f)(elevation::Raster, method=FD2(); cellsize=1)
+            hood = Window{1}(); 
+            padval = missingval(elevation)
+            newdata = Neighborhoods.broadcast_neighborhood(hood, parent(elevation); boundary_condition=Remove(padval)) do w
+                $(filt)(method, w, cellsize)
+            end
             rebuild(elevation; data=newdata, name=$(QuoteNode(f))) 
         end
-        function $(f)(elevation::AbstractArray, method=FD2())
-            window = Window{1}()
-            Neighborhoods.broadcast_neighborhood(window, elevation) do w, e
-                $(filt)(method, w, e)
+        function $(f)(elevation::AbstractArray, method=FD2(); cellsize=1)
+            hood = Window{1}()
+            Neighborhoods.broadcast_neighborhood(hood, elevation, parent(elevation)) do w, e
+                $(filt)(method, w, cellsize)
             end
         end
     end
 end
 
-function slopeaspect(elevation, method=FD2())
-    sa = _slopeaspect(elevation, method)
+function slopeaspect(elevation, method=FD2(); cellsize=1)
+    sa = _slopeaspect(elevation, method; cellsize)
     slope = first.(sa)
     aspect = last.(sa)
     nt = (; slope, aspect)

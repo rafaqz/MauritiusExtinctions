@@ -4,7 +4,7 @@ using GBIF2
 using Chain
 using TerminalPager
 
-mascarene_species = @chain CSV.File("/home/raf/PhD/Mauritius/mascarine_species.csv") begin
+mascarene_species = @chain CSV.File("/home/raf/PhD/Mascarines/Tables/mascarine_species.csv") begin
     DataFrame
     filter(:Binomial=> !ismissing, _)
 end

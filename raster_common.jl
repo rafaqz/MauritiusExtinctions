@@ -1,4 +1,6 @@
 using GeoJSON
+using GeoInterface
+using GeometryBasics
 using GADM
 using Shapefile
 using RasterDataSources
@@ -6,6 +8,7 @@ using Rasters
 using Plots
 using Rasters: Between, trim, Band
 using Plots: plot, plot!
+using Unitful
 
 workdir = "/home/raf/PhD/Mascarenes"
 datadir = joinpath(workdir, "Data")
@@ -50,7 +53,9 @@ reu_dem = replace_missing(read(trim(view(Raster(reu_tile), border_selectors.reu.
 # rod_tile  = getraster(SRTM; bounds=rod_bounds)[1]
 # rod_dem = trim(view(dem3, border_selectors...); pad=10)
 dems = (mus=mus_dem, reu=reu_dem)
+elevation = map(d -> d .* u"m", dems)
 
 mauritius_proj_dem = Raster("/home/raf/PhD/Mascarenes/Data/Norder/LS factor/DEM/DEM100x100_Resample.img"; crs=EPSG(3337))
 mauritius_proj_dem = rebuild(mauritius_proj_dem; missingval=minimum(mauritius_proj_dem))
-plot(mauritius_proj_dem)
+
+masks = map(boolmask, dems)

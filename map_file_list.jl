@@ -289,7 +289,7 @@ function open_warp_points(filename::String)
 end
 
 function warp_to_raster(img_path::String, template::Raster; edit=false, kw...)
-    img = RGB{Float64}.(load(img_path) |> rotr90)
+    img = load_image(img_path)
     csv_path = splitext(img_path)[1] * ".csv"
     points = isfile(csv_path) ? open_warp_points(img_path) : nothing
     if edit || !isfile(csv_path)
@@ -312,19 +312,21 @@ function warp_to_raster(img_path::String, template::Raster; edit=false, kw...)
         df = DataFrame(warp_points)
         CSV.write(csv_path, df)
     end
-    df = CSV.read(csv_path, DataFrame)
-    output = open_output(img_path)
-    out = Int.(reshape(output.output, size(img)))
-    rs = MapRasterization.applywarp(out; template, points=df, missingval=0)
-    raster_path = splitext(img_path)[1] * ".tif"
-    write(raster_path, rs)
-    rs = mask(Raster(raster_path); with=template)
-    write(raster_path, rs)
-    display(Plots.plot(rs))
+    if isfile(splitext(image_path)[1] * ".json")
+        df = CSV.read(csv_path, DataFrame)
+        output = open_output(img_path)
+        out = Int.(reshape(output.output, size(img)))
+        rs = MapRasterization.applywarp(out; template, points=df, missingval=0)
+        raster_path = splitext(img_path)[1] * ".tif"
+        write(raster_path, rs)
+        rs = mask(Raster(raster_path); with=template)
+        write(raster_path, rs)
+        display(Plots.plot(rs))
+    end
 end
 
 function choose_categories(img_path::String; output=open_output(img_path), save=true)
-    img = RGB{Float64}.(load(img_path) |> rotr90)
+    img = load_image(img_path)
     if isnothing(output)
         output = MapRasterization.selectcolors(img; ncategories=5)
     else
@@ -340,3 +342,5 @@ function choose_categories(img_path::String; output=open_output(img_path), save=
     end
     return output
 end
+
+load_image(img_path::String) = RGB{Float64}.(load(img_path) |> rotr90)
