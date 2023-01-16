@@ -45,7 +45,7 @@ Jardinage
 #     yield()
 # end
 
-# choose_categories(files.mus["atlas_1992_agriculture"].filename)
+choose_categories(files.reu.cadet_invasives.filename)
 # open_output(files.mus["atlas_19C_land_use"]).settings.category_name
 
 # Readable json

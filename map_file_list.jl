@@ -64,7 +64,8 @@ function get_map_files()
             # cleared=(cleared_1850="cleared_1850-70", cleared_1870=("cleared_1850-70", "cleared_1870-72"), cleared_1872=("cleared_1850-70", "cleared_1870-72")),
             forest=(forest_1850=(|, "forest_1872", "cleared_1850-70", "cleared_1870-72"), forest_1870=(|, "forest_1872", "cleared_1870-72"), forest_1872="forest_1872",),
         )),
-     ), reu=(;
+     ), reu=(; 
+        # cadet_invasives=(filename="Reunion/Undigitised/cadet_invasives.jpg", poly=1, layers=(;)),
         # atlas_vegetation = (filename="Reunion/Undigitised/atlas_vegetation.jpg", poly=1, layers=(;)),
         # atlas_ownership = (filename="Reunion/Undigitised/atlas_ownership.jpg", poly=1, layers=(;)),
         # atlas_1960_population = (filename="Reunion/Undigitised/atlas_1960_population.jpg", poly=1, layers=(;)),
@@ -276,10 +277,10 @@ function _category_to_raster(raster::Raster, category_names::Vector, x)
 end
 
 
-open_output(x::NamedTuple) = open_output(x.filename)
-function open_output(filename::String)
+open_output(T, x::NamedTuple) = open_output(x.filename)
+function open_output(T, filename::String)
     json_path = splitext(filename)[1] * ".json"
-    return isfile(json_path) ? JSON3.read(read(json_path), MapRasterization.MapSelection) : nothing
+    return isfile(json_path) ? JSON3.read(read(json_path), T) : nothing
 end
 
 open_warp_points(x::NamedTuple) = open_warp_points(x.filename)
@@ -288,20 +289,20 @@ function open_warp_points(filename::String)
     return isfile(csv_path) ? CSV.read(csv_path, DataFrame) : nothing
 end
 
-function warp_to_raster(img_path::String, template::Raster; edit=false, kw...)
+function warp_to_raster(img_path::String, template::Raster; object_type=MapRasterization.MapSelection, edit=false, kw...)
     img = load_image(img_path)
     csv_path = splitext(img_path)[1] * ".csv"
     points = isfile(csv_path) ? open_warp_points(img_path) : nothing
     if edit || !isfile(csv_path)
         warp_points = if isnothing(points)
-            MapRasterization.select_warp_points(Float64.(Gray.(img));
-                template=reverse(template; dims=Y()), missingval=missingval(template), kw...
+            MapRasterization.select_warp_points(img;
+                template=reverse(template; dims=Y()), kw...
             )
         else
             :x_known in names(points) && rename!(points, [:x_known => :x_a, :y_known => :y_a, :x_unknown => :x_b, :y_unknown => :y_b])
             # if :x_a in names(points)
-                MapRasterization.select_warp_points(Float64.(Gray.(img));
-                    template=reverse(template; dims=Y()), missingval=missingval(template), points, kw...
+                MapRasterization.select_warp_points(img;
+                    template=reverse(template; dims=Y()), points, kw...
                 )
             # else
                 # MapRasterization.select_warp_points(Float64.(Gray.(img));
@@ -312,20 +313,34 @@ function warp_to_raster(img_path::String, template::Raster; edit=false, kw...)
         df = DataFrame(warp_points)
         CSV.write(csv_path, df)
     end
-    if isfile(splitext(image_path)[1] * ".json")
+    if isfile(splitext(img_path)[1] * ".json")
         df = CSV.read(csv_path, DataFrame)
-        output = open_output(img_path)
-        out = Int.(reshape(output.output, size(img)))
-        rs = MapRasterization.applywarp(out; template, points=df, missingval=0)
-        raster_path = splitext(img_path)[1] * ".tif"
-        write(raster_path, rs)
-        rs = mask(Raster(raster_path); with=template)
-        write(raster_path, rs)
-        display(Plots.plot(rs))
+        output = open_output(object_type, img_path)
+        if object_type <: MapRasterization.MapSelection
+            out = Int.(reshape(output.output, size(img)))
+            rs = MapRasterization.applywarp(out; template, points=df, missingval=0)
+            raster_path = splitext(img_path)[1] * ".tif"
+            write(raster_path, rs)
+            rs = mask(Raster(raster_path); with=template)
+            write(raster_path, rs)
+            display(Plots.plot(rs))
+            return rs
+        elseif object_type <: MapRasterization.CategoryShapes
+            warped_geoms = map(output.shapes) do sh
+                geoms = Polygon.(sh)
+                warped = MapRasterization.applywarp(geoms; template, points=df)
+                map(warped) do g
+                    collect(GeoInterface.getpoint(g))
+                end
+            end
+            warped = MapRasterization.CategoryShapes{Polygon}(warped_geoms, output.category_names)
+            # GeoJSON.write(splitext(img_path)[1] * "_warped.geojson", warped)
+            return warped
+        end
     end
 end
 
-function choose_categories(img_path::String; output=open_output(img_path), save=true)
+function choose_categories(img_path::String; output=open_output(MapRasterization.MapSelection, img_path), save=true)
     img = load_image(img_path)
     if isnothing(output)
         output = MapRasterization.selectcolors(img; ncategories=5)
