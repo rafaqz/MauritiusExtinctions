@@ -1,11 +1,9 @@
 using XLSX, DataFrames
+using OrderedCollections
 using Chain
 using Plots, StatsPlots
 using DimensionalData, DimensionalData.LookupArrays
-using OrderedCollections
 using IntervalSets
-using DimensionalData
-using DimensionalData.LookupArrays
 
 # pyplot()
 includet("tabular_data.jl")
@@ -21,7 +19,7 @@ years = 1600:2007
 #     DataFrame
 #     dropmissing(_, :Introduction_date)
 #     sort(_, :Introduction_date)
-# end\zz
+# end
 # reu_plants[!, :Introduction_date] = map(reu_plants.Introduction_date) do d
 #     length(d) >= 4 ? parse(Int, d[end-3:end]) : missing
 # end
@@ -45,8 +43,9 @@ lost_land_appendices = (
 # Its not clear how to deal with grouped categories like `rats`
 
 using CSV
-mascarine_species = CSV.File(joinpath(workdir, "Tables/mascarine_species.csv")) |> DataFrame
+mascarene_species = CSV.File(joinpath(workdir, "Tables/mascarene_species.csv")) |> DataFrame
 xlfile = joinpath(datadir, "LostLand/Mauritius_Lost Land of the Dodo_tables_translated symbols.xlsx")
+
 # run(`libreoffice $xlfile`)
 xl = XLSX.readxlsx(xlfile)
 pops = map(lost_land_appendices) do island
@@ -56,6 +55,64 @@ pops = map(lost_land_appendices) do island
     end
 end;
 
+function extinctions(df)
+    extinction = map(names(df)) do name
+        obs = df[!, name]
+        i = findlast(x -> (!ismissing(x) && x != 0), obs)
+        period = if isnothing(i) || i == lastindex(obs) 
+            missing 
+        else
+            parse(Int, df.period[i][end-3:end])
+        end
+        name => period
+    end |> OrderedDict
+end
+
+species_stats = map(pops) do island
+    alien_introduction = map(names(island.alien)) do name
+        obs = island.alien[!, name]
+        i = findfirst(x -> !ismissing(x), obs)
+        name => isnothing(i) ? missing : parse(Int, island.alien.period[i][end-3:end])
+    end |> OrderedDict
+    (; 
+         alien_introduction, 
+         alien_extinction = extinctions(island.alien),
+         native_extinction = extinctions(island.native),
+    )
+end
+
+emptyyear(l) = Array{Union{Int,Missing}}(undef, l) .= missing
+len = nrow(mascarene_species)
+
+newcols = (
+    mus_alien_introduction = emptyyear(len),
+    mus_alien_extinction = emptyyear(len),
+    mus_native_extinction = emptyyear(len),
+    reu_alien_introduction = emptyyear(len),
+    reu_alien_extinction = emptyyear(len),
+    reu_native_extinction = emptyyear(len),
+)
+
+insertcols!(mascarene_species, pairs(newcols)...)
+
+function _fill!(df, colname, dict)
+    for (k, v) in pairs(dict)
+        df[df.LostLand_name .=== k, colname] = v
+    end
+end
+
+species_stats.mus.alien_introduction
+df.LostLand_name .=== k
+
+_fill!(mascarene_species, :mus_alien_introduction, species_stats.mus.alien_introduction)
+_fill!(mascarene_species, :mus_alien_extinction, species_stats.mus.alien_extinction)
+_fill!(mascarene_species, :mus_native_extinction, species_stats.mus.native_extinction)
+_fill!(mascarene_species, :reu_alien_introduction, species_stats.reu.alien_extinction)
+_fill!(mascarene_species, :reu_alien_extinction, species_stats.reu.alien_extinction)
+_fill!(mascarene_species, :reu_native_extinction, species_stats.reu.native_extinction)
+collect(skipmissing(mascarene_species.reu_native_extinction))
+collect(skipmissing(mascarene_species.mus_native_extinction))
+
 timelineplots = map(NamedTuple{keys(lost_land_appendices)}(keys(lost_land_appendices))) do island
     map(NamedTuple{keys(first(lost_land_appendices))}(keys(first(lost_land_appendices)))) do category
         p = plottimeline(mascarine_species, island, category)
@@ -63,39 +120,41 @@ timelineplots = map(NamedTuple{keys(lost_land_appendices)}(keys(lost_land_append
         p
     end
 end
-introplot = plot(plant_introductions;
-    legend=:topleft,
-    link=:x,
-)
-plot(timelineplots.reu..., introplot;
+
+pyplot()
+# introplot = plot(plant_introductions;
+#     legend=:topleft,
+#     link=:x,
+# )
+plot(timelineplots.mus...;#, introplot;
     layout=grid(3, 1, heights=(0.45,0.45,0.1)),
-    size=(2000, 2000),
+    size=(2200, 2200),
     link=:x,
 )
 
-species = map(pops) do island
-    dfn = island.native
-    extinction = map(names(dfn)) do name
-        obs = dfn[!, name]
-        i = findlast(x -> (!ismissing(x) && x != 0), obs)
-        name => (isnothing(i) ? missing : dims(obs, Ti())[i])
-    end |> OrderedDict
-    dfa = island.alien
-    introduction = map(names(dfa)) do name
-        obs = dfa[!, name]
-        i = findfirst(x -> !ismissing(x), obs)
-        name => (isnothing(i) ? missing : dims(obs, Ti())[i])
-    end |> OrderedDict
-    (; extinction, introduction)
-end
+# species = map(pops) do island
+#     dfn = island.native
+#     extinction = map(names(dfn)) do name
+#         obs = dfn[!, name]
+#         i = findlast(x -> (!ismissing(x) && x != 0), obs)
+#         name => (isnothing(i) ? missing : dims(obs, Ti())[i])
+#     end |> OrderedDict
+#     dfa = island.alien
+#     introduction = map(names(dfa)) do name
+#         obs = dfa[!, name]
+#         i = findfirst(x -> !ismissing(x), obs)
+#         name => (isnothing(i) ? missing : dims(obs, Ti())[i])
+#     end |> OrderedDict
+#     (; extinction, introduction)
+# end
 
-species_years = map(species) do island
-    map(island) do class
-        filter(sort(collect(class); by=last)) do x
-            !ismissing(x[2]) && x[2] < 2000
-        end
-    end
-end
+# species_years = map(species) do island
+#     map(island) do class
+#         filter(sort(collect(class); by=last)) do x
+#             !ismissing(x[2]) && x[2] < 2000
+#         end
+#     end
+# end
 
 declen = 10
 decades = 1590:decade:1990
@@ -181,7 +240,7 @@ endemics = DataFrames.subset(species.mus, :Origin => ByRow(==("Endemic")); skipm
 lats, lons = (-22.0, -18.0), (55.0, 58.0)
 bounds_flags = "decimalLatitude" => lats, "decimalLongitude" => lons
 
-records = map(endemics[!, :Species]) do sp
+records = map(species.mus[!, :Species]) do sp
     isnothing(sp) || ismissing(sp) && return sp => missing
     taxon = GBIF.taxon(sp)
     return sp => isnothing(taxon) ? missing : DataFrame(GBIF.occurrences(taxon, "limit"=>300, bounds_flags...))
