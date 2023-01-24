@@ -39,13 +39,14 @@ The function `f` accept 3 parameters: `a`, `b`, and `distance`:
 By default, `f=meancost` so that `costs` taken as a grid of travel costs.
 """
 function cost_distance(origins, elevation, resistance=nothing; kw...)
+    display(elevation)
     # Create a grid we will update cost distance into.
     # The initial cost is the maximum `Float64` value. This will later
     # be the `missingval`, as it will remain in any cells that were not touched by
     # the algorithm (because one of the other arrays has missing values there).
     hood = Moore{1}()
-    accumulated_time = NeighborhoodArray(fill(Inf * u"hr", size(origins)), hood; padding=Conditional(), boundary_condition=Remove(typemax(Float64)))
-    origins = NeighborhoodArray(parent(origins), hood; padding=Conditional(), boundary_condition=Remove(typemax(Float64)))
+    accumulated_time = NeighborhoodArray(fill(Inf * u"hr", size(origins)), hood; padding=Conditional(), boundary=Remove(typemax(Float64)))
+    origins = NeighborhoodArray(parent(origins), hood; padding=Conditional(), boundary=Remove(typemax(Float64)))
     # Write the cost-distance to the accumulator grid
     cost_distance!(accumulated_time, origins, elevation, resistance; hood, kw...)
     # Remove the padding edge, and wrap the output as an AbstractRaster
@@ -178,16 +179,17 @@ function land_cover_speed(::SouleGoldman, category)
     relative_movement_speed[category]
 end
 
-const movement_speed = (
+const movement_speed_2 = (
     road=5.0u"km/h",
     dirt_road=4.0u"km/h",
     track=3.2u"km/h",
     cleared_land=3.0u"km/h",
     forest=1.0u"km/h",
+    dense_forest=0.5u"km/h",
     wetland=0.5u"km/h",
 )
 
-const relative_movement_speed = map(movement_speed) do s
+const relative_movement_speed_2 = map(movement_speed_2) do s
     s / movement_speed.road
 end
 

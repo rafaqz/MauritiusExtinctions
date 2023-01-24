@@ -103,7 +103,7 @@ for (f, filt) in (:slope => :slope_filter, :aspect => :aspect_filter, :_slopeasp
         function $(f)(elevation::Raster, method=FD2(); cellsize=1)
             hood = Window{1}(); 
             padval = missingval(elevation)
-            newdata = Neighborhoods.broadcast_neighborhood(hood, parent(elevation); boundary_condition=Remove(padval)) do w
+            newdata = Neighborhoods.broadcast_neighborhood(hood, parent(elevation); boundary=Remove(padval)) do w
                 $(filt)(method, w, cellsize)
             end
             rebuild(elevation; data=newdata, name=$(QuoteNode(f))) 

@@ -1,3 +1,4 @@
+using JSON3, MapRasterization, GeoInterface
 
 function get_map_files()
     selected_dir = "/home/raf/PhD/Mascarenes/Data/Selected"
@@ -109,7 +110,7 @@ function make_raster_slices(masks)
         map(island_files) do file
             image_path = file.filename
             raster_path = splitext(image_path)[1] * ".tif"
-            raw = Raster(raster_path)
+            raw = view(Raster(raster_path), Band(1))
             json_path = splitext(file.filename)[1] * ".json"
             data = JSON3.read(read(json_path), MapRasterization.MapSelection)
             grouped = map(file.layers) do layer

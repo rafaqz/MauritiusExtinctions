@@ -1,6 +1,6 @@
-using CSV
-using DataFrames
-using Plots
+using CSV, DataFrames, DimensionalData
+
+includet("common.jl")
 
 function interpolate_years(data, keys)
     pop_vec = map(all_years) do year
@@ -21,8 +21,6 @@ end
 
 # Population
 # human_pop = CSV.File(joinpath(workdir, "Data/Population/Population.csv")) |> DataFrame
-workdir = "/home/raf/PhD/Mascarenes/"
-datadir = joinpath(workdir, "Data")
 sugar_cane = CSV.File(joinpath(datadir, "Population/Sugarcane.csv")) |> DataFrame
 
 all_years = 1600:2020

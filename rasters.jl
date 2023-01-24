@@ -2,14 +2,24 @@
 using Statistics
 includet("raster_common.jl")
 includet("cost_distance.jl")
+includet("map_file_list.jl")
 includet("ports.jl")
 includet("slope.jl")
+includet("roads.jl")
 
 # shp = Shapefile.Table(joinpath(datadir, "Priorisation_actions_de_lutte_-_note_explicative/enjeu_invasion_actions.shp"))
 # shp = Shapefile.Table(joinpath(datadir, "Dominique/Past present vegetation shape files/past_vegetation2.shp"))
 
 norder_dir = mkpath(joinpath(outputdir, "Norder"))
 norder_stack = mask(replace_missing(RasterStack(norder_dir)[Band(1)]); with=dems.mus)
+lc = RasterStack(values(norder_stack)[4:7]...)
+plot(lc; size=(1200, 1000))
+savefig("landcover.png")
+plot(dems.mus ./ maximum(skipmissing(dems.mus)); size=(1200, 1000))
+plot!(rebuild(lc[:lc_1773] ./ 2; missingval=0.5); opacity=0.4, title="clearing 1773 with elevation")
+savefig("lc_1773_dem.png")
+plot!(warped_vegetation; color=:red, linecolor=nothing, title="clearing 1773 with current natives")
+savefig("lc_1773_dem_natives.png")
 
 # Generate habitat types from rainfall
 # following Strahm
@@ -107,7 +117,7 @@ end
 
 # A history of woods and forests of Mauritius:
 # 1 league = 4.83 kilometers per day in forest
-forst_walking_speed = 
+# forst_walking_speed = 
 
 resistance = map(
     (mus=slices.mus.timelines.cleared.cleared_1810, reu=slices.reu.timelines.cleared.cleared_1815),
@@ -124,7 +134,28 @@ resistance = map(
 end
 elevation = map(dem -> dem .* u"m", dems)
 
-@time travel_times = map(travel_origins, elevation, resistance) do o, e, r
+resistance = map(values(slices.mus.timelines.cleared), values(slices.mus.timelines.abandonned)) do cleared, abandonned
+    broadcast(cleared, abandonned) do c, a
+        if a
+            relative_movement_speed_2[:cleared_land]
+        elseif c
+            relative_movement_speed_2[:cleared_land]
+        else
+            relative_movement_speed_2[:dense_forest]
+        end
+    end
+end |> NamedTuple{keys(slices.mus.timelines.cleared)}
+@time travel_times = map(resistance) do r
+    mus_travel_time_map = cost_distance(travel_origins.mus, elevation.mus, r; cellsize=step(lookup(dems.mus, X)) * 111.0u"km")
+end
+plot(first(travel_times))
+
+anim = @animate for (k, A) in pairs(travel_times)
+    plot(A; legend=false, title=string("travel time ", string(k)[end-3:end]), clims=(0, 48))
+end
+gif(anim, "travel_times.gif", fps=0.8)
+
+@time travel_times = map(travel_origins, elevation.mus, resistance) do o, e, r
     mus_travel_time_map = cost_distance(o, e, r; cellsize=step(lookup(dems.mus, X)) * 111.0u"km")
 end
 plot(map(t -> plot(t; clims=(0, 40)), travel_times)...)

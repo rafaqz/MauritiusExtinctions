@@ -45,7 +45,9 @@ Jardinage
 #     yield()
 # end
 
-choose_categories(files.reu.cadet_invasives.filename)
+choose_categories(files[1][2].filename; save=false)
+
+# choose_categories(files.reu.cadet_invasives.filename)
 # open_output(files.mus["atlas_19C_land_use"]).settings.category_name
 
 # Readable json
@@ -62,20 +64,25 @@ choose_categories(files.reu.cadet_invasives.filename)
 #         warp_to_raster(filepath, template .* 0; poly, edit=false, guide=(roads, border, waterways_rivers, waterways_lakes))
 #     end
 # end
+#
+slices = make_raster_slices(masks)
 
-plot(RasterStack(slices.reu.timelines.cleared))
-plot(RasterStack(slices.mus.timelines.abandonned))
-plot(RasterStack(slices.mus.timelines.cleared))
-plot(RasterStack(slices.mus.timelines.urban))
-plot(RasterStack(slices.mus.timelines.combined); c=:viridis, clims=(0, 2))
+plotsize = (16, 9) .* 70
+plot(RasterStack(slices.mus.timelines.abandonned); size=plotsize, clims=(0, 2))
+savefig("abandonned_timeline.png")
+plot(RasterStack(map(A -> A .* 2, slices.mus.timelines.cleared)); size=plotsize, clims=(0, 2))
+savefig("cleared_timeline.png")
+plot(RasterStack(slices.mus.timelines.combined); size=plotsize, clims=(0, 2))
+savefig("combined_timeline.png")
 plot(slices.mus.files.atlas_1992_agriculture.grouped.urban; c=:viridis, clims=(0, 2))
+plot(RasterStack(slices.mus.timelines.urban))
 
 plot(slices.mus.timelines.urban.urban_1992 .& .!(slices.mus.timelines.abandonned.abandonned_1968 .| slices.mus.timelines.cleared.cleared_1968))
 plot(slices.mus.timelines.urban.urban_1905)
 savefig("urban_1905.png")
 
 map((:mus, :reu), (RasterStack(mus_combined), reu_cleared_timeline), gdal_borders, national_parks) do name, timeline, border, parks
-    anim = @animate for A in values(timeline)
+    anim = @animate for A in (values(timeline)..., last(timeline))
         plot(A; legend=false)
         plot!(border; fillalpha=0.5, color=:red)
         plot!(parks; alpha=0, color=:grey, fillalpha=0.5)
@@ -91,11 +98,3 @@ map((:mus, :reu), (RasterStack(mus_combined), reu_cleared_timeline), gdal_border
     gif(anim, "$(name)_clearing_timeline.gif", fps=0.8)
 end
 savefig("time_from_ports.png")
-
-plot(costs)
-minimum(costs)
-
-plot(plot(resistance), plot(costs))#, plot(costs; clims=(0, 200_000)))
-
-plot(costs_res .* slope_stacks.mus[:slope], clims=(0, 2))
-plot(plot(costs_res), plot(slope_stacks.mus[:slope]; title=""))
