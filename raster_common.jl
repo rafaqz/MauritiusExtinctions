@@ -10,11 +10,7 @@ using Rasters: Between, trim, Band
 using Plots: plot, plot!
 using Unitful
 
-workdir = "/home/raf/PhD/Mascarenes"
-datadir = joinpath(workdir, "Data")
-outputdir = joinpath(datadir, "Generated")
-distancedir = joinpath(outputdir, "Distances")
-
+includet("common.jl")
 includet("functions.jl")
 includet("lost_land_images.jl")
 

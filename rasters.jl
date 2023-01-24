@@ -105,6 +105,10 @@ travel_origins = map(dems, ports) do d, p
     o
 end
 
+# A history of woods and forests of Mauritius:
+# 1 league = 4.83 kilometers per day in forest
+forst_walking_speed = 
+
 resistance = map(
     (mus=slices.mus.timelines.cleared.cleared_1810, reu=slices.reu.timelines.cleared.cleared_1815),
     (mus=way_masks.mus[:ways_1813], reu=way_masks.reu[:ways_1804])) do cleared, ways

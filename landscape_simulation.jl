@@ -1,20 +1,20 @@
-using DynamicGrids
 using LandscapeChange
 using Distributions
 
-include("tabular_data.jl")
+includet("tabular_data.jl")
+includet("raster_common.jl")
 
 # Human Population and species introduction events
 landscape_events = (
     mus = [
         (year=1638, n=50, geometry=(X=57.7228, Y=-20.3754)), # "First Dutch settlement"
         (year=1664, n=160, geometry=(X=57.7228, Y=-20.3754)),  # "Second dutch settlement"
-        (year=1721, n=524, geometry=(X=57.7228, Y=-20.3754)),  # "Colony at grand port founded", "French", 
-        (year=1721, n=20#=?=#, geometry=(X=57.5012, Y=-20.1597)),  # "Colony at port louie began", "French", 
-        (year=1735, n=20#=?=#, geometry=(X=57.5012, Y=-20.1597)),  # "Colony at port louie as capital", "French", 
+        (year=1721, n=524, geometry=(X=57.7228, Y=-20.3754)),  # "Colony at grand port founded", "French",
+        (year=1721, n=20#=?=#, geometry=(X=57.5012, Y=-20.1597)),  # "Colony at port louie began", "French",
+        (year=1735, n=20#=?=#, geometry=(X=57.5012, Y=-20.1597)),  # "Colony at port louie as capital", "French",
     ],
     reu = [
-        (year=1665, n=20#=?=#, geometry=(X=57.5012, Y=-20.1597)),  # "Colony at port louie as capital", "French", 
+        (year=1665, n=20#=?=#, geometry=(X=57.5012, Y=-20.1597)),  # "Colony at port louie as capital", "French",
     ],
 )
 
@@ -26,13 +26,87 @@ lc_categories = NamedVector(;
 landcover = broadcast(_ -> 0, dems.mus)
 counts = broadcast(_ -> zero(lc_categories), landcover)
 
+inertia = NamedVector(
+    native=1.0,
+    cleared=1.0,
+    abandonned=1.0,
+    urban=1.0,
+)
+states = NamedVector(
+    native=0x01,
+    cleared=0x02,
+    abandonned=0x03,
+    urban=0x03,
+)
 
-lc_count_rule = LandCoverCount{:landcover,:counts}(Window(1), counts)
-extent = Extent((; landcover, counts); tspan=1:10)
-sd = DynamicGrids.SimData(extent, lc_count_rule)
-sd = step!(sd)
-sd[:counts]
-x = parent(sd[:counts])
+fixed = false # or a raster mask of fixed landcover
+suitability = 1.0 # or a suitability raster or a dynamic Grid?
+transition_raster = map(_ -> LandscapeChange.weu_zero(), dems.mus)
+state_raster = map(_ -> zero(UInt8), dems.mus)
+transition_possibility = (
+    forest =     (forest=true,  cleared=true,  abandonned=false, settled=true),
+    abandonned = (forest=false, cleared=true,  abandonned=true,  settled=true),
+    cleared =    (forest=false, cleared=true,  abandonned=true,  settled=true),
+    settled =    (forest=false, cleared=false, abandonned=true,  settled=true),
+)
+
+ncleared = 
+nforested = 
+nabandonned = 
+nurban = 
+cell_counts = map(ncleared, nforested, nabandonned, nurban) do c, f, a, u
+    (cleared=c, forested=f, abandonned=a, urban=u)
+end
+targets = 
+
+const P = Param
+transition_potential = (
+    forest = (
+        forest=(0.9, 0.0),
+        cleared=P(0.1),
+        abandonned=0.0,
+        settled=0.0,
+    ),
+    abandonned = (
+        forest=(-100.0, 0.0),
+        cleared=(P(-0.1), P(0.0)),
+        abandonned=(P(0.9), P(0.0)),
+        settled=(P(0.05), P(0.1)),
+    ),
+    cleared = (
+        forest=(-1.0, 0.0),
+        cleared=(P(0.9), P(0.2)),
+        abandonned=(P(0.2), P(0.0)),
+        settled=(P(80.0), P(0.0)),
+    ),
+    settled = (
+        forest=(-1.0, 0.0),
+        cleared=(P(0.9), P(0.0)),
+        abandonned=(P(0.99), P(0.0)),
+        settled=(P(0.99), P(-0.2)),
+    ),
+)
+
+stripparams(transition_potential)
+
+fill_steps(
+
+weight_rule = WhiteEngalinUljeeWeights{:state,:weights}(
+    inertia,
+    transition_potential=
+    suitability=Aux{:suitability}()
+    fixed=false,
+    pertubation=0.1,
+)
+update_rule = WhiteEngalinUljeeUpdate{:weights,:state}(Aux(:targets))
+
+
+# lc_count_rule = LandCoverCount{:landcover,:counts}(Window(1), counts)
+# extent = Extent((; landcover, counts); tspan=1:10)
+# sd = DynamicGrids.SimData(extent, lc_count_rule)
+# sd = step!(sd)
+# sd[:counts]
+# x = parent(sd[:counts])
 
 exponential1(x) = pdf(Exponential(1), x)
 chi5(x) = pdf(Chisq(4), x)
@@ -59,21 +133,6 @@ choice_parameters = (
     # to_major_ports=(f=exponential1, scalar=Param(0.001)),
 )
 
-inertia = NamedVector(
-    native=1.0,
-    cleared=1.0,
-    abandonned=1.0,
-    urban=1.0,
-)
-
-WhiteEngalinWeights(
-    transition_potential=
-    suitability
-    inertia
-    active
-    fixed
-    pertubation
-end
 
 choice_stacks_scaled = map(choice_stacks) do stack
     map(stack, choice_parameters) do rast, p
@@ -98,8 +157,6 @@ choice_aux = map(Aux, namedkeys(choice_parameters))
 #     settled  = lc -> (forest=Param(0.01), regrowth=0.0,        cleared=Param(0.01), settled=Param(0.99))[lc],
 #     regrowth = lc -> (forest=0.0,         regrowth=Param(0.9), cleared=Param(0.1),  settled=0.0)[lc],
 # )
-
-
 
 neighbor_matrix = (
     forest   = (forest=1.0,        regrowth=0.0,        cleared=0.0,         settled=0.0),
@@ -129,10 +186,10 @@ aux = NamedTuple(
     distance_to_water.mus,
     distance_to_ports.mus.minor,
     distance_to_ports.mus.major,
-    soiltypes
+    soiltypes,
 )
 
-extent = Extent((; landcover, counts, suitability); 
+extent = Extent((; landcover, counts, suitability);
     aux, tspan=1600:2000,
 )
 
@@ -145,8 +202,7 @@ first.(sd[:suitability])
 using StatsPlots
 using Distributions
 plot(Exponential(1))
-pdf(Exponential(1), 10 * 0.1) 
-
+pdf(Exponential(1), 10 * 0.1)
 
 mode = RandomConstraintMatch()
 sim(mode, init, target, categories)
