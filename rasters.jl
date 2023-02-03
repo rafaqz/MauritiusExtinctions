@@ -1,5 +1,6 @@
 # using Rasters, Shapefile, DataFrames, Plots, ColorShemes
 using Statistics
+using Chain
 includet("raster_common.jl")
 includet("cost_distance.jl")
 includet("map_file_list.jl")
@@ -7,19 +8,22 @@ includet("ports.jl")
 includet("slope.jl")
 includet("roads.jl")
 
+
 # shp = Shapefile.Table(joinpath(datadir, "Priorisation_actions_de_lutte_-_note_explicative/enjeu_invasion_actions.shp"))
 # shp = Shapefile.Table(joinpath(datadir, "Dominique/Past present vegetation shape files/past_vegetation2.shp"))
 
 norder_dir = mkpath(joinpath(outputdir, "Norder"))
 norder_stack = mask(replace_missing(RasterStack(norder_dir)[Band(1)]); with=dems.mus)
 lc = RasterStack(values(norder_stack)[4:7]...)
-plot(lc; size=(1200, 1000))
-savefig("landcover.png")
-plot(dems.mus ./ maximum(skipmissing(dems.mus)); size=(1200, 1000))
-plot!(rebuild(lc[:lc_1773] ./ 2; missingval=0.5); opacity=0.4, title="clearing 1773 with elevation")
-savefig("lc_1773_dem.png")
-plot!(warped_vegetation; color=:red, linecolor=nothing, title="clearing 1773 with current natives")
-savefig("lc_1773_dem_natives.png")
+Plots.plot(norder_stack[:lc_1935])
+Plots.plot!(warped_vegetation)
+# plot(lc; size=(1200, 1000))
+# savefig("landcover.png")
+# plot(dems.mus ./ maximum(skipmissing(dems.mus)); size=(1200, 1000))
+# plot!(rebuild(lc[:lc_1773] ./ 2; missingval=0.5); opacity=0.4, title="clearing 1773 with elevation")
+# savefig("lc_1773_dem.png")
+# plot!(warped_vegetation; color=:red, linecolor=nothing, title="clearing 1773 with current natives")
+# savefig("lc_1773_dem_natives.png")
 
 # Generate habitat types from rainfall
 # following Strahm
@@ -31,11 +35,11 @@ palm_savannah = (e .<= 365u"m") .& (r .< 1000u"mm")
 upland = (e .> 365u"m") .& (r .> 2500u"mm") # Or is it 3048mm ??
 climax_forest = (e .> 365u"m") .& (r .> 3175u"mm") .& (r .< 3556u"mm")
 # Mt Cocotte
-mossy_forest = (e .> 600"m") .& (r .> 4445"mm")
+mossy_forest = (e .> 600u"m") .& (r .> 4445u"mm")
 # phillipa = in.(e, Ref(610u"m" .. 670u"m")) .&  in.(r, Ref(u"m" .. 670u"m"))
 sideroxylon = r .> 4400u"mm"
 lowland = .!(palm_savannah .| upland)
-habitat = RasterStack((; palm_savannah, lowland, upland, sideroxylon, climax))
+habitat = RasterStack((; palm_savannah, lowland, upland, sideroxylon, climax_forest))
 plot(habitat)
 # and Vaughan and Wiehe
 palm_savannah=norder_stack[:rainfall] .< 1000
@@ -55,14 +59,41 @@ soilnums = NamedTuple{soiltypenames}((1:14...,))
 soilmasks = map(soilnums) do v
     norder_stack[:soiltypes] .== v
 end |> RasterStack
-plot(soilmasks; c=:viridis)
-plot(norder_stack[:soiltypes])
-plot(soilmasks; size=(2000, 1000))
+plot(soilmasks)
+lith = skipmissing(soilmasks.Lithosol)
+reg = skipmissing(soilmasks.Regosol)
+map(soilmasks) do A
+    sum(skipmissing(A)) / count(x -> true, skipmissing(A))
+end
+
+soilslopestack = merge(soilmasks, slope_stacks.mus, (; elevation=dems.mus))
+soildf = DataFrame(soilslopestack)
+soil_fit = map(slices.mus.timelines.cleared) do a
+    soildf[!, :x] = vec(parent(a))
+    forula = FormulaTerm(Term(:x), map(Term, keys(soilslopestack)))
+    model = lm(forula, soildf)
+end;
+soil_fit[12] |> r2
+plot(soilmasks.Dark_Magnesium_Clay)
+plot(RasterStack(slices.mus.timelines.cleared[3]))
+plot(soilmasks.Lithosol)
+plot(mask(slices.mus.timelines.cleared[3]; with=masks.mus))
+s = map(1:13) do i
+    soil_cleared = map(soilmasks) do A
+        m = mask(A; with=rebuild(slices.mus.timelines.cleared[i]; missingval=false))
+        sum(skipmissing(m)) / sum(skipmissing(A))
+    end |> pairs
+end
+s[6]
+plot(soil_cleared)
+# plot(soilmasks; c=:viridis)
+# plot(norder_stack[:soiltypes])
+# plot(soilmasks; size=(2000, 1000))
 
 # lakesraster = Raster("warpedlakes.tif")[Band(1)]
 # elevationraster = Raster("warpedelevation.tif")[Band(1)]
-plot(dems.mus ./ maximum(skipmissing(dems.mus)))
-plot!(norder_stack[:lc_1935]; c=:viridis, opacity=0.4)
+# plot(dems.mus ./ maximum(skipmissing(dems.mus)))
+# plot!(norder_stack[:lc_1935]; c=:viridis, opacity=0.4)
 # elevationraster = replace(read(elevationraster), elevationraster[10, 10, 1] => -Inf32)
 
 port_timelines = (
@@ -84,98 +115,6 @@ slope_stacks = map(dems) do dem
     slopeaspect(dem, FD3Linear(); cellsize=111.0)
 end;
 plot(slope_stacks.mus)
-
-files = get_map_files()
-slices = make_raster_slices(masks)
-
-function _costs(dems, ports)
-    map(dems, ports) do costs, ports
-        origins = zeros(Int, dims(costs))
-        # map(ports[(:major1, :major2)]) do ps
-        map(ports) do ps
-            map(ps) do p
-                origins[_contains(p)...] = 1
-            end
-        end
-        costfunc = CombinedCost((dem=SlopeCost(slopefactor=-3.5, distfactor=0.05), roads=meancost), *)
-        cost_distance(costfunc; origins, costs, cellsize=90)
-    end
-end
-
-travel_origins = map(dems, ports) do d, p 
-    o = map(_ -> Inf * u"hr", d)
-    # foreach(dems, travel_origins) do d, o
-    # end
-    for port in p.major
-        o[map(Near, reverse(port))...] = 0.0u"hr"
-    end
-    for port in p.minor
-        o[map(Near, reverse(port))...] = 1.0u"hr"
-    end
-    o
-end
-
-# A history of woods and forests of Mauritius:
-# 1 league = 4.83 kilometers per day in forest
-# forst_walking_speed = 
-
-resistance = map(
-    (mus=slices.mus.timelines.cleared.cleared_1810, reu=slices.reu.timelines.cleared.cleared_1815),
-    (mus=way_masks.mus[:ways_1813], reu=way_masks.reu[:ways_1804])) do cleared, ways
-    broadcast(cleared, ways) do c, w
-        if w
-            relative_movement_speed[:dirt_road]
-        elseif c
-            relative_movement_speed[:cleared_land]
-        else
-            relative_movement_speed[:forest]
-        end
-    end
-end
-elevation = map(dem -> dem .* u"m", dems)
-
-resistance = map(values(slices.mus.timelines.cleared), values(slices.mus.timelines.abandonned)) do cleared, abandonned
-    broadcast(cleared, abandonned) do c, a
-        if a
-            relative_movement_speed_2[:cleared_land]
-        elseif c
-            relative_movement_speed_2[:cleared_land]
-        else
-            relative_movement_speed_2[:dense_forest]
-        end
-    end
-end |> NamedTuple{keys(slices.mus.timelines.cleared)}
-@time travel_times = map(resistance) do r
-    mus_travel_time_map = cost_distance(travel_origins.mus, elevation.mus, r; cellsize=step(lookup(dems.mus, X)) * 111.0u"km")
-end
-plot(first(travel_times))
-
-anim = @animate for (k, A) in pairs(travel_times)
-    plot(A; legend=false, title=string("travel time ", string(k)[end-3:end]), clims=(0, 48))
-end
-gif(anim, "travel_times.gif", fps=0.8)
-
-@time travel_times = map(travel_origins, elevation.mus, resistance) do o, e, r
-    mus_travel_time_map = cost_distance(o, e, r; cellsize=step(lookup(dems.mus, X)) * 111.0u"km")
-end
-plot(map(t -> plot(t; clims=(0, 40)), travel_times)...)
-
-plot(plot(travel_times.reu), plot(slices.reu.timelines.cleared.cleared_1815), Plots.contourf(dems.reu; levels=[0:500:3000...]))
-reu_dist_cleared = replace_missing(travel_times.reu) .* rebuild(replace(slices.reu.timelines.cleared.cleared_1815, 0 => missing); missingval=missing)
-mus_dist_cleared = replace_missing(travel_times.mus) .* rebuild(replace(slices.mus.timelines.cleared.cleared_1810, 0 => missing); missingval=missing)
-mean(skipmissing(mus_dist_cleared))
-mean(skipmissing(reu_dist_cleared))
-plot(mus_dist_cleared; clims=(0, 10))
-plot(reu_dist_cleared; clims=(0, 10))
-count(_ -> true, skipmissing(mus_dist_cleared))
-count(_ -> true, skipmissing(reu_dist_cleared))
-size(mus_dist_cleared)
-size(reu_dist_cleared)
-plot(slope.mus)
-r
-
-slices.reu.timelines.cleared.cleared_1815 |> sum
-slices.mus.timelines.cleared.cleared_1810 |> sum
 
 # Vegetation maps from "Lost Land of the Dodo"
 lostland_stacks = map(namedkeys(lostland_image_classes), lostland_image_classes) do i, rasters
@@ -221,7 +160,8 @@ end
 
 # Landcover
 lc_dir = joinpath(datadir, "Landcover/")
-lc_names = ( :No_Data,
+lc_names = (
+  :No_Data,
   :Continuous_urban,
   :Discontinuous_urban,
   :Forest,
@@ -235,34 +175,86 @@ lc_names = ( :No_Data,
   :UnusedIndex,
   :Other_cropland,
 )
-lc_categories = NamedTuple{lc_names}((Int32.(0:12)...,))
+lc_2017_category_groups = (
+    forest_or_abandoned = (:Forest, :Mangrove, :Shrub_vegetation, :Barren_land),
+    urban = (:Continuous_urban, :Discontinuous_urban),
+    cleared = (:Sugarcane, :Other_cropland, :Pasture),
+    uncertain = (:Herbaceaous_vegetation,),
+)
+
+lc_2017_categories = NamedTuple{lc_names}((Int32.(0:12)...,))
 
 # Read from tif
-lc_rasterized = map(island_keys) do island
+lc_2017_rasterized = map(island_keys) do island
     path = joinpath(lc_dir, "$(island)_landcover.tif")
     rast = Raster(path; name=:modern_landcover)[Band(1)]
     # Get rid of Water and NoData
-    replace_missing(replace_missing(rast, lc_categories.Water), lc_categories.No_Data)
+    replace_missing(replace_missing(rast, lc_2017_categories.Water), lc_2017_categories.No_Data)
 end
-plot(lc_rasterized.mus)
+plot(lc_2017_rasterized.mus)
 
 # Masks for each land cover
-lc_masks = map(lc_rasterized) do rast
-    masks = map(lc_categories) do v
-        mask(rast .== v; with=rast, missingval=missing)
+lc_2017_masks = map(lc_rasterized) do rast
+    masks = map(lc_2017_categories) do v
+        mask(rast .== v; with=rast, missingval=false)
     end
     RasterStack(masks)
 end
-lc_2017 = map(lc_masks) do m 
-    stack = RasterStack((;
-        urban=m[:Continuous_urban] .| m[:Discontinuous_urban],
-        forest=m[:Shrub_vegetation] .| m[:Forest],
-        cleared=m[:Pasture] .| m[:Sugarcane] .| m[:Other_cropland],
-    ))
-    other = .!(reduce((a, b) -> a .| b, values(stack)))
-    RasterStack((; stack..., other))
+lc_2017 = map(lc_2017_masks) do m 
+    stack = map(lc_2017_category_groups) do group
+        slices = m[group]
+        reduce((acc, x) -> acc .| x, values(slices))
+    end |> RasterStack
 end 
 plot(lc_2017.mus)
+
+
+land_use_2002_shpfile = joinpath(datadir, "Claudia/Demo/GIS WILD LIFE FOUNDATION/SHAPE FILE/land_use_WGS_region.shp")
+lu_2002 = Shapefile.Table(land_use_2002_shpfile)
+lu_2002df = DataFrame(lu_2002)
+lu_2002_categories = map(enumerate(union(skipmissing(lu_2002df.LAND_USE)))) do (i, cat)
+    Symbol(replace(cat, " " => "_")) => (i => cat)
+end |> NamedTuple
+lu_2002_categories |> pairs
+dfs = map(lu_2002_categories) do cat
+    df = filter(lu_2002df) do row
+        !ismissing(row.LAND_USE) && row.LAND_USE == cat[2]
+    end
+    df[!, :category] .= cat[1]
+    df
+end
+lu_2002df_categorised = vcat(dfs...)
+lu_2002_rast = rasterize(lu_2002df_categorised; to=dems.mus, fill=:category)
+lu_2002_swamp = lu_2002_rast .== lu_2002_categories.Marsh_or_Swamp[1]
+plot(lu_2002_swamp)
+lu_2002_agriculture = lu_2002_rast .!= lu_2002_categories.Marsh_or_Swamp[1]
+plot(lu_2002_agriculture)
+
+last(slices.mus.timelines.cleared).& lu_2002_agriculture |> plot
+(last(slices.mus.timelines.lc) .== lc_categories.cleared) .& .!(boolmask(lu_2002_agriculture .| lu_2002_swamp)) |> plot
+
+
+
+native_2017_lc = mask(lc_2017_rasterized.mus; with=native_veg_rast)
+countcats(native_2017_ls, lc_2017_categories) |> pairs
+invasives_2017_mask = (.!(native_veg_mask) .& (lc_2017.mus.forest_or_abandoned .== 1))
+plot(invasives_2017_mask)
+forestry_1992 = mask(rebuild(slices.mus.timelines.forestry.forestry_1992; name=:forestry); with=masks.mus) .* .!(native_veg_mask)
+plot(forestry_1992)
+uncertain_inasives_2017_mask = (.!(native_veg_mask) .& (lc_2017.mus.uncertain.== 1))
+all_invasives_2017 = (invasives_2017_mask .+ uncertain_inasives_2017_mask .* 0.5) .* .!(forestry_1992)
+invasive_density = @chain begin
+    map(all_invasives_2017, native_density) do i, n
+        !ismissing(n) && n > 0 ? (1 - n) : i
+    end
+    rebuild(_; name=:invasive_density) 
+    mask(_; with=dems.mus, missingval=missing)
+end
+plot(RasterStack(native_density, invasive_density, forestry_1992);
+     size=(1000, 1000), clims=(0, 1),
+)
+savefig("mauritius_vegtetation.png")
+
 
 plot(lc_2017.mus; size=(2000, 1000))
 plot(lc_2017.mus[:forest]; size=(2000, 1000))
@@ -277,7 +269,6 @@ for i in 1:3
 end
 display(p)
 # plot(lc_masks.mus; c=:viridis)
-
 
 
 

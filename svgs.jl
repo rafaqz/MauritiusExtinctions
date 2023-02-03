@@ -6,6 +6,7 @@ using CSV
 using MapRasterization
 using DataFrames
 using GeoJSON
+using Tables
 includet("raster_common.jl")
 includet("roads.jl")
 includet("water.jl")
@@ -13,8 +14,16 @@ includet("water.jl")
 svg_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/forest.svg"
 json_path = splitext(svg_path)[1] * ".json"
 if isfile(json_path)
-    warped_vegetation = GeoJSON.read(read(json_path))
+    native_veg_poly = GeoJSON.read(read(json_path))
 end
+native_veg_rast = round.(Union{Int,Missing}, rasterize(native_veg_poly; to=dems.mus, fill=:category))
+native_veg_mask = boolmask(native_veg_rast)
+plot(native_veg_mask)
+grade_fractions = (0.7, 0.5, 0.2)
+native_density = mask(rebuild(map(native_veg_rast) do x
+    ismissing(x) ? 0.0 : grade_fractions[x]
+end; name=:native_density); with=dems.mus)
+plot(native_density)
 
 # using XML
 # """

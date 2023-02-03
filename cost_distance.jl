@@ -179,7 +179,7 @@ function land_cover_speed(::SouleGoldman, category)
     relative_movement_speed[category]
 end
 
-const movement_speed_2 = (
+const movement_speed = (
     road=5.0u"km/h",
     dirt_road=4.0u"km/h",
     track=3.2u"km/h",
@@ -189,7 +189,7 @@ const movement_speed_2 = (
     wetland=0.5u"km/h",
 )
 
-const relative_movement_speed_2 = map(movement_speed_2) do s
+const relative_movement_speed = map(movement_speed) do s
     s / movement_speed.road
 end
 

@@ -1,14 +1,18 @@
-using JSON3, MapRasterization, GeoInterface
+using JSON3, MapRasterization, GeoInterface, Rasters
 
 function get_map_files()
     selected_dir = "/home/raf/PhD/Mascarenes/Data/Selected"
     file_details = (
         mus=(;
+        # landcover_1968 = (filename="Mauritius/Undigitised/mus_landuse_1965.pdf", poly=1, layers=(;
+            # urban="urban",
+            # forest="forest",
+        # )),
         atlas_1992_agriculture = (filename="Mauritius/Undigitised/atlas_1992_agriculture.jpg", poly=1, layers=(;
             urban="urban",
             forest="forest",
             forestry="forestry",
-            cleared=(|, "cane", "forage", "tea", "market_gardens", "forestry", "urban", "cane_or_market_gardens", "cane_or_tea", "tea_or_market_gardens", "cane_or_fruit", "pasture", "lakes"),
+            cleared=(|, "cane", "forage", "tea", "market_gardens", "cane_or_market_gardens", "cane_or_tea", "tea_or_market_gardens", "cane_or_fruit", "pasture", "lakes"),
         )),
         atlas_1992_land_use = (filename="Mauritius/Undigitised/atlas_1992_land_use.jpg", poly=1, layers=(;
             urban=(|, "urban", "other_state_land_urban"),
@@ -24,21 +28,17 @@ function get_map_files()
         )),
         atlas_18C_land_use = (filename="Mauritius/Undigitised/atlas_18C_land_use.jpg", poly=1, layers=(;
             cleared=(
-                cleared_1772=(|, "urban_1763", "cleared_1772", "abandonned_1810"),
+                cleared_1772=(|, "urban_1763", "cleared_1772", "abandoned_1810"),
                 cleared_1810=(|, "urban_1763", "cleared_1772", "urban_1810", "cleared_1810"),
             ),
             urban = (urban_1763="urban_1763", urban_1810=(|, "urban_1763", "urban_1810")),
-            abandonned=(abandonned_1810="abandonned_1810",),
+            abandoned=(abandoned_1810="abandoned_1810",),
             # uncleared=(uncleared_1772=(|, "cleared_1810", "not_cleared_1810"), uncleared_1810="not_cleared_1810"),
-        )),
-        # Need a second round with this file as the categories overlap
-        atlas_19C_land_use_2 = (filename="Mauritius/Undigitised/atlas_19C_land_use_2.jpg", poly=1, layers=(;
-            abandonned=(abandonned_1905_cleared_1968="abdn_1854-1905_cleared_1905-1968",)
         )),
         atlas_19C_land_use = (filename="Mauritius/Undigitised/atlas_19C_land_use.jpg", poly=1, layers=(;
             cleared=(;
-                # We assume clearing happened some time before the area became urban
-                # and include 1905 urban in 1810 cleared
+                # We assume clearing happened some time before the area 
+                # became urban and include 1905 urban in 1810 cleared
                 cleared_1810=(|, "cleared_1810", "urban_1810", "urban_1905", "cleared_1810_abdn_1905"),
                 cleared_1854=(|, "cleared_1810", "urban_1810", "urban_1905", "cleared_1854", "cleared_1810_abdn_1905", "cleared_1854_abdn_1905", "cleared_1854_abdn_1968"),
                 cleared_1905=(|, "cleared_1810", "urban_1810", "urban_1905", "cleared_1854", "cleared_1905", "cleared_1905_abdn_1905", "cleared_1854_abdn_1968", "cleared_1905_abdn_1968"),
@@ -46,11 +46,15 @@ function get_map_files()
             ),
             lakes = (; lakes="lakes",),
             urban = (; urban_1810=(|, "urban_1810"), urban_1905=(|, "urban_1810", "urban_1905")),
-            abandonned=(
-                abandonned_1905=(|, "cleared_1810_abdn_1905", "cleared_1854_abdn_1905", "cleared_1905_abdn_1905",),
-                abandonned_1968=(|, "cleared_1854_abdn_1968", "cleared_1905_abdn_1905", "cleared_1905_abdn_1968", "cleared_1968_abdn_1968"),
+            abandoned=(
+                abandoned_1905=(|, "cleared_1810_abdn_1905", "cleared_1854_abdn_1905", "cleared_1905_abdn_1905",),
+                abandoned_1968=(|, "cleared_1854_abdn_1968", "cleared_1905_abdn_1905", "cleared_1905_abdn_1968", "cleared_1968_abdn_1968"),
             ),
             # uncleared=(uncleared_1772=(|, "cleared_1810", "not_cleared_1810"), uncleared_1968="not_cleared_1968"),
+        )),
+        # Need a second round with this file as the categories overlap
+        atlas_19C_land_use_2 = (filename="Mauritius/Undigitised/atlas_19C_land_use_2.jpg", poly=1, layers=(;
+            abandoned=(abandoned_1905_cleared_1968="abdn_1854-1905_cleared_1905-1968",)
         )),
         desroches_1773_from_gleadow = (filename="Mauritius/Undigitised/1773_desroches_from_gleadow.jpg", poly=1, layers=(;
             conceded=(conceded_1773="conceded_land"),
@@ -63,7 +67,10 @@ function get_map_files()
         )),
         surveyor_general_1872_from_gleadow = (filename="Mauritius/Undigitised/1872_surveyor_general_from_gleadow.jpg", poly=1, layers=(;
             # cleared=(cleared_1850="cleared_1850-70", cleared_1870=("cleared_1850-70", "cleared_1870-72"), cleared_1872=("cleared_1850-70", "cleared_1870-72")),
-            forest=(forest_1850=(|, "forest_1872", "cleared_1850-70", "cleared_1870-72"), forest_1870=(|, "forest_1872", "cleared_1870-72"), forest_1872="forest_1872",),
+            forest=(forest_1850=(|, "forest_1872", "cleared_1850-70", "cleared_1870-72"), 
+                    forest_1870=(|, "forest_1872", "cleared_1870-72"), 
+                    forest_1872="forest_1872",
+            ),
         )),
      ), reu=(; 
         # cadet_invasives=(filename="Reunion/Undigitised/cadet_invasives.jpg", poly=1, layers=(;)),
@@ -86,7 +93,8 @@ function get_map_files()
             # cleared = (!, "forest"),
         )),
         atlas_early_settlement = (filename="Reunion/Undigitised/atlas_early_settlement_cropped.jpg", poly=1, layers=(;
-            concessions=(conceded_1715_1765="conceded_1715-1765", conceded_1665_1715="concede_1665-1715"),
+            concessions=(conceded_1715_1765="conceded_1715-1765", 
+                         conceded_1665_1715="concede_1665-1715"),
         )),
     ))
 
@@ -98,7 +106,7 @@ function get_map_files()
     return files
 end
 
-function make_raster_slices(masks)
+function make_raster_slices(masks, categories)
     selected_dir = "/home/raf/PhD/Mascarenes/Data/Selected"
     # Copy duplicated file wrap points
     fn = joinpath(selected_dir, "Mauritius/Undigitised/atlas_19C_land_use")
@@ -122,9 +130,10 @@ function make_raster_slices(masks)
 
     # Generate timelines
     mus_timelines = let
-        abandonded_1905_cleared_1968 = rasters.mus.atlas_19C_land_use_2.grouped.abandonned.abandonned_1905_cleared_1968
+        abandonded_1905_cleared_1968 = rasters.mus.atlas_19C_land_use_2.grouped.abandoned.abandoned_1905_cleared_1968
         m = rasters.mus
         cleared_1610 = falses(dims(masks.mus))
+        cleared_1638 = falses(dims(masks.mus))
         # Atlas dutch period
         cleared_1710 = m.atlas_dutch_period.grouped.cleared .& masks.mus
         # Dutch departure
@@ -158,6 +167,7 @@ function make_raster_slices(masks)
 
         cleared = (;
             cleared_1610,
+            cleared_1638,
             cleared_1710,
             cleared_1711,
             cleared_1723,
@@ -171,65 +181,104 @@ function make_raster_slices(masks)
             cleared_1992,
         )
 
-        abandonned_1610 = falses(dims(masks.mus))
-        abandonned_1710 = falses(dims(masks.mus))
+        abandoned_1610 = falses(dims(masks.mus))
+        abandoned_1638 = falses(dims(masks.mus))
+        abandoned_1710 = falses(dims(masks.mus))
         # Dutch departure
-        abandonned_1711 = cleared_1710
+        abandoned_1711 = cleared_1710
         # French arrival
-        abandonned_1723 = cleared_1710
-        abandonned_1772 = abandonned_1723 .& .!(cleared_1772)
+        abandoned_1723 = cleared_1710
+        abandoned_1772 = abandoned_1723 .& .!(cleared_1772)
         # English arrival
-        abandonned_1810 = m.atlas_18C_land_use.grouped.abandonned.abandonned_1810 .& masks.mus
+        abandoned_1810 = m.atlas_18C_land_use.grouped.abandoned.abandoned_1810 .& masks.mus
         # 1810 abandonment may be subsequently cleared, so & its inverse
-        abandonned_1854 = abandonned_1810 .& .!(cleared_1854)
-        abandonned_1870 = abandonned_1810 .& .!(cleared_1870)
-        abandonned_1872 = abandonned_1810 .& .!(cleared_1872)
-        abandonned_1905 = m.atlas_19C_land_use_2.grouped.abandonned.abandonned_1905_cleared_1968 .|
-            m.atlas_19C_land_use.grouped.abandonned.abandonned_1905 .|
-            (abandonned_1810 .& .!(cleared.cleared_1905)) .&
+        abandoned_1854 = abandoned_1810 .& .!(cleared_1854)
+        abandoned_1870 = abandoned_1810 .& .!(cleared_1870)
+        abandoned_1872 = abandoned_1810 .& .!(cleared_1872)
+        abandoned_1905 = m.atlas_19C_land_use_2.grouped.abandoned.abandoned_1905_cleared_1968 .|
+            m.atlas_19C_land_use.grouped.abandoned.abandoned_1905 .|
+            (abandoned_1810 .& .!(cleared.cleared_1905)) .&
             masks.mus
-        abandonned_1968 = abandonned_1810 .|
-            m.atlas_19C_land_use.grouped.abandonned.abandonned_1968 .|
-            m.atlas_19C_land_use.grouped.abandonned.abandonned_1905 .|
-            (abandonned_1810 .& .!(cleared_1968)) .&
+        abandoned_1968 = abandoned_1810 .|
+            m.atlas_19C_land_use.grouped.abandoned.abandoned_1968 .|
+            m.atlas_19C_land_use.grouped.abandoned.abandoned_1905 .|
+            (abandoned_1810 .& .!(cleared_1968)) .&
             masks.mus
-        abandonned_1992 = ((abandonned_1810 .| abandonned_1968) .|
+        abandoned_1992 = ((abandoned_1810 .| abandoned_1968) .|
             # There is no abandonment data for 1992 so we use the difference with 1968
             (cleared_1968 .& .!(cleared_1992))) .& 
             # And remove anything cleared in 1992
             .!(cleared_1992)
 
-        abandonned = (;
-            abandonned_1610,  
-            abandonned_1710,
-            abandonned_1711,
-            abandonned_1723,
-            abandonned_1772,
-            abandonned_1810,
-            abandonned_1854,
-            abandonned_1870,
-            abandonned_1872,
-            abandonned_1905,
-            abandonned_1968,
-            abandonned_1992,
+        abandoned = (;
+            abandoned_1610,  
+            abandoned_1638,  
+            abandoned_1710,
+            abandoned_1711,
+            abandoned_1723,
+            abandoned_1772,
+            abandoned_1810,
+            abandoned_1854,
+            abandoned_1870,
+            abandoned_1872,
+            abandoned_1905,
+            abandoned_1968,
+            abandoned_1992,
         )
 
         urban = (;
-            urban_1763=m.atlas_18C_land_use.grouped.urban.urban_1763,
-            # urban_1810=m.atlas_18C_land_use.grouped.urban.urban_1810,
+            urban_1610=falses(dims(masks.mus)),
+            urban_1638=falses(dims(masks.mus)),
+            urban_1710=falses(dims(masks.mus)),
+            urban_1711=falses(dims(masks.mus)),
+            urban_1723=falses(dims(masks.mus)),
+            urban_1772=m.atlas_18C_land_use.grouped.urban.urban_1763, # close enough to 1763 ? not really
             urban_1810=m.atlas_19C_land_use.grouped.urban.urban_1810,
+            urban_1854=m.atlas_19C_land_use.grouped.urban.urban_1810, # Need to handle lack of information for specific categories somehow
+            urban_1870=m.atlas_19C_land_use.grouped.urban.urban_1810, # The cleared and abandoned categories will also be partly wrong because of this
+            urban_1872=m.atlas_19C_land_use.grouped.urban.urban_1810,
             urban_1905=m.atlas_19C_land_use.grouped.urban.urban_1905,
+            urban_1968=m.atlas_19C_land_use.grouped.urban.urban_1905,
             urban_1992=m.atlas_1992_agriculture.grouped.urban,
         )
-        # Multiply by 2 so that abandonned can be 1
-        cleared2 = map(A -> 2 .* A, cleared)
-        # Add abandonned values where they exist
-        _combine(A, B) = broadcast((a, b) -> b ? 1 : a, A, B)
-        # Combine cleared and abandonned Bool masks into Int rasters
-        combined_keys = map(x -> Symbol("combined" * string(x)[end-4:end]), keys(cleared))
-        combined = NamedTuple{combined_keys}(map(_combine, values(cleared2), values(abandonned)))
+        forestry = (;
+            forestry_1610=falses(dims(masks.mus)),
+            forestry_1638=falses(dims(masks.mus)),
+            forestry_1710=falses(dims(masks.mus)),
+            forestry_1711=falses(dims(masks.mus)),
+            forestry_1723=falses(dims(masks.mus)),
+            forestry_1772=falses(dims(masks.mus)),
+            forestry_1810=falses(dims(masks.mus)),
+            forestry_1854=falses(dims(masks.mus)),
+            forestry_1870=falses(dims(masks.mus)),
+            forestry_1872=falses(dims(masks.mus)),
+            forestry_1905=falses(dims(masks.mus)),
+            forestry_1968=falses(dims(masks.mus)),
+            forestry_1992=m.atlas_1992_agriculture.grouped.forestry,
+        )
+        function _combine(F, C, A, U)
+            A = broadcast(F, C, A, U, masks.mus) do f, c, a, u, m
+                if !m 
+                    0
+                elseif f
+                    categories.forestry
+                elseif u
+                    categories.urban
+                elseif a
+                    categories.abandoned
+                elseif c
+                    categories.cleared
+                else
+                    1 # native
+                end
+            end
+            rebuild(A; missingval=0)
+        end
+        # Combine cleared and abandoned Bool masks into Int rasters
+        lc_keys = map(x -> Symbol("lc" * string(x)[end-4:end]), keys(cleared))
+        lc = NamedTuple{lc_keys}(map(_combine, values(forestry), values(cleared), values(abandoned), values(urban)))
 
-        (; cleared, abandonned, urban, combined)
+        (; cleared, abandoned, urban, forestry, lc)
     end
 
     reu_timelines = let
