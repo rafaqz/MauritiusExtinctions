@@ -1,6 +1,5 @@
 # using Rasters, Shapefile, DataFrames, Plots, ColorShemes
-using Statistics
-using Chain
+using Statistics, Chain
 includet("raster_common.jl")
 includet("cost_distance.jl")
 includet("map_file_list.jl")
@@ -15,8 +14,8 @@ includet("roads.jl")
 norder_dir = mkpath(joinpath(outputdir, "Norder"))
 norder_stack = mask(replace_missing(RasterStack(norder_dir)[Band(1)]); with=dems.mus)
 lc = RasterStack(values(norder_stack)[4:7]...)
-Plots.plot(norder_stack[:lc_1935])
-Plots.plot!(warped_vegetation)
+# Plots.plot(norder_stack[:lc_1935])
+# Plots.plot!(warped_vegetation)
 # plot(lc; size=(1200, 1000))
 # savefig("landcover.png")
 # plot(dems.mus ./ maximum(skipmissing(dems.mus)); size=(1200, 1000))
@@ -194,7 +193,7 @@ end
 plot(lc_2017_rasterized.mus)
 
 # Masks for each land cover
-lc_2017_masks = map(lc_rasterized) do rast
+lc_2017_masks = map(lc_2017_rasterized) do rast
     masks = map(lc_2017_categories) do v
         mask(rast .== v; with=rast, missingval=false)
     end
@@ -206,7 +205,7 @@ lc_2017 = map(lc_2017_masks) do m
         reduce((acc, x) -> acc .| x, values(slices))
     end |> RasterStack
 end 
-plot(lc_2017.mus)
+plot(lc_2017.reu)
 
 
 land_use_2002_shpfile = joinpath(datadir, "Claudia/Demo/GIS WILD LIFE FOUNDATION/SHAPE FILE/land_use_WGS_region.shp")
@@ -230,37 +229,42 @@ plot(lu_2002_swamp)
 lu_2002_agriculture = lu_2002_rast .!= lu_2002_categories.Marsh_or_Swamp[1]
 plot(lu_2002_agriculture)
 
-last(slices.mus.timelines.cleared).& lu_2002_agriculture |> plot
-(last(slices.mus.timelines.lc) .== lc_categories.cleared) .& .!(boolmask(lu_2002_agriculture .| lu_2002_swamp)) |> plot
+# 2002 agriculture
+lu_2002_agriculture |> plot
+# 2002 Agriculture cleared in 1992
+slices.mus.timelines.cleared.cleared_1992 .& lu_2002_agriculture |> plot
+slices.mus.timelines.cleared.cleared_1992 .& .!(lu_2002_agriculture) |> plot
+.!(slices.mus.timelines.cleared.cleared_1992) .& lu_2002_agriculture |> plot
+# Cleared areas not in agriculture in 2002
+(slices.mus.timelines.lc.lc_1992 .== lc_categories.cleared) .& .!(boolmask(lu_2002_agriculture .| lu_2002_swamp)) |> plot
 
-
-
-native_2017_lc = mask(lc_2017_rasterized.mus; with=native_veg_rast)
-countcats(native_2017_ls, lc_2017_categories) |> pairs
-invasives_2017_mask = (.!(native_veg_mask) .& (lc_2017.mus.forest_or_abandoned .== 1))
-plot(invasives_2017_mask)
-forestry_1992 = mask(rebuild(slices.mus.timelines.forestry.forestry_1992; name=:forestry); with=masks.mus) .* .!(native_veg_mask)
-plot(forestry_1992)
-uncertain_inasives_2017_mask = (.!(native_veg_mask) .& (lc_2017.mus.uncertain.== 1))
-all_invasives_2017 = (invasives_2017_mask .+ uncertain_inasives_2017_mask .* 0.5) .* .!(forestry_1992)
-invasive_density = @chain begin
-    map(all_invasives_2017, native_density) do i, n
+includet("svgs.jl")
+mus_native_2017_lc = mask(lc_2017_rasterized.mus; with=mus_native_veg_rast)
+countcats(mus_native_2017_lc, lc_2017_categories) |> pairs
+mus_invasives_2017_mask = (.!(mus_native_veg_mask) .& (lc_2017.mus.forest_or_abandoned .== 1))
+plot(mus_invasives_2017_mask)
+mus_forestry_1992 = rebuild(mask(slices.mus.timelines.forestry.forestry_1992 .* .!(mus_native_veg_mask); with=masks.mus); name=:forestry)
+plot(mus_forestry_1992)
+mus_uncertain_inasives_2017_mask = (.!(mus_native_veg_mask) .& (lc_2017.mus.uncertain.== 1))
+mus_all_invasives_2017 = (mus_invasives_2017_mask .+ mus_uncertain_inasives_2017_mask .* 0.5) .* .!(forestry_1992)
+mus_invasive_density = @chain begin
+    map(mus_all_invasives_2017, mus_native_density) do i, n
         !ismissing(n) && n > 0 ? (1 - n) : i
     end
     rebuild(_; name=:invasive_density) 
     mask(_; with=dems.mus, missingval=missing)
 end
-plot(RasterStack(native_density, invasive_density, forestry_1992);
+plot(RasterStack(mus_native_density, mus_invasive_density, mus_forestry_1992);
      size=(1000, 1000), clims=(0, 1),
 )
 savefig("mauritius_vegtetation.png")
 
 
 plot(lc_2017.mus; size=(2000, 1000))
-plot(lc_2017.mus[:forest]; size=(2000, 1000))
-p = plot(lc_2017.mus[:forest])
-plot!(soilmasks[:Lithosol] .| soilmasks[:Lithosol]; opacity=0.5)
-p = plot(soilmasks[:Lithosol] .| soilmasks[:Lithosol]; opacity=0.8)
+plot(lc_2017.mus.forest]; size=(2000, 1000))
+p = plot(lc_2017.mus.forest_or_abandoned)
+plot!(soilmasks.Lithosol; opacity=0.5)
+p = plot(soilmasks.Lithosol .| soilmasks.Regosol; opacity=0.8)
 for i in 1:3
     class = filter(row -> row.category == i, collect(warped_vegetation))
     c = first(class).color
@@ -269,8 +273,6 @@ for i in 1:3
 end
 display(p)
 # plot(lc_masks.mus; c=:viridis)
-
-
 
 
 using Colors, GeometryBasics
@@ -327,9 +329,3 @@ end
 display(fig)
 
 save("plot.png", fig, px_per_unit = 4)
-
-
-
-methodswith(typeof(first(eachelement(r))))
-elements(r)
-namespace(r)

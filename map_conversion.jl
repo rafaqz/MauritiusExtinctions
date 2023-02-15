@@ -1,12 +1,19 @@
 using Neighborhoods
 using Rasters
-using MapRasterization
 using Colors
 using FileIO
 using ImageIO
 using GeometryBasics
 using GLMakie
 using Unitful
+
+using LandscapeChange
+using MapRasterization
+using GLMakie
+includet("common.jl")
+includet("map_file_list.jl")
+includet("raster_common.jl")
+lc_categories = NamedVector(native=1, forestry=2, cleared=3, abandoned=4, urban=5)
 
 # using JSON3
 # using Images
@@ -18,22 +25,12 @@ using Unitful
 # using GeoDataFrames
 # using DataFrames, CSV, Tables
 
-# json = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/1835_fraser_composite_etsy.json"
-# using Mmap
-# JSON3.read(Mmap.mmap(json))
-
-includet("common.jl")
-includet("map_file_list.jl")
-# includet("raster_common.jl")
 # includet("water.jl")
 # includet("roads.jl")
 # includet("svgs.jl")
 
-# files = get_map_files()
-
 filename = joinpath(datadir, "Selected/Mauritius/Undigitised/mus_landuse_1965.png")
-choose_categories(filename; save=true)
-
+output = choose_categories(filename; save=true)
 #=
 L. Maillard map drawn 1845-52
 Categories:
@@ -49,7 +46,10 @@ Jardinage
 #     yield()
 # end
 
-choose_categories(files[1][5].filename; save=false)
+files = get_map_files()
+output = choose_categories(files[1][1].filename; save=true)
+
+warp_to_raster(img_path, dems.mus; object_type=MapRasterization.MapSelection, edit=true, kw...)
 
 # choose_categories(files.reu.cadet_invasives.filename)
 # open_output(files.mus["atlas_19C_land_use"]).settings.category_name
@@ -68,8 +68,8 @@ choose_categories(files[1][5].filename; save=false)
 #         warp_to_raster(filepath, template .* 0; poly, edit=false, guide=(roads, border, waterways_rivers, waterways_lakes))
 #     end
 # end
-#
-slices = make_raster_slices(masks)
+
+slices = make_raster_slices(masks, lc_categories)
 
 plotsize = (16, 9) .* 70
 plot(RasterStack(slices.mus.timelines.abandonned); size=plotsize, clims=(0, 2))
@@ -103,55 +103,3 @@ map((:mus, :reu), (RasterStack(mus_combined), reu_cleared_timeline), gdal_border
 end
 savefig("time_from_ports.png")
 
-
-
-includet("learn.jl")
-
-files = get_map_files()
-# imgname = files.mus.surveyor_general_1872_from_gleadow.filename
-imgname = files.mus[2].filename
-side = 8 
-datasets = project_to_training(imgname; side, min_threshold=300, batchsize=256, distcheck=20);
-eachindex(datasets.images.train)
-i = rand(eachindex(datasets.images.train)); plot(datasets.images.train[i]; title=datasets.labels.train[i]); scatter!([(side ÷ 2, side ÷ 2)]) 
-# resnet = ResNet18(; nclasses=datasets.nclasses)
-# model = Flux.Chain(
-#     InstanceNorm(3),
-#     resnet.layers[1:end-1]
-#     ,
-#     Flux.Chain(
-#         AdaptiveMeanPool((1, 1)) ,
-#         Flux.flatten,
-#         Dense(512, datasets.nclasses),
-#     )
-# )
-
-nbands = 3
-
-model = Chain(
-    # Convolution layers
-    # 1st convolution: on nbands * 64 * 64 layers
-	InstanceNorm(nbands),
-    Conv((7, 7), nbands => 32, selu; pad=(1, 1)),
-	Conv((7, 7), 32 => 32, selu; pad=SamePad()),
-    MaxPool((2, 2)),
-    # 2nd convolution
-    Conv((7, 7), 32 => 32, selu; pad=(1, 1)),
-	Conv((7, 7), 32 => 32, selu; pad=SamePad()),
-    MaxPool((2, 2)),
-    # 3rd convolution
-    Conv((7, 7), 32 => 64, selu; pad=(1, 1)),
-	Conv((7, 7), 64 => 64, selu; pad=SamePad()),
-    MaxPool((2, 2)),
-    Dropout(0.25),
-	# reshape the array
-    Flux.flatten,
-    Dense(64 * 4 * 4 => 500, selu),
-    Dropout(0.25),
-	# Finish with `nclasses` on the axis for each observation
-    Dense(500 => data.nclasses),
-    # Nicer properties for crossentropy loss
-    softmax,
-)
-
-train!(model, datasets, "train_save"; n_epochs=100)

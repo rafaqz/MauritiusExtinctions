@@ -55,3 +55,8 @@ mauritius_proj_dem = Raster("/home/raf/PhD/Mascarenes/Data/Norder/LS factor/DEM/
 mauritius_proj_dem = rebuild(mauritius_proj_dem; missingval=minimum(mauritius_proj_dem))
 
 masks = map(boolmask, dems)
+
+includet("map_file_list.jl")
+files = get_map_files()
+lc_categories = (native=1, forestry=2, cleared=3, abandoned=4, urban=5)
+slices = make_raster_slices(masks, lc_categories)

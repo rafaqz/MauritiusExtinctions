@@ -1,4 +1,4 @@
-using JSON3, MapRasterization, GeoInterface, Rasters
+using JSON3, MapRasterization, GeoInterface, Rasters, FileIO, ImageIO
 
 function get_map_files()
     selected_dir = "/home/raf/PhD/Mascarenes/Data/Selected"
@@ -8,6 +8,7 @@ function get_map_files()
             # urban="urban",
             # forest="forest",
         # )),
+        atlas_1992_vegetation = (filename="Mauritius/Undigitised/atlas_1992_vegetation.jpg", poly=1, layers=(;)),
         atlas_1992_agriculture = (filename="Mauritius/Undigitised/atlas_1992_agriculture.jpg", poly=1, layers=(;
             urban="urban",
             forest="forest",
@@ -78,6 +79,7 @@ function get_map_files()
         # atlas_ownership = (filename="Reunion/Undigitised/atlas_ownership.jpg", poly=1, layers=(;)),
         # atlas_1960_population = (filename="Reunion/Undigitised/atlas_1960_population.jpg", poly=1, layers=(;)),
         # "atlas_1960_agriculture" => (filename="Reunion/Undigitised/atlas_agriculture_1960.jpg", poly=1, layers=(;)),
+        # atlas_population_1967 = (filename="Reunion/Undigitised/atlas_population_1967.jpg", poly=1, layers=(;)),
         atlas_1960_agriculture = (filename="Reunion/Undigitised/atlas_agriculture_1960_2.jpg", poly=1, layers=(;
             forest=(|, "rock", "forest", "shrubland", "savannah"),
             agriculture=(|, "cane", "geranium_continuous", "geranium_discontinuous", "tea"),

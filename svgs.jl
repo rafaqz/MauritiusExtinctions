@@ -1,31 +1,27 @@
 using GeoInterface
 using Colors, GeometryBasics
-using GLMakie
-using Makie
-using CSV
-using MapRasterization
-using DataFrames
 using GeoJSON
-using Tables
+# using DataFrames
+# using GLMakie
+# using Makie
+# using CSV
+# using MapRasterization
+# using Tables
 includet("raster_common.jl")
-includet("roads.jl")
+# includet("roads.jl")
 includet("water.jl")
 
 svg_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/forest.svg"
 json_path = splitext(svg_path)[1] * ".json"
-if isfile(json_path)
-    native_veg_poly = GeoJSON.read(read(json_path))
-end
-native_veg_rast = round.(Union{Int,Missing}, rasterize(native_veg_poly; to=dems.mus, fill=:category))
-native_veg_mask = boolmask(native_veg_rast)
-plot(native_veg_mask)
-grade_fractions = (0.7, 0.5, 0.2)
-native_density = mask(rebuild(map(native_veg_rast) do x
-    ismissing(x) ? 0.0 : grade_fractions[x]
-end; name=:native_density); with=dems.mus)
-plot(native_density)
+mus_native_veg_poly = GeoJSON.read(read(json_path))
+mus_native_veg_rast = round.(Int, rasterize(mus_native_veg_poly; to=dems.mus, fill=:category, missingval=0))
+mus_native_veg_mask = boolmask(mus_native_veg_rast)
+grade_fractions = (0.2, 0.5, 0.7)
+mus_native_density = mask(rebuild(map(mus_native_veg_rast) do x
+    x == 0 ? 0.0 : grade_fractions[x]
+end; name=:native_density_1999); with=dems.mus, missingval=missing)
 
-# using XML
+# using XMLa
 # """
 #     flatten(obj) -> Vector
 #     flatten(obj, match::Pair) -> Vector
@@ -162,28 +158,28 @@ plot(native_density)
 # end;
 # geoms = category_paths[1].geoms
 
-# # CairoMakie.activate!()
-# # colors = getproperty.(category_paths, :color)
-# # fig = Figure(resolution = (1800,1600))
-# # fig[1,1] = ax = Makie.Axis(fig)
-# # ax.xreversed = false
-# # ax.yreversed = true
-# # display(fig)
-# # Makie.heatmap(lookup(template, X), lookup(template, Y), template) 
-# # c = category_paths[9]
-# # (x -> x).(c.geoms)
-# # lines!(ax, c.geoms; color=c.color)
-# # selected = [3,6,7,8,9,10]
-# # for i in selected
-# #     c = category_paths[i]
-# #     if first(c.geoms) isa Polygon
-# #         poly!(ax, c.geoms; color=c.color)
-# #     else
-# #         lines!(ax, c.geoms; color=c.color)
-# #     end
-# # end
-# # display(fig)
-# # save("/home/raf/plot.pdf", fig, px_per_unit = 4)
+# CairoMakie.activate!()
+# colors = getproperty.(category_paths, :color)
+# fig = Figure(resolution = (1800,1600))
+# fig[1,1] = ax = Makie.Axis(fig)
+# ax.xreversed = false
+# ax.yreversed = true
+# display(fig)
+# Makie.heatmap(lookup(template, X), lookup(template, Y), template) 
+# c = category_paths[9]
+# (x -> x).(c.geoms)
+# lines!(ax, c.geoms; color=c.color)
+# selected = [3,6,7,8,9,10]
+# for i in selected
+#     c = category_paths[i]
+#     if first(c.geoms) isa Polygon
+#         poly!(ax, c.geoms; color=c.color)
+#     else
+#         lines!(ax, c.geoms; color=c.color)
+#     end
+# end
+# display(fig)
+# save("/home/raf/plot.pdf", fig, px_per_unit = 4)
 
 # road_cats = [3, 9, 10]
 # # template = broadcast(watermasks.mus, dems.mus) do w, d

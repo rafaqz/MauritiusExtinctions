@@ -14,10 +14,6 @@ includet("tabular_data.jl")
 includet("raster_common.jl")
 includet("map_file_list.jl")
 
-files = get_map_files()
-masks = map(boolmask, dems)
-lc_categories = NamedVector(native=1, forestry=2, cleared=3, abandoned=4, urban=5)
-slices = make_raster_slices(masks, lc_categories)
 # plot(RasterStack(slices.mus.timelines.urban); legend=false, size=(1000, 850), margin=-1mm)
 # plot(RasterStack(slices.mus.timelines.lc); legend=false, clims=(0, 5), size=(1000, 850), margin=-1mm)
 # plot(last(slices.mus.timelines.lc); legend=false, clims=(0, 5), size=(1000, 850), margin=-1mm)
@@ -29,12 +25,13 @@ function countcats(data, categories=union(data))
     end
 end
 
+
+lc_slices = collect(slices.mus.timelines.lc)
 plot(last(lc_slices))
+lc_slices
 uncertain_lc = mask(last(lc_slices); with=replace_missing(lc_2017.mus.uncertain, false))
 plot(uncertain_lc)
 countcats(uncertain_lc, lc_categories) |> pairs
-
-lc_slices = collect(slices.mus.timelines.lc)
 slices.mus.timelines
 lc_years = map(keys(slices.mus.timelines.lc)) do key
     parse(Int, string(key)[end-3:end])
