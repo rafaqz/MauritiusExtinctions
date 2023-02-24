@@ -26,14 +26,14 @@ function plot_ways(ways, way_names, dem, title="")
     selected_ways = select_ways(ways, way_names)
     plot(dem ./ maximum(skipmissing(dem)), legend=false)
     # plot((dems.mus ./ maximum(skipmissing(dems.mus)))[X=57.4..58.6, Y=(-20.35)..(-20.15)])
-    # plot!(watermasks.mus; color=:blue, legend=false) 
-    # plot!(deforestation.mus[:by_1835]; c=:viridis, opacity=0.4) 
+    # plot!(watermasks.mus; color=:blue, legend=false)
+    # plot!(deforestation.mus[:by_1835]; c=:viridis, opacity=0.4)
     # plot!(selected_ways; color=:red, title, legend=false)
     plot!(selected_ways; title, legend=false)
 end
 function rasterize_ways(ways, way_names; to)
     selected_ways = select_ways(ways, way_names)
-    rasterize(selected_ways; to, fill=true) 
+    rasterize(selected_ways; to, fill=true)
 end
 
 ways = map(island_keys) do ik
@@ -41,14 +41,14 @@ ways = map(island_keys) do ik
     GeoJSON.read(read(json_path))
 end
 
-way_names_sequences = (; 
+way_names_sequences = (;
     mus = (
         1667=>mus_way_names_1667,
         1725=>mus_way_names_1725,
         1764=>mus_way_names_1764,
         1813=>mus_way_names_1813,
         1880=>mus_way_names_1880,
-    ), 
+    ),
     reu = (
         1752=>reu_way_names_1752,
         1804=>reu_way_names_1804,
@@ -66,7 +66,7 @@ road_lines = map(ways) do island_ways
             missing
         end
     end |> skipmissing |> collect
-end 
+end
 
 way_masks = map(ways, way_names_sequences, dems) do w, seq, dem
     map(seq) do (year, way_names)
@@ -155,9 +155,9 @@ files = get_map_files()
 img_path = files.reu.atlas_early_settlement.filename
 img_path = files.reu.atlas_1780_agriculture.filename
 img_path = files.reu.atlas_1815_agriculture.filename
-img_path = files.reu.atlas_population_1967.filename
+# img_path = files.reu.atlas_population_1967.filename
 json_roads_path = string(splitext(img_path)[1], "_roads.json")
-json_roads = GeoJSON.read(read(json_roads_path)) 
+json_roads = GeoJSON.read(read(json_roads_path))
 csv_path = splitext(img_path)[1] * ".csv"
 pts = isfile(csv_path) ? open_warp_points(img_path) : nothing
 img = load_image(img_path)
@@ -167,7 +167,7 @@ rs = map(identity, rs)
 # line_canvas = Canvas{LineString}()
 # ax.aspect = AxisAspect(1)
 # draw!(line_canvas, fig, ax)
-line_canvas = Canvas(json_roads; properties=(:built, :closed))
+line_canvas = GeometryCanvas(json_roads; properties=(:built, :closed))
 p = Makie.image!(line_canvas.axis, lookup(rs, (X, Y))..., rs)
 GeoJSON.write(json_roads_path, line_canvas)
 

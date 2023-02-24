@@ -13,6 +13,7 @@ using GLMakie
 includet("common.jl")
 includet("map_file_list.jl")
 includet("raster_common.jl")
+includet("water.jl")
 lc_categories = NamedVector(native=1, forestry=2, cleared=3, abandoned=4, urban=5)
 
 # using JSON3
@@ -29,8 +30,9 @@ lc_categories = NamedVector(native=1, forestry=2, cleared=3, abandoned=4, urban=
 # includet("roads.jl")
 # includet("svgs.jl")
 
-filename = joinpath(datadir, "Selected/Mauritius/Undigitised/mus_landuse_1965.png")
-output = choose_categories(filename; save=true)
+fn = joinpath(datadir, "Selected/Mauritius/Undigitised/mus_landuse_1965.png")
+output = choose_categories(fn; save=true)
+
 #=
 L. Maillard map drawn 1845-52
 Categories:
@@ -47,9 +49,13 @@ Jardinage
 # end
 
 files = get_map_files()
-output = choose_categories(files[1][1].filename; save=true)
+output = choose_categories(files[1][1].filename; save=false)
+output = choose_categories(files.mus.atlas_dutch_period.filename; save=false)
+files.mus.atlas_dutch_period.filename
 
-warp_to_raster(img_path, dems.mus; object_type=MapRasterization.MapSelection, edit=true, kw...)
+warp_to_raster(files[1][1].filename, dems.mus; object_type=MapRasterization.MapSelection, edit=true, guide=waterways_rivers)
+
+Polygon([Point2(0.0f0, 1.0f0), Point2(0.0f0, 1.0f0))
 
 # choose_categories(files.reu.cadet_invasives.filename)
 # open_output(files.mus["atlas_19C_land_use"]).settings.category_name
