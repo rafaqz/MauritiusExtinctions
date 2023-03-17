@@ -149,19 +149,19 @@ eventrule = let events=landscape_events.mus,
             println("Updating slice...")
             l2 .= lc[At(current_year)]
         end
-        # for event in events
-        #     if event.year == current_year
-        #         p = event.geometry
-        #         I = DimensionalData.dims2indices(D, (X(Contains(p.X)), Y(Contains(p.Y))))
-        #         Iu = map(i -> i-1:i+1, I)
-        #         Ic = map(i -> i-10:i+10, I)
-        #         l1[Iu...] .= states.urban
-        #         l1[Ic...] .= states.cleared
-        #         l2[Iu...] .= states.urban
-        #         l2[Ic...] .= states.cleared
-        #         # l2 .= states.cleared
-        #     end
-        # end
+        for event in events
+            if event.year == current_year
+                p = event.geometry
+                I = DimensionalData.dims2indices(D, (X(Contains(p.X)), Y(Contains(p.Y))))
+                Iu = map(i -> i-1:i+1, I)
+                Ic = map(i -> i-10:i+10, I)
+                l1[Iu...] .= states.urban
+                l1[Ic...] .= states.cleared
+                l2[Iu...] .= states.urban
+                l2[Ic...] .= states.cleared
+                # l2 .= states.cleared
+            end
+        end
     end
 end
 ruleset = Ruleset(eventrule, staterule; proc=CPUGPU());
