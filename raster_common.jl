@@ -1,3 +1,4 @@
+println("Loading packages...")
 using GeoJSON
 using GeoInterface
 using GeometryBasics
@@ -5,14 +6,14 @@ using GADM
 using Shapefile
 using RasterDataSources
 using Rasters
-using Plots
 using Rasters: Between, trim, Band
-using Plots: plot, plot!
 using Unitful
 
+println("Loading functions...")
 includet("common.jl")
+includet("slope.jl")
 includet("functions.jl")
-includet("lost_land_images.jl")
+# includet("lost_land_images.jl")
 
 years = 1638, 1773, 1835, 1872, 1935, "present"
 lc_years = 1638, 1773, 1835, 1872, 1935, "present"
@@ -20,6 +21,7 @@ lc_year_keys = map(y -> "lc_$y", lc_years)
 
 island_keys = (; mus=:mus, reu=:reu)
 
+println("Getting borders...")
 gdal_borders = (
     mus=GADM.get("MUS").geom[1],
     reu=GADM.get("REU").geom[1],
@@ -39,6 +41,8 @@ dem2 = Raster(tiles[2]; name=:DEM)
 border_selectors = map(bbox) do bb
     mus=(X(Between(bb[1])), Y(Between(bb[2])), Band(1))
 end
+
+println("Getting DEMs...")
 # Mauritius is right over the split in the tiles
 m1 = view(dem1, border_selectors.mus...)
 m2 = view(dem2, border_selectors.mus...)
@@ -51,12 +55,12 @@ reu_dem = replace_missing(read(trim(view(Raster(reu_tile), border_selectors.reu.
 dems = (mus=mus_dem, reu=reu_dem)
 elevation = map(d -> d .* u"m", dems)
 
-mauritius_proj_dem = Raster("/home/raf/PhD/Mascarenes/Data/Norder/LS factor/DEM/DEM100x100_Resample.img"; crs=EPSG(3337))
-mauritius_proj_dem = rebuild(mauritius_proj_dem; missingval=minimum(mauritius_proj_dem))
+# mauritius_proj_dem = Raster("/home/raf/PhD/Mascarenes/Data/Norder/LS factor/DEM/DEM100x100_Resample.img"; crs=EPSG(3337))
+# mauritius_proj_dem = rebuild(mauritius_proj_dem; missingval=minimum(mauritius_proj_dem))
 
 masks = map(boolmask, dems)
 
-includet("map_file_list.jl")
-files = get_map_files()
-lc_categories = (native=1, forestry=2, cleared=3, abandoned=4, urban=5)
-slices = make_raster_slices(masks, lc_categories)
+println("Calculating slope...")
+slope_stacks = map(dems) do dem
+    slopeaspect(dem, FD3Linear(); cellsize=111.0)
+end;

@@ -64,7 +64,8 @@ function get_map_files()
         #     cleared=(cleared_1835="cleared",), forest=(forest_1835="uncleared",),
         # )),
         fraser_1835_from_gleadow = (filename="Mauritius/Undigitised/1835_fraser_from_gleadow.jpg", poly=1, layers=(;
-            cleared=(cleared_1835="cleared",), forest=(forests_1835="forest",),
+            cleared=(cleared_1835="sea",), # sea and cleared are swapped
+            forest=(forest_1835="forest",),
         )),
         surveyor_general_1872_from_gleadow = (filename="Mauritius/Undigitised/1872_surveyor_general_from_gleadow.jpg", poly=1, layers=(;
             # cleared=(cleared_1850="cleared_1850-70", cleared_1870=("cleared_1850-70", "cleared_1870-72"), cleared_1872=("cleared_1850-70", "cleared_1870-72")),
@@ -151,6 +152,7 @@ function make_raster_slices(masks, categories)
         (; cleared_1810, cleared_1854, cleared_1905, cleared_1968) = map(m.atlas_19C_land_use.grouped.cleared) do A
             A .& masks.mus
         end
+        fraser_forest = m.fraser_1835_from_gleadow.grouped.forest.forest_1835 .& masks.mus
         # Gleadow hand drawn 19C maps
         gleadow_forest = map(m.surveyor_general_1872_from_gleadow.grouped.forest) do A
             A .& masks.mus
@@ -158,30 +160,20 @@ function make_raster_slices(masks, categories)
         gleadow_cleared_keys = map(keys(gleadow_forest)) do k
             Symbol(replace(string(k), "forest" => "cleared"))
         end
+        # We try to reduce cartographical innacuracies of the projection by masking 
+        # the gleadow and fraser maps with the previous and subsequent atlas maps.
+        # This will have the effect of reducing the total cleared area for thes
+        # frames by a small amount
+        # It removes logical inconsistencies where land marked as cleared is later 
+        # marked as not cleared - which should never happen.
         (; cleared_1850, cleared_1870, cleared_1872) = map(gleadow_forest) do A
             # TODO change this to 1905 after fixing missing areas on 1905 map
             .!(A .| .!(cleared_1968)) .| cleared_1854
         end |> values |> NamedTuple{gleadow_cleared_keys}
-        # TODO Delete this after fixing 1905 maps
+        # TODO Delete this after fixing 1905 maps?
         cleared_1905 = cleared_1905 .| cleared_1872
         cleared_1992 = m.atlas_1992_agriculture.grouped.cleared .& masks.mus
             # m.atlas_1992_land_use.grouped.cleared
-
-        cleared = (;
-            cleared_1610,
-            cleared_1638,
-            cleared_1710,
-            cleared_1711,
-            cleared_1723,
-            cleared_1772,
-            cleared_1810, 
-            cleared_1854,
-            cleared_1870,
-            cleared_1872,
-            cleared_1905, 
-            cleared_1968,
-            cleared_1992,
-        )
 
         abandoned_1610 = falses(dims(masks.mus))
         abandoned_1638 = falses(dims(masks.mus))
@@ -199,7 +191,7 @@ function make_raster_slices(masks, categories)
         abandoned_1872 = abandoned_1810 .& .!(cleared_1872)
         abandoned_1905 = m.atlas_19C_land_use_2.grouped.abandoned.abandoned_1905_cleared_1968 .|
             m.atlas_19C_land_use.grouped.abandoned.abandoned_1905 .|
-            (abandoned_1810 .& .!(cleared.cleared_1905)) .&
+            (abandoned_1810 .& .!(cleared_1905)) .&
             masks.mus
         abandoned_1968 = abandoned_1810 .|
             m.atlas_19C_land_use.grouped.abandoned.abandoned_1968 .|
@@ -212,52 +204,81 @@ function make_raster_slices(masks, categories)
             # And remove anything cleared in 1992
             .!(cleared_1992)
 
-        abandoned = (;
-            abandoned_1610,  
-            abandoned_1638,  
-            abandoned_1710,
-            abandoned_1711,
-            abandoned_1723,
-            abandoned_1772,
-            abandoned_1810,
-            abandoned_1854,
-            abandoned_1870,
-            abandoned_1872,
-            abandoned_1905,
-            abandoned_1968,
-            abandoned_1992,
-        )
+        # We need abandonement data from 1810 so this is moved later
+        # Cleared areas in 1835 must not be uncleared again later in 1854
+        cleared_1835 = .!(fraser_forest) .& (cleared_1854 .| abandoned_1854)
+        # Uncleared areas that were previously cleared or abandoned
+        # in 1810 or abandoned in 1854 are also abandoned in 1835
+        abandoned_1835 = fraser_forest .& (abandoned_1810 .| cleared_1810 .| abandoned_1854)
 
-        urban = (;
-            urban_1610=falses(dims(masks.mus)),
-            urban_1638=falses(dims(masks.mus)),
-            urban_1710=falses(dims(masks.mus)),
-            urban_1711=falses(dims(masks.mus)),
-            urban_1723=falses(dims(masks.mus)),
-            urban_1772=m.atlas_18C_land_use.grouped.urban.urban_1763, # close enough to 1763 ? not really
-            urban_1810=m.atlas_19C_land_use.grouped.urban.urban_1810,
-            urban_1854=m.atlas_19C_land_use.grouped.urban.urban_1810, # Need to handle lack of information for specific categories somehow
-            urban_1870=m.atlas_19C_land_use.grouped.urban.urban_1810, # The cleared and abandoned categories will also be partly wrong because of this
-            urban_1872=m.atlas_19C_land_use.grouped.urban.urban_1810,
-            urban_1905=m.atlas_19C_land_use.grouped.urban.urban_1905,
-            urban_1968=m.atlas_19C_land_use.grouped.urban.urban_1905,
-            urban_1992=m.atlas_1992_agriculture.grouped.urban,
-        )
-        forestry = (;
-            forestry_1610=falses(dims(masks.mus)),
-            forestry_1638=falses(dims(masks.mus)),
-            forestry_1710=falses(dims(masks.mus)),
-            forestry_1711=falses(dims(masks.mus)),
-            forestry_1723=falses(dims(masks.mus)),
-            forestry_1772=falses(dims(masks.mus)),
-            forestry_1810=falses(dims(masks.mus)),
-            forestry_1854=falses(dims(masks.mus)),
-            forestry_1870=falses(dims(masks.mus)),
-            forestry_1872=falses(dims(masks.mus)),
-            forestry_1905=falses(dims(masks.mus)),
-            forestry_1968=falses(dims(masks.mus)),
-            forestry_1992=m.atlas_1992_agriculture.grouped.forestry,
-        )
+        cleared = [
+            1610=>cleared_1610,
+            1638=>cleared_1638,
+            1710=>cleared_1710,
+            1711=>cleared_1711,
+            1723=>cleared_1723,
+            1772=>cleared_1772,
+            1810=>cleared_1810, 
+            1835=>cleared_1835,
+            1854=>cleared_1854,
+            1870=>cleared_1870,
+            1872=>cleared_1872,
+            1905=>cleared_1905, 
+            1968=>cleared_1968,
+            1992=>cleared_1992,
+        ]
+        cleared = RasterSeries(last.(cleared), Ti(first.(cleared)))
+        abandoned = [
+            1610=>abandoned_1610,  
+            1638=>abandoned_1638,  
+            1710=>abandoned_1710,
+            1711=>abandoned_1711,
+            1723=>abandoned_1723,
+            1772=>abandoned_1772,
+            1810=>abandoned_1810,
+            1835=>abandoned_1835,
+            1854=>abandoned_1854,
+            1870=>abandoned_1870,
+            1872=>abandoned_1872,
+            1905=>abandoned_1905,
+            1968=>abandoned_1968,
+            1992=>abandoned_1992,
+        ]
+        abandoned = RasterSeries(last.(abandoned), Ti(first.(abandoned)))
+        urban = [
+            1610=>falses(dims(masks.mus)),
+            1638=>falses(dims(masks.mus)),
+            1710=>falses(dims(masks.mus)),
+            1711=>falses(dims(masks.mus)),
+            1723=>falses(dims(masks.mus)),
+            1772=>m.atlas_18C_land_use.grouped.urban.urban_1763, # close enough to 1763 ?
+            1810=>m.atlas_19C_land_use.grouped.urban.urban_1810,
+            1835=>m.atlas_19C_land_use.grouped.urban.urban_1810,
+            1854=>m.atlas_19C_land_use.grouped.urban.urban_1810, # Need to handle lack of information for specific categories somehow
+            1870=>m.atlas_19C_land_use.grouped.urban.urban_1810, # The cleared and abandoned categories will also be partly wrong because of this
+            1872=>m.atlas_19C_land_use.grouped.urban.urban_1810,
+            1905=>m.atlas_19C_land_use.grouped.urban.urban_1905,
+            1968=>m.atlas_19C_land_use.grouped.urban.urban_1905,
+            1992=>m.atlas_1992_agriculture.grouped.urban,
+        ]
+        urban = RasterSeries(last.(urban), Ti(first.(urban)))
+        forestry = [
+            1610=>falses(dims(masks.mus)),
+            1638=>falses(dims(masks.mus)),
+            1710=>falses(dims(masks.mus)),
+            1711=>falses(dims(masks.mus)),
+            1723=>falses(dims(masks.mus)),
+            1772=>falses(dims(masks.mus)),
+            1810=>falses(dims(masks.mus)),
+            1835=>falses(dims(masks.mus)),
+            1854=>falses(dims(masks.mus)),
+            1870=>falses(dims(masks.mus)),
+            1872=>falses(dims(masks.mus)),
+            1905=>falses(dims(masks.mus)),
+            1968=>falses(dims(masks.mus)),
+            1992=>m.atlas_1992_agriculture.grouped.forestry,
+        ]
+        forestry = RasterSeries(last.(forestry), Ti(first.(forestry)))
         function _combine(F, C, A, U)
             A = broadcast(F, C, A, U, masks.mus) do f, c, a, u, m
                 if !m 
@@ -277,9 +298,7 @@ function make_raster_slices(masks, categories)
             rebuild(A; missingval=0)
         end
         # Combine cleared and abandoned Bool masks into Int rasters
-        lc_keys = map(x -> Symbol("lc" * string(x)[end-4:end]), keys(cleared))
-        lc = NamedTuple{lc_keys}(map(_combine, values(forestry), values(cleared), values(abandoned), values(urban)))
-
+        lc = map(_combine, forestry, cleared, abandoned, urban)
         (; cleared, abandoned, urban, forestry, lc)
     end
 
@@ -290,7 +309,8 @@ function make_raster_slices(masks, categories)
         cleared_1765 = ((r.atlas_early_settlement.grouped.concessions.conceded_1715_1765 .| cleared_1715) .& cleared_1780) .& masks.reu
         cleared_1815 = (r.atlas_1815_agriculture.grouped.cleared .| cleared_1780) .& masks.reu
         cleared_1960 = (.!(r.atlas_1960_agriculture.grouped.forest) .| cleared_1815) .& masks.reu
-        cleared = (; cleared_1715, cleared_1765, cleared_1780, cleared_1815, cleared_1960,)
+        cleared = [cleared_1715, cleared_1765, cleared_1780, cleared_1815, cleared_1960]
+        cleared = Rasters.combine(RasterSeries(cleared, Ti([1715, 1765, 1780, 1815, 1960])))
         # We don't have abandonment data for Reunion
         (; cleared)
     end
@@ -341,7 +361,9 @@ function open_warp_points(filename::String)
     return isfile(csv_path) ? CSV.read(csv_path, DataFrame) : nothing
 end
 
-function warp_to_raster(img_path::String, template::Raster; object_type=MapRasterization.MapSelection, edit=false, kw...)
+function warp_to_raster(img_path::String, template::Raster; 
+    object_type=MapRasterization.MapSelection, edit=false, save=true, kw...
+)
     img = load_image(img_path)
     csv_path = splitext(img_path)[1] * ".csv"
     points = isfile(csv_path) ? open_warp_points(img_path) : nothing
@@ -362,10 +384,12 @@ function warp_to_raster(img_path::String, template::Raster; object_type=MapRaste
                 # )
             # end
         end
-        df = DataFrame(warp_points)
-        CSV.write(csv_path, df)
+        if save
+            df = DataFrame(warp_points)
+            CSV.write(csv_path, df)
+        end
     end
-    if isfile(splitext(img_path)[1] * ".json")
+    if save && isfile(splitext(img_path)[1] * ".json")
         df = CSV.read(csv_path, DataFrame)
         output = open_output(object_type, img_path)
         if object_type <: MapRasterization.MapSelection
@@ -375,7 +399,6 @@ function warp_to_raster(img_path::String, template::Raster; object_type=MapRaste
             write(raster_path, rs)
             rs = mask(Raster(raster_path); with=template)
             write(raster_path, rs)
-            display(Plots.plot(rs))
             return rs
         elseif object_type <: MapRasterization.CategoryShapes
             warped_geoms = map(output.shapes) do sh
@@ -392,10 +415,13 @@ function warp_to_raster(img_path::String, template::Raster; object_type=MapRaste
     end
 end
 
-function choose_categories(img_path::String; output=open_output(MapRasterization.MapSelection, img_path), save=true)
+function choose_categories(img_path::String; 
+    save=true, restart=false,
+    output=restart ? nothing : open_output(MapRasterization.MapSelection, img_path), 
+)
     img = load_image(img_path)
     if isnothing(output)
-        output = MapRasterization.selectcolors(img; ncategories=5)
+        output = MapRasterization.selectcolors(img)
     else
         output = MapRasterization.selectcolors(img, output)
     end

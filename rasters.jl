@@ -109,12 +109,6 @@ port_timelines = (
 # plot(distance_stacks.mus)
 # plot(distance_stacks.mus[:to_primary_roads])
 
-# Slope
-slope_stacks = map(dems) do dem
-    slopeaspect(dem, FD3Linear(); cellsize=111.0)
-end;
-plot(slope_stacks.mus)
-
 # Vegetation maps from "Lost Land of the Dodo"
 lostland_stacks = map(namedkeys(lostland_image_classes), lostland_image_classes) do i, rasters
     read(RasterStack(joinpath(outputdir, "LostLand", string(i))))

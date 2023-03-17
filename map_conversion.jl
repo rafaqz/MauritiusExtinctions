@@ -14,7 +14,6 @@ includet("common.jl")
 includet("map_file_list.jl")
 includet("raster_common.jl")
 includet("water.jl")
-lc_categories = NamedVector(native=1, forestry=2, cleared=3, abandoned=4, urban=5)
 
 # using JSON3
 # using Images
@@ -30,8 +29,8 @@ lc_categories = NamedVector(native=1, forestry=2, cleared=3, abandoned=4, urban=
 # includet("roads.jl")
 # includet("svgs.jl")
 
-fn = joinpath(datadir, "Selected/Mauritius/Undigitised/mus_landuse_1965.png")
-output = choose_categories(fn; save=true)
+# fn = joinpath(datadir, "Selected/Mauritius/Undigitised/mus_landuse_1965_100.png")
+# output = choose_categories(fn; save=true, restart=true)
 
 #=
 L. Maillard map drawn 1845-52
@@ -48,14 +47,44 @@ Jardinage
 #     yield()
 # end
 
+# using Plots
 files = get_map_files()
-output = choose_categories(files[1][1].filename; save=false)
-output = choose_categories(files.mus.atlas_dutch_period.filename; save=false)
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/atlas_18C_land_use_cropped.jpg"
+img = load_image(img_path)
+# img_path = files.mus[6][1]
+# img_path = files.mus.fraser_1835_from_gleadow.filename
+output = choose_categories(img_path; save=false, restart=true)
+raster_path = splitext(img_path)[1] * ".tif"
+r = Raster(raster_path)
+ColorSchemes.terrainj
 files.mus.atlas_dutch_period.filename
 
-warp_to_raster(files[1][1].filename, dems.mus; object_type=MapRasterization.MapSelection, edit=true, guide=waterways_rivers)
 
-Polygon([Point2(0.0f0, 1.0f0), Point2(0.0f0, 1.0f0))
+warp_to_raster(files.mus.fraser_1835_from_gleadow.filename, dems.mus;
+    object_type=MapRasterization.MapSelection, edit=true,
+    guide=(waterways_rivers, waterways_lakes),
+)
+
+poly = Polygon([Point2(0.0f0, 1.0f0), Point2(0.0f0, 1.0f0)])
+img = load_image(img_path)
+
+using Pkg
+Pkg.add(url="https://github.com/rafaqz/MakieDraw.jl")
+using MakieDraw
+using GLMakie
+using ColorSchemes
+c = GeometryCanvas{Point2}()
+# Click and drag is fast! 
+
+img = rand(1000, 1000)
+heatmap!(c.axis, img; colormap=:magma)
+# Now its really slow and laggy
+
+Also notice the repl prints when the click even is triggered there 
+is a big delay before the GeometryCanvas handlers actually receive 
+the click - the delay is not from plotting, but lag in mouse inpu
+events arriving
+
 
 # choose_categories(files.reu.cadet_invasives.filename)
 # open_output(files.mus["atlas_19C_land_use"]).settings.category_name
@@ -108,4 +137,28 @@ map((:mus, :reu), (RasterStack(mus_combined), reu_cleared_timeline), gdal_border
     gif(anim, "$(name)_clearing_timeline.gif", fps=0.8)
 end
 savefig("time_from_ports.png")
+
+
+using GLMakie
+fig = Figure()
+ax = Axis(fig[1, 1])
+function datashader(limits, pixelarea)
+    # return your heatmap data
+    # here, I just calculate a sine field as a demo
+    xpixels, ypixels = widths(pixelarea)
+    xmin, ymin = minimum(limits)
+    xmax, ymax = maximum(limits)
+    dxmin, dymin = map(max, map(x -> trunc(Int, x), (xmin, ymin)), map(first, axes(A)))
+    dxmax, dymax = map(min, map(x -> trunc(Int, x), (xmax, ymax)), map(last, axes(A)))
+    # dxpixels = round(Int, (dxmax - dxmin) / (xmax - xmin) * xpixels)
+    # dypiyels = round(Int, (dymax - dymin) / (ymax - ymin) * ypixels)
+    xs = 
+    A[xs, ys]
+end
+xrange = lift(x -> minimum(x)[1] .. maximum(x)[1], ax.finallimits)
+yrange = lift(x -> minimum(x)[2] .. maximum(x)[2], ax.finallimits)
+pixels = lift(datashader, ax.finallimits, ax.scene.px_area)
+heatmap!(ax, xrange, yrange, pixels,
+    xautolimits = false, yautolimits = false)
+display(fig)
 

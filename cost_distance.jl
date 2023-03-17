@@ -39,7 +39,6 @@ The function `f` accept 3 parameters: `a`, `b`, and `distance`:
 By default, `f=meancost` so that `costs` taken as a grid of travel costs.
 """
 function cost_distance(origins, elevation, resistance=nothing; kw...)
-    display(elevation)
     # Create a grid we will update cost distance into.
     # The initial cost is the maximum `Float64` value. This will later
     # be the `missingval`, as it will remain in any cells that were not touched by
@@ -183,7 +182,7 @@ const movement_speed = (
     road=5.0u"km/h",
     dirt_road=4.0u"km/h",
     track=3.2u"km/h",
-    cleared_land=3.0u"km/h",
+    cleared_land=2.0u"km/h",
     forest=1.0u"km/h",
     dense_forest=0.5u"km/h",
     wetland=0.5u"km/h",
