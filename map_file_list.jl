@@ -135,10 +135,10 @@ function make_raster_slices(masks, categories)
     mus_timelines = let
         abandonded_1905_cleared_1968 = rasters.mus.atlas_19C_land_use_2.grouped.abandoned.abandoned_1905_cleared_1968
         m = rasters.mus
-        cleared_1610 = falses(dims(masks.mus))
+        cleared_1600 = falses(dims(masks.mus))
         cleared_1638 = falses(dims(masks.mus))
         # Atlas dutch period
-        cleared_1710 = m.atlas_dutch_period.grouped.cleared .& masks.mus
+        cleared_1709 = m.atlas_dutch_period.grouped.cleared .& masks.mus
         # Dutch departure
         cleared_1711 = falses(dims(masks.mus))
         # French arrival
@@ -175,13 +175,13 @@ function make_raster_slices(masks, categories)
         cleared_1992 = m.atlas_1992_agriculture.grouped.cleared .& masks.mus
             # m.atlas_1992_land_use.grouped.cleared
 
-        abandoned_1610 = falses(dims(masks.mus))
+        abandoned_1600 = falses(dims(masks.mus))
         abandoned_1638 = falses(dims(masks.mus))
-        abandoned_1710 = falses(dims(masks.mus))
+        abandoned_1709 = falses(dims(masks.mus))
         # Dutch departure
-        abandoned_1711 = cleared_1710
+        abandoned_1711 = cleared_1709
         # French arrival
-        abandoned_1723 = cleared_1710
+        abandoned_1723 = cleared_1709
         abandoned_1772 = abandoned_1723 .& .!(cleared_1772)
         # English arrival
         abandoned_1810 = m.atlas_18C_land_use.grouped.abandoned.abandoned_1810 .& masks.mus
@@ -212,9 +212,9 @@ function make_raster_slices(masks, categories)
         abandoned_1835 = fraser_forest .& (abandoned_1810 .| cleared_1810 .| abandoned_1854)
 
         cleared = [
-            1610=>cleared_1610,
+            1600=>cleared_1600,
             1638=>cleared_1638,
-            1710=>cleared_1710,
+            1709=>cleared_1709,
             1711=>cleared_1711,
             1723=>cleared_1723,
             1772=>cleared_1772,
@@ -229,9 +229,9 @@ function make_raster_slices(masks, categories)
         ]
         cleared = RasterSeries(last.(cleared), Ti(first.(cleared)))
         abandoned = [
-            1610=>abandoned_1610,  
+            1600=>abandoned_1600,  
             1638=>abandoned_1638,  
-            1710=>abandoned_1710,
+            1709=>abandoned_1709,
             1711=>abandoned_1711,
             1723=>abandoned_1723,
             1772=>abandoned_1772,
@@ -246,9 +246,9 @@ function make_raster_slices(masks, categories)
         ]
         abandoned = RasterSeries(last.(abandoned), Ti(first.(abandoned)))
         urban = [
-            1610=>falses(dims(masks.mus)),
+            1600=>falses(dims(masks.mus)),
             1638=>falses(dims(masks.mus)),
-            1710=>falses(dims(masks.mus)),
+            1709=>falses(dims(masks.mus)),
             1711=>falses(dims(masks.mus)),
             1723=>falses(dims(masks.mus)),
             1772=>m.atlas_18C_land_use.grouped.urban.urban_1763, # close enough to 1763 ?
@@ -263,9 +263,9 @@ function make_raster_slices(masks, categories)
         ]
         urban = RasterSeries(last.(urban), Ti(first.(urban)))
         forestry = [
-            1610=>falses(dims(masks.mus)),
+            1600=>falses(dims(masks.mus)),
             1638=>falses(dims(masks.mus)),
-            1710=>falses(dims(masks.mus)),
+            1709=>falses(dims(masks.mus)),
             1711=>falses(dims(masks.mus)),
             1723=>falses(dims(masks.mus)),
             1772=>falses(dims(masks.mus)),

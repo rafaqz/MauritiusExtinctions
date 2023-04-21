@@ -3,6 +3,10 @@ using Distributions
 using DimensionalData
 using DimensionalData.LookupArrays
 using StatsPlots
+using Unitful
+using StaticArrays
+
+using Tyler
 
 includet("raster_common.jl")
 includet("roads.jl")
@@ -16,17 +20,52 @@ files = get_map_files()
 slices = make_raster_slices(masks, lc_categories)
 lc = map(slices.mus.timelines.lc) do A
     reverse(A; dims=Y)
-end
-Plots.plot(lc; size=(2000,1300), legend=false, clims=(1, 5))
-savefig("mauritius_timeline.png")
+end |> x -> set(x, Ti=>Intervals(End())) |> x -> set(x, Ti=>Irregular((0, 1992)))
+# a = @animate for A in lc
+#     Plots.plot(A; legend=false, clims=(1, 5))
+# end
+# Plots.gif(a, "timeseries.gif", fps=1)
+# Plots.plot(lc; size=(2000,1300), legend=false, clims=(1, 5))
+# savefig("mauritius_timeline.png")
 
 const P = Param
+
+states = NamedVector(lc_categories)
 
 function countcats(data, categories=union(data))
     map(categories) do cat
         cat => count(==(cat), data)
     end
 end
+Plots.plot(human_pop_timeline.reu)
+Plots.plot!(human_pop_timeline.mus)
+
+best_slices = lc[At([1600, 1709, 1723, 1772, 1810, 1905, 1992])]
+Plots.plot(best_slices)
+cat_counts = map(best_slices) do slice
+    map(states) do state
+        count(x -> x === state, slice)
+    end |> NamedTuple
+end;
+Plots.scatter(human_pop_timeline.mus)
+pop_cat_counts = map(lookup(cat_counts, Ti)) do t
+    (; cat_counts[At(t)]..., pop=human_pop_timeline.mus[At(t)])
+end
+
+using GLM, StatsPlots
+# Cleared land is used for urbanisation by 1992, so don't use it in the model
+cleared_model = lm(@formula(cleared ~ pop^2 + pop), pop_cat_counts)
+urban_model = lm(@formula(urban ~ pop^2 + pop), pop_cat_counts)
+ti = dims(human_pop_timeline.mus, Ti)
+pops = map(pop -> (; pop), human_pop_timeline.mus)
+cleared_pred = DimArray(predict(cleared_model, parent(pops)), ti)
+urban_pred = DimArray(predict(urban_model, parent(pops)), ti)
+lc_predictions = map((cleared, urban) -> (; cleared, urban), cleared_pred, urban_pred)
+Plots.plot(cleared_pred)
+Plots.scatter!(map(x -> x.urban, cat_counts))
+Plots.plot!(urban_pred)
+Plots.scatter!(map(x -> x.cleared, cat_counts))
+Plots.plot!(human_pop_timeline.mus)
 
 b = (; bounds=(0.0, 2.0))
 inertia = NamedVector(
@@ -37,14 +76,6 @@ inertia = NamedVector(
     forestry=Param(0.9; b...),
 )
 b = (; bounds=(1.0, 2.0))
-pressure = NamedVector(
-    native=Param(1.0; b...),
-    cleared=Param(1.5; b...),
-    abandoned=Param(1.0; b...),
-    urban=Param(1.4; b...),
-    forestry=Param(1.9; b...),
-)
-states = NamedVector(lc_categories)
 
 landscape_events = (
     mus = [
@@ -72,15 +103,17 @@ end
 # plot(suitability.reu; clims=(0, 1), legend=false)
 suitability = map(human_suitability) do hs
     native = ones(axes(hs))
-    cleared = h
+    cleared = hs .^ 2
     abandoned = 1 .- hs
-    urban = hs
+    urban = hs .^ 2
     forestry = ones(axes(hs))
     map(native, cleared, abandoned, urban, forestry) do n, c, a, u, f
         NamedVector(native=n, cleared=c, abandoned=a, urban=u, forestry=f)
     end
 end
 
+
+# The amount of influence neighbors have
 b = (; bounds=(1.00, 5.0))
 transitions = (
     native = (
@@ -120,24 +153,11 @@ transitions = (
     ),
 )
 
+# The logic of sequential category change - can a transition happen at all
 revmasks = map(masks) do A
     reverse(A; dims=Y)
 end
 
-staterule = BottomUp{:landcover}(;
-    neighborhood=Window(5),
-    states,
-    inertia,
-    transitions,
-    pressure,
-    suitability=Aux{:suitability}(),
-    fixed=false,
-    perturbation=P(0.1; bounds=(0.0, 1.0), label="perturbation"),
-)
-
-lc = map(slices.mus.timelines.lc) do A
-    reverse(A; dims=Y)
-end
 # Human Population and species introduction events
 eventrule = let events=landscape_events.mus,
                 states=states,
@@ -164,30 +184,90 @@ eventrule = let events=landscape_events.mus,
         end
     end
 end
-ruleset = Ruleset(eventrule, staterule; proc=CPUGPU());
+pressure = NamedVector(
+    native=Param(1.0; b...),
+    cleared=Param(1.5; b...),
+    abandoned=Param(1.0; b...),
+    urban=Param(1.0; b...),
+    forestry=Param(1.0; b...),
+)
+pressure = let preds=lc_predictions
+    leverage=Param(1.0; bounds=(-50.0, 50.0))
+    native=Param(1.0; b...)
+    # cleared=Param(1.5; b...),
+    abandoned=Param(1.0; b...)
+    # urban=Param(1.4; b...)
+    forestry=Param(1.0; b...)
+    (data, rule) -> begin
+        predicted = preds[At(currenttime(data))]
+        println(stdout, predicted)
+        stategrid = data[:landcover]
+        ngridcells = if isnothing(DynamicGrids.mask(data))
+            length(stategrid)
+        else
+            sum(DynamicGrids.mask(data))
+        end
+        ncleared = sum(==(rule.states.cleared), stategrid)
+        nurban = sum(==(rule.states.urban), stategrid)
+        println(stdout, (ncleared, nurban))
+        urban = leverage * (predicted.urban - nurban) / ngridcells
+        cleared = leverage * (predicted.cleared - ncleared) / ngridcells
+        NamedVector(; native, cleared, abandoned, urban, forestry)
+    end
+end
+logic = (
+    native    = (native=true,  cleared=false, abandoned=false, urban=false, forestry=false,),
+    cleared   = (native=true,  cleared=true,  abandoned=true,  urban=false, forestry=false,),
+    abandoned = (native=false, cleared=true,  abandoned=true,  urban=false, forestry=false,),
+    urban     = (native=false, cleared=false, abandoned=false, urban=true,  forestry=false,),
+    forestry  = (native=false, cleared=false, abandoned=false, urban=false, forestry=true,),
+)
+
+n, c, a, u, f = states
+precursors = (
+    native =    SA[n, n, n, n],
+    cleared =   SA[n, c, a, f],
+    abandoned = SA[c, a, a, f],
+    urban =     SA[n, c, a, f],
+    forestry =  SA[n, c, a, f],
+)
+staterule = BottomUp{:landcover}(;
+    neighborhood=Moore(4),
+    states,
+    inertia,
+    transitions,
+    logic=(logic, precursors),
+    pressure,
+    suitability=Aux{:suitability}(),
+    fixed=false,
+    perturbation=P(0.1; bounds=(0.0, 1.0), label="perturbation"),
+)
+ruleset = Ruleset(eventrule, staterule);
 landcover = ones(Int, DimensionalData.commondims(suitability.mus, (X, Y)); missingval=0) |>
     A -> mask!(A; with=revmasks.mus)
 init_state = (; landcover)
+history = Rasters.combine(lc)
+# Rasters.rplot(history; colorrange=(1, 5))
+aux = (; suitability=suitability.mus, history)
 output = ResultOutput(init_state;
-    aux=(; suitability=suitability.mus),
-    tspan=1600:1:1620,
+    aux,
+    tspan=1600:1:1625,
     store=false,
     mask=revmasks.mus,
     padval=0,
 )
 simdata = DynamicGrids.SimData(output, ruleset);
 sim!(output, ruleset; simdata, printframe=true);
-
-set_theme!(backgroundcolor=:white)
+# set_theme!(backgroundcolor=:white)
 output = MakieOutput(init_state;
-    aux=(; suitability=suitability.mus),
-    tspan=1637:1:2000,
+    aux,
+    tspan=1637:1:1992,
     store=false,
     mask=revmasks.mus,
     boundary=Remove(),
     padval=0,
     ruleset,
-    # sim_kw=(; printframe=true),
+    sim_kw=(; printframe=true),
 ) do fig, frame
     axis = Axis(fig[1, 1])
     landcover = Observable(Array(frame[].landcover))
@@ -199,12 +279,6 @@ output = MakieOutput(init_state;
     hm = Makie.heatmap!(axis, landcover; colorrange=(-0.5, 5.5), colormap)
     ticks = (collect(0:length(states)), vcat(["mask"], collect(string.(propertynames(states)))))
     Colorbar(fig[1, 2], hm; ticks)
-    # recordframe!(io) # record a new framea
-    # record(scene, "test.gif") do io
-    #     for i = 1:100
-    #         func!(scene)     # animate scene
-    #     end
-    # end
     return nothing
 end
 display(output.fig)
@@ -290,73 +364,3 @@ Plots.plot(Exponential(0.1))
 # x = annual_transition_timeline[1]
 
 
-includet("/home/raf/.julia/dev/LandscapeChange/src/makie.jl")
-using DynamicGrids, GLMakie, Random
-# rand!(state, 0:10)
-
-x = "13-26/13-14,17-19/2/M"
-x = "13-26/14-19/2/M"
-x = "1-3/1,4-5/5/N"
-x = "4-7/6-8/10/M"
-x = "3,5,7,9,11,15,17,19,21,23-24,26/3,6,8-9,11,14-17,19,24/7/M"
-x = "0-3,7-9,11-13,18,21-22,24,26/13,17,20-26/4/M"
-x = "1-3/1,4-5/5/N"
-x = "4/4/5/M"
-x = "5-8/6-7,9,12/4/M"
-x = "13-26/13-14,17-19/2/M"
-x = "13-26/14-19/2/M"
-x = "1,4,8,11,13-26/13-26/5/M"
-
-s, b, i, n = split(x, '/')
-neighborhood = n == "M" ? Moore{1,3}() : VonNeumann{1,3}()
-start = parse(Int, i)
-survive, born = map(split.((s, b), ',')) do vals
-    ranges = map(vals) do v
-        if occursin("-", v) == 1
-            a, b = split(v, '-')
-            parse(Int, a) : parse(Int, b)
-        else
-            parse(Int, v)
-        end
-    end
-    Tuple(vcat(ranges...))
-end
-
-function make_init()
-    state = zeros(Int, 60, 60, 60)
-    # rand!(view(state, 40:50, 40:50, 40:50), (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, start))
-    # rand!(view(state, 25:30, 25:30, 25:30), (0, 0, 0, 0, 0, 0, 0, 0, start))
-    rand!(state, (0, 0, 0, 0, 0, 0, 0, 0, start-3, start - 2, start - 1, start))
-    # fill!(state, start)
-end
-
-i
-
-state = make_init()
-extrainit = Dict(map(i -> Symbol("init", i) => make_init(), 1:10)...)
-
-ca = let survive=survive, born=born, start=start
-    Neighbors(neighborhood) do data, hood, state, I
-    n = count(>(0), neighbors(hood))
-    if state == 0
-        n in born ? start : 0
-    elseif state == 1
-        n in survive ? state : state - 1
-    else
-        state - 1
-    end
-end
-end
-ruleset = Ruleset(ca; proc=CPUGPU())
-# output = ResultOutput(init; tspan=1:3)
-
-using GLMakie
-using OffsetArrays
-A = rand(10, 10)
-Makie.heatmap(A)
-P = PermutedDimsArray(A, (2, 1))
-O = OffsetArray(A, (0:9, 0:9))
-Makie.heatmap(O)
-using DimensionalData
-D = rand(X(10), Y(10))
-Makie.heatmap(D)
