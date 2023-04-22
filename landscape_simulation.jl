@@ -5,8 +5,7 @@ using DimensionalData.LookupArrays
 using StatsPlots
 using Unitful
 using StaticArrays
-
-using Tyler
+using ReverseStackTraces
 
 includet("raster_common.jl")
 includet("roads.jl")
@@ -30,7 +29,38 @@ end |> x -> set(x, Ti=>Intervals(End())) |> x -> set(x, Ti=>Irregular((0, 1992))
 
 const P = Param
 
-states = NamedVector(lc_categories)
+states = NamedVector(native=1, cleared=2, abandoned=3, urban=4, forestry=5)
+# to category from category
+logic = NamedVector(
+    native    = (native=true,  cleared=false, abandoned=false, urban=false, forestry=false,),
+    cleared   = (native=true,  cleared=true,  abandoned=true,  urban=false, forestry=false,),
+    abandoned = (native=false, cleared=true,  abandoned=true,  urban=false, forestry=false,),
+    urban     = (native=false, cleared=false, abandoned=false, urban=true,  forestry=false,),
+    forestry  = (native=false, cleared=false, abandoned=false, urban=false, forestry=true,),
+)
+
+function can_change(states, logic, to, from, checked=())
+    if logic[to][from]
+        return true
+    else
+        return map(states) do s
+            if s == to || s in checked
+                false
+            elseif logic[to][s]
+                can_change(states, logic, s, from, (checked..., to))
+            else
+                false
+            end
+        end |> any
+    end
+end
+# to category from category with intermediate steps
+indirect_logic = map(states) do s1
+    map(states) do s2
+        can_change(states, logic, s1, s2)
+    end
+end
+pairs(indirect_logic)
 
 function countcats(data, categories=union(data))
     map(categories) do cat
@@ -215,13 +245,6 @@ pressure = let preds=lc_predictions
         NamedVector(; native, cleared, abandoned, urban, forestry)
     end
 end
-logic = (
-    native    = (native=true,  cleared=false, abandoned=false, urban=false, forestry=false,),
-    cleared   = (native=true,  cleared=true,  abandoned=true,  urban=false, forestry=false,),
-    abandoned = (native=false, cleared=true,  abandoned=true,  urban=false, forestry=false,),
-    urban     = (native=false, cleared=false, abandoned=false, urban=true,  forestry=false,),
-    forestry  = (native=false, cleared=false, abandoned=false, urban=false, forestry=true,),
-)
 
 n, c, a, u, f = states
 precursors = (
@@ -236,13 +259,13 @@ staterule = BottomUp{:landcover}(;
     states,
     inertia,
     transitions,
-    logic=(logic, precursors),
+    logic=(; precursors, direct=logic, indirect=indirect_logic),
     pressure,
     suitability=Aux{:suitability}(),
     fixed=false,
     perturbation=P(0.1; bounds=(0.0, 1.0), label="perturbation"),
 )
-ruleset = Ruleset(eventrule, staterule);
+ruleset = Ruleset(eventrule, staterule; proc=ThreadedCPU());
 landcover = ones(Int, DimensionalData.commondims(suitability.mus, (X, Y)); missingval=0) |>
     A -> mask!(A; with=revmasks.mus)
 init_state = (; landcover)
@@ -251,40 +274,15 @@ history = Rasters.combine(lc)
 aux = (; suitability=suitability.mus, history)
 output = ResultOutput(init_state;
     aux,
-    tspan=1600:1:1625,
+    tspan=1630:1:1650,
     store=false,
     mask=revmasks.mus,
+    boundary=Remove(),
     padval=0,
 )
 simdata = DynamicGrids.SimData(output, ruleset);
 sim!(output, ruleset; simdata, printframe=true);
 # set_theme!(backgroundcolor=:white)
-output = MakieOutput(init_state;
-    aux,
-    tspan=1637:1:1992,
-    store=false,
-    mask=revmasks.mus,
-    boundary=Remove(),
-    padval=0,
-    ruleset,
-    sim_kw=(; printframe=true),
-) do fig, frame
-    axis = Axis(fig[1, 1])
-    landcover = Observable(Array(frame[].landcover))
-    on(frame) do f
-        landcover[] = f.landcover
-        notify(landcover)
-    end
-    colormap = cgrad(:Isfahan2, length(states)+1; categorical=true)
-    hm = Makie.heatmap!(axis, landcover; colorrange=(-0.5, 5.5), colormap)
-    ticks = (collect(0:length(states)), vcat(["mask"], collect(string.(propertynames(states)))))
-    Colorbar(fig[1, 2], hm; ticks)
-    return nothing
-end
-display(output.fig)
-
-using StatsPlots
-Plots.plot(Exponential(0.1))
 
 # plot(RasterStack(slices.mus.timelines.urban); legend=false, size=(1000, 850), margin=-1mm)
 # plot(RasterStack(slices.mus.timelines.lc); legend=false, clims=(0, 5), size=(1000, 850), margin=-1mm)

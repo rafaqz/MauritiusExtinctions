@@ -38,17 +38,17 @@ Categories:
 Cultives tropicales
 Forets
 Laves Modernes
-Laves anciennes et Saverunes???
+Laves anciennes et Saverunes?a??
 Jardinage
 =#
 
-# for island in files
-#     foreach(file -> choose_categories(first(file); save=false), island)
-#     yield()
-# end
+files = get_map_files()
+for island in files
+    foreach(file -> choose_categories(first(file); save=false), island)
+    yield()
+end
 
 # using Plots
-files = get_map_files()
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/atlas_18C_land_use_cropped.jpg"
 img = load_image(img_path)
 # img_path = files.mus[6][1]
@@ -79,11 +79,6 @@ c = GeometryCanvas{Point2}()
 img = rand(1000, 1000)
 heatmap!(c.axis, img; colormap=:magma)
 # Now its really slow and laggy
-
-Also notice the repl prints when the click even is triggered there 
-is a big delay before the GeometryCanvas handlers actually receive 
-the click - the delay is not from plotting, but lag in mouse inpu
-events arriving
 
 
 # choose_categories(files.reu.cadet_invasives.filename)

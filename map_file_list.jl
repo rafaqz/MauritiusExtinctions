@@ -1,4 +1,4 @@
-using JSON3, MapRasterization, GeoInterface, Rasters, FileIO, ImageIO, DataFrames, CSV
+using JSON3, MapRasterization, GeoInterface, Rasters, FileIO, ImageIO, DataFrames, CSV, GeoJSON, Colors
 
 function get_map_files()
     selected_dir = "/home/raf/PhD/Mascarenes/Data/Selected"
