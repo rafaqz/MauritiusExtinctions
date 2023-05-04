@@ -201,9 +201,9 @@ lc_2017 = map(lc_2017_masks) do m
 end 
 plot(lc_2017.reu)
 
-
 land_use_2002_shpfile = joinpath(datadir, "Claudia/Demo/GIS WILD LIFE FOUNDATION/SHAPE FILE/land_use_WGS_region.shp")
 lu_2002 = Shapefile.Table(land_use_2002_shpfile)
+GeoInterface.coordinates(lu_2002.geometry[1])
 lu_2002df = DataFrame(lu_2002)
 lu_2002_categories = map(enumerate(union(skipmissing(lu_2002df.LAND_USE)))) do (i, cat)
     Symbol(replace(cat, " " => "_")) => (i => cat)

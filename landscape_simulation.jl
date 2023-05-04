@@ -33,13 +33,13 @@ states = NamedVector(native=1, cleared=2, abandoned=3, urban=4, forestry=5)
 # to category from category
 logic = NamedVector(
     native    = (native=true,  cleared=false, abandoned=false, urban=false, forestry=false,),
-    cleared   = (native=true,  cleared=true,  abandoned=true,  urban=false, forestry=false,),
-    abandoned = (native=false, cleared=true,  abandoned=true,  urban=false, forestry=false,),
-    urban     = (native=false, cleared=false, abandoned=false, urban=true,  forestry=false,),
+    cleared   = (native=true,  cleared=true,  abandoned=true,  urban=false, forestry=true,),
+    abandoned = (native=false, cleared=true,  abandoned=true,  urban=false, forestry=true,),
+    urban     = (native=true, cleared=true, abandoned=true, urban=true,  forestry=true,),
     forestry  = (native=false, cleared=false, abandoned=false, urban=false, forestry=true,),
 )
 
-function can_change(states, logic, to, from, checked=())
+function can_change(states, logic, to, from, checked=(), path=())
     if logic[to][from]
         return true
     else
@@ -47,7 +47,7 @@ function can_change(states, logic, to, from, checked=())
             if s == to || s in checked
                 false
             elseif logic[to][s]
-                can_change(states, logic, s, from, (checked..., to))
+                can_change(states, logic, s, from, (checked..., to), (path..., from))
             else
                 false
             end
@@ -67,12 +67,13 @@ function countcats(data, categories=union(data))
         cat => count(==(cat), data)
     end
 end
-Plots.plot(human_pop_timeline.reu)
-Plots.plot!(human_pop_timeline.mus)
+Plots.plot!(human_pop_timeline.reu)
+Plots.plot(human_pop_timeline.mus)
+human_pop_timeline.mus
 
-best_slices = lc[At([1600, 1709, 1723, 1772, 1810, 1905, 1992])]
-Plots.plot(best_slices)
-cat_counts = map(best_slices) do slice
+# best_slices = lc[At([1600, 1709, 1723, 1772, 1810, 1905, 1992])]
+# Plots.plot(best_slices)
+cat_counts = map(lc) do slice
     map(states) do state
         count(x -> x === state, slice)
     end |> NamedTuple
@@ -111,8 +112,8 @@ landscape_events = (
     mus = [
         (year=1638, n=50, geometry=(X=57.7228, Y=-20.3754)), # "First Dutch settlement"
         (year=1664, n=160, geometry=(X=57.7228, Y=-20.3754)),  # "Second dutch settlement"
-        (year=1721, n=524, geometry=(X=57.7228, Y=-20.3754)),  # "Colony at grand port founded", "French",
-        (year=1721, n=20#=?=#, geometry=(X=57.5012, Y=-20.1597)),  # "Colony at port louie began", "French",
+        (year=1723, n=524, geometry=(X=57.7228, Y=-20.3754)),  # "Colony at grand port founded", "French",
+        (year=1723, n=20#=?=#, geometry=(X=57.5012, Y=-20.1597)),  # "Colony at port louie began", "French",
         (year=1735, n=20#=?=#, geometry=(X=57.5012, Y=-20.1597)),  # "Colony at port louie as capital", "French",
     ],
     reu = [
@@ -129,19 +130,24 @@ human_suitability = map(travel_times, slope_stacks, dems) do tt, ss, dem
     Rasters.combine(slices, Ti)
 end
 
+distance_to_water = map(island_keys) do k
+    view(Raster(joinpath(distancedir, string(k), "to_water.tif")), Band(1))
+end
 # plot(suitability.mus; clims=(0, 1), legend=false)
 # plot(suitability.reu; clims=(0, 1), legend=false)
-suitability = map(human_suitability) do hs
+suitability = map(human_suitability, distance_to_water) do hs, dtw
+    dtw = 1 ./ (1 .+ sqrt.(replace_missing(dtw, Inf)))
     native = ones(axes(hs))
-    cleared = hs .^ 2
+    cleared = hs .^ 2 .* dtw
     abandoned = 1 .- hs
-    urban = hs .^ 2
+    urban = hs .^ 21 .* dtw
     forestry = ones(axes(hs))
     map(native, cleared, abandoned, urban, forestry) do n, c, a, u, f
         NamedVector(native=n, cleared=c, abandoned=a, urban=u, forestry=f)
     end
 end
-
+Plots.plot(distance_to_water.mus)
+Plots.plot(human_suitability.mus[Ti=1])
 
 # The amount of influence neighbors have
 b = (; bounds=(1.00, 5.0))
@@ -195,23 +201,23 @@ eventrule = let events=landscape_events.mus,
                 lc=lc
     SetGrid{:landcover,:landcover}() do data, l1, l2
         current_year = currenttime(data)
-        if current_year in Rasters.lookup(lc, Ti)
-            println("Updating slice...")
-            l2 .= lc[At(current_year)]
-        end
-        for event in events
-            if event.year == current_year
-                p = event.geometry
-                I = DimensionalData.dims2indices(D, (X(Contains(p.X)), Y(Contains(p.Y))))
-                Iu = map(i -> i-1:i+1, I)
-                Ic = map(i -> i-10:i+10, I)
-                l1[Iu...] .= states.urban
-                l1[Ic...] .= states.cleared
-                l2[Iu...] .= states.urban
-                l2[Ic...] .= states.cleared
-                # l2 .= states.cleared
-            end
-        end
+        # if current_year in Rasters.lookup(lc, Ti)
+        #     println("Updating slice...\n")
+        #     l2 .= lc[At(current_year)]
+        # end
+        # for event in events
+        #     if event.year == current_year
+        #         p = event.geometry
+        #         I = DimensionalData.dims2indices(D, (X(Contains(p.X)), Y(Contains(p.Y))))
+        #         Iu = map(i -> i-1:i+1, I)
+        #         Ic = map(i -> i-10:i+10, I)
+        #         l1[Iu...] .= states.urban
+        #         l1[Ic...] .= states.cleared
+        #         l2[Iu...] .= states.urban
+        #         l2[Ic...] .= states.cleared
+        #         # l2 .= states.cleared
+        #     end
+        # end
     end
 end
 pressure = NamedVector(
@@ -221,8 +227,9 @@ pressure = NamedVector(
     urban=Param(1.0; b...),
     forestry=Param(1.0; b...),
 )
-pressure = let preds=lc_predictions
-    leverage=Param(1.0; bounds=(-50.0, 50.0))
+pressure = let preds=lc_predictions, ngridcells=size(sum(masks.mus))
+    leverage=Param(1.0; bounds=(0.0, 20.0))
+    smoothing=Param(1.0; bounds=(1.0, 5.0))
     native=Param(1.0; b...)
     # cleared=Param(1.5; b...),
     abandoned=Param(1.0; b...)
@@ -230,18 +237,20 @@ pressure = let preds=lc_predictions
     forestry=Param(1.0; b...)
     (data, rule) -> begin
         predicted = preds[At(currenttime(data))]
-        println(stdout, predicted)
         stategrid = data[:landcover]
-        ngridcells = if isnothing(DynamicGrids.mask(data))
-            length(stategrid)
-        else
-            sum(DynamicGrids.mask(data))
-        end
+        # ngridcells = if isnothing(DynamicGrids.mask(data))
+        #     length(stategrid)
+        # else
+        #     sum(DynamicGrids.mask(data))
+        # end
         ncleared = sum(==(rule.states.cleared), stategrid)
         nurban = sum(==(rule.states.urban), stategrid)
-        println(stdout, (ncleared, nurban))
-        urban = leverage * (predicted.urban - nurban) / ngridcells
-        cleared = leverage * (predicted.cleared - ncleared) / ngridcells
+        println(stdout, (; ncleared, pcleared=predicted.cleared, nurban, purban=predicted.urban))
+        println()
+        urban = leverage * sign(predicted.urban - nurban) * 
+            max(0.0, predicted.urban) / max(nurban, max(0.0, predicted.urban) / smoothing)
+        cleared = leverage * sign(predicted.cleared - ncleared) * 
+            max(0.0, predicted.cleared) / max(ncleared, max(0.0, predicted.cleared) / smoothing)
         NamedVector(; native, cleared, abandoned, urban, forestry)
     end
 end
@@ -255,7 +264,7 @@ precursors = (
     forestry =  SA[n, c, a, f],
 )
 staterule = BottomUp{:landcover}(;
-    neighborhood=Moore(4),
+    neighborhood=Moore(2),
     states,
     inertia,
     transitions,
@@ -265,14 +274,15 @@ staterule = BottomUp{:landcover}(;
     fixed=false,
     perturbation=P(0.1; bounds=(0.0, 1.0), label="perturbation"),
 )
-ruleset = Ruleset(eventrule, staterule; proc=ThreadedCPU());
-landcover = ones(Int, DimensionalData.commondims(suitability.mus, (X, Y)); missingval=0) |>
-    A -> mask!(A; with=revmasks.mus)
-init_state = (; landcover)
+init_state = (; 
+    landcover = ones(Int, DimensionalData.commondims(suitability.mus, (X, Y)); missingval=0) |>
+        A -> mask!(A; with=revmasks.mus)
+)
 history = Rasters.combine(lc)
+dims(history, Ti)
 # Rasters.rplot(history; colorrange=(1, 5))
 aux = (; suitability=suitability.mus, history)
-output = ResultOutput(init_state;
+result_output = ResultOutput(init_state;
     aux,
     tspan=1630:1:1650,
     store=false,
@@ -280,8 +290,9 @@ output = ResultOutput(init_state;
     boundary=Remove(),
     padval=0,
 )
-simdata = DynamicGrids.SimData(output, ruleset);
-sim!(output, ruleset; simdata, printframe=true);
+ruleset = Ruleset(eventrule, staterule; proc=CPUGPU());
+simdata = DynamicGrids.SimData(result_output, ruleset);
+sim!(result_output, ruleset; simdata, printframe=true, proc=CPUGPU());
 # set_theme!(backgroundcolor=:white)
 
 # plot(RasterStack(slices.mus.timelines.urban); legend=false, size=(1000, 850), margin=-1mm)
