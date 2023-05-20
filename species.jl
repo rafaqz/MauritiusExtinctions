@@ -6,11 +6,74 @@ using Chain
 using Plots, StatsPlots
 using DimensionalData, DimensionalData.LookupArrays
 using IntervalSets
+const GI = GeoInterface
 
+exitinct_plant_path = "/home/raf/Data/Extinction/Plants/41559_2019_906_MOESM3_ESM.xlsx"
+extinct_plants_xl = XLSX.readxlsx(exitinct_plant_path)
+extinct_plant_df = DataFrame(XLSX.eachtablerow(xl["Supplementary_Data_1"]))
+localities = extinct_plant_df.Locality
+locality_codes = Iterators.flatmap(s -> split(s, ","), skipmissing(localities)) |> union |> sort
+# locality_conversion = Dict{String,Any}()
+for lc in locality_codes
+    if !haskey(locality_conversion, lc)
+        println("Enter code for $lc")
+        clipboard(lc)
+        input = readline()
+        if !(input == "")
+            locality_conversion[lc] = input
+        end
+    end
+end
 
-plants = 
+# locality_conversion["WAS"] = "USA, Washington"
+locality_table = DataFrame(
+    :source_name => first.(collect(pairs(locality_conversion))),
+    :iso_name => last.(collect(pairs(locality_conversion))),
+)
 
-# pyplot()
+# Not Easter Island and Juan Fernand are in the same file
+
+# locality_table.iso_name = rstrip.(locality_table.iso_name)
+locality_table = CSV.read("extinct_plant_locality_table.csv", DataFrame)
+sort!(locality_table, [:island, :iso_name])
+CSV.write("extinct_plant_locality_table.csv", locality_table)
+
+borders = map(locality_table.iso_name) do region
+    map(split(region, "+")) do subregion
+        args = String.(split(subregion, ", "))
+        try
+            border = GeoInterface.convert(GeometryBasics, GADM.get(args...).geom[1])
+            # println("Found $name")
+            return border
+        catch
+            println("Could not find \"$subregion\"")
+            return missing
+        end
+    end
+end;
+polyvecs = map(borders) do geoms
+    if ismissing(geoms) || any(ismissing, geoms)
+        missing
+    else
+        map(geoms) do mp
+            if GI.trait(mp) isa GI.PolygonTrait 
+                [mp]
+            else
+                collect(GI.getgeom(mp))
+            end
+        end |> Iterators.flatten |> collect
+    end
+end |> skipmissing |> collect;
+region_multipolygons = GeometryBasics.MultiPolygon.(polyvecs);
+region_multipolygons[1]
+using GLMakie
+poly(region_multipolygons)
+# locality_table.geometry = borders;
+# missed = filter(row -> any(ismissing, row.geometry), locality_table)
+# sort(missed, :iso_name)
+# using GeoJSON
+# Make GeoJSON write tables...
+
 includet("tabular_data.jl")
 includet("plots.jl")
 includet("lostland_filter.jl")

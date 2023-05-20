@@ -1,0 +1,171 @@
+island,source_name,iso_name
+false,ZAI,"AGO, Zaire"
+false,ALB,ALB
+false,AGE,ARG
+false,NSW,"AUS, New South Wales"
+false,NTA,"AUS, Northern Territory"
+false,QLD,"AUS, Queensland"
+false,SOA,"AUS, South Australia"
+false,VIC,"AUS, Victoria"
+false,WAU,"AUS, Western Australia"
+false,TCS,AZE+ARM+GEO
+false,BGM,BEL
+false,BUL,BGR
+false,BOL,BOL
+false,BZE,"BRA, Maranhão+BRA, Ceará+BRA, Rio Grande do Norte+BRA, Paraíba+BRA, Piauí+BRA, Pernambuco+BRA, Acre+BRA, Alagoas+BRA, Tocantins+BRA, Sergipe+BRA, Bahia"
+false,BZC,"BRA, Mato Grosso+BRA, Goiás+BRA, Mato Grosso do Sul"
+false,BZL,"BRA, Minas Gerais+BRA, Espírito Santo+BRA, Rio de Janeiro+BRA, São Paulo"
+false,BZN,"BRA, Minas Gerais+BRA, Espírito Santo+BRA, Rio de Janeiro+BRA, São Paulo"
+false,BZS,"BRA, Paraná+BRA, Santa Catarina+BRA, Rio Grande do Sul"
+false,ABT,"CAN, Alberta"
+false,BRC,"CAN, British Columbia"
+false,CLC,"CHL, Coquimbo+CHL, Valparaíso+CHL, Región Metropolitana de Santiago+CHL, Libertador General Bernardo O'Higgins+CHL, Maule+CHL, Araucanía+CHL, Los Ríos"
+false,CHH,"CHN, Hainan"
+false,CHX,"CHN, Xinjiang Uygur"
+false,CHC,"CHN, Yunnan+CHN, Sichuan+CHN, Guizhou+CHN, Chongqing"
+false,CHS,"CHN, Zhejiang+CHN, Jiangxi+CHN, Hunan+CHN, Fujian+CHN, Guangxi+CHN, Guangdong"
+false,IVO,CIV
+false,CMN,CMR
+false,CON,COG
+false,CLM,COL
+false,COS,CRI
+false,CZE,CZE
+false,GER,DEU
+false,DEN,DNK
+false,ALG,DZA
+false,ECU,ECU
+false,EGY,EGY
+false,SPA,ESP
+false,ETH,ETH
+false,EHM,East Himalayas
+false,FRA,FRA
+false,GAB,GAB
+false,GRC,GRC
+false,GUA,GTM
+false,HON,HND
+false,YUG,HRV+SVN+MKD+BIH+MNE
+false,IND,IND
+false,ASS,"IND, Assam"
+false,CHT,"IND, Chhattisgarh"
+false,ITA,ITA
+false,JAP,JPN
+false,KAZ,KAZ
+false,KEN,KEN
+false,KGZ,KGZ
+false,KOR,KOR
+false,LBS,LBN+SYR
+false,MOR,MAR
+false,MXN,"MEX, Baja California+MEX, Sonora+MEX, Baja California Sur+MEX, Sinaloa"
+false,MXE,"MEX, Chihuahua+MEX, Coahuila+MEX, Nuevo León+MEX, Durango+MEX, Tamaulipas+MEX, Zacatecas+MEX, San Luis Potosí+MEX, Aguascalientes+MEX, Guanajuato+MEX, Querétaro+MEX, Hidalgo"
+false,MXS,"MEX, Nayarit+MEX, Jalisco+MEX, Michoacán+MEX, Colima+MEX, Guerrero+MEX, Oaxaca"
+false,MXC,"MEX, Tlaxcala+MEX, Puebla+MEX, Morelos+MEX, México"
+false,MXT,"MEX, Yucatán+MEX, Quintana Roo+MEX, Campeche+MEX, Tabasco+MEX, Chiapas"
+false,MYA,MMR
+false,MLW,MWI
+false,MLY?,MYS
+false,MLY,MYS
+false,NIC,NIC
+false,NET,NLD
+false,PAK,PAK
+false,PAN,PAN
+false,PER,PER
+false,POL,POL
+false,POR,PRT
+false,PAL,PSE+ISR+JOR
+false,PRM,"RUS, Primor'ye"
+false,YAK,"RUS, Sakha, Yakutsk gorsovet"
+false,RWA,RWA
+false,SUD,SDN
+false,SWZ,SWZ
+false,THA,THA
+false,TZK,TJK
+false,TKM,TKM
+false,TUN,TUN
+false,TUR,TUR
+false,TAN,TZA
+false,URU,URY
+false,ALA,"USA, Alabama"
+false,ARI,"USA, Arizona"
+false,ARK,"USA, Arkansas"
+false,CAL,"USA, California"
+false,COL,"USA, Colorado"
+false,COL?,"USA, Colorado"
+false,FLA,"USA, Florida"
+false,GEO,"USA, Georgia"
+false,IDA,"USA, Idaho"
+false,ILL,"USA, Illinois"
+false,KTY,"USA, Kentucky"
+false,LOU,"USA, Louisiana"
+false,MAS,"USA, Massachusetts"
+false,MSI,"USA, Mississippi"
+false,MSO,"USA, Missouri"
+false,MNT,"USA, Montana"
+false,NEV,"USA, Nevada"
+false,NWM,"USA, New Mexico"
+false,NCA,"USA, North Carolina"
+false,OKL,"USA, Oklahoma"
+false,ORE,"USA, Oregon"
+false,SCA,"USA, South Carolina"
+false,TEN,"USA, Tennessee"
+false,TEX,"USA, Texas"
+false,UTA,"USA, Utah"
+false,VRG,"USA, Virginia"
+false,WAS,"USA, Washington"
+false,WYO,"USA, Wyoming"
+false,UZB,UZB
+false,VEN,VEN
+false,VIE,VNM
+false,WHM,West Himalaya
+false,NAT,"ZAF, KwaZulu-Natal"
+false,TVL,"ZAF, Limpopo+ZAF, Gauteng+ZAF, Mpumalanga"
+false,CPP,"ZAF, Northern Cape+ZAF, Eastern Cape+ZAF, Western Cape"
+true,LEE,ATG+MSR+KNA+MAF+VGB+VIR
+true,TAS,"AUS, Tasmania"
+true,BAH,BHS
+true,BOR,"BRN+IDN, Kalimantan Barat+IDN, Kalimantan Timur+IDN, Kalimantan Tengah+IDN, Kalimantan Selatan"
+true,JNF,"CHL, Valparaíso, ísla de Pascua"
+true,EAS,"CHL, Valparaíso, ísla de Pascua"
+true,COO,COK
+true,CUB,CUB
+true,CAY,CYM
+true,GAL,"ECU, Galápagos"
+true,BAL,"ESP, Islas Baleares"
+true,CNY,"ESP, Islas Canarias"
+true,FIJ,FJI
+true,COR,"FRA, Corse"
+true,GRB,GBR
+true,KRI,"GRC, Crete"
+true,WIN,GRD+DMA+MTQ+LCA+VCT+BRB+TTO
+true,SUM,"IDN, Aceh+IDN, Sumatera Utara+IDN, Riau+IDN, Sumatera Barat+IDN, Bangka Belitung+IDN, Sumatera Selatan+IDN, Bengkulu+IDN, Lampung"
+true,JAW,"IDN, Jawa Timur+IDN, Jawa Tengah+IDN, Jawa Barat"
+true,NCB,"IND, Andaman and Nicobar, Nicobar Islands"
+true,IRE,IRL
+true,SIC,"ITA, Sicily"
+true,JAM,JAM
+true,NNS,"JPN, Okinawa"
+true,OGA,"JPN, Shizuoka, Unknown7"
+true,SRL,LKA
+true,MDG,MDG
+true,MRN,MNP
+true,MAU,MUS
+true,ROD,"MUS, Rodriguez"
+true,NWC,NCL
+true,NFK,NFK
+true,NZS,"NZL, Nelson+NZL, Marlborough+NZL, West Coast+NZL, Canterbury+NZL, Chatham Islands+NZL, Otago+NZL, Southland"
+true,NZN,"NZL, Northland+NZL, Auckland+NZL, Waikato+NZL, Bay of Plenty+NZL, Gisborne+NZL, Taranaki+NZL, Hawke's Bay+NZL, Manawatu-Wanganui+NZL, Wellington"
+true,PHI,PHL
+true,NWG,PNG
+true,PUE,PRI
+true,AZO,"PRT, Azores"
+true,MDR,"PRT, Madeira"
+true,MRQ,"PYF, Îles Marquises"
+true,SCI,"PYF, Îles Sous-le-Vent+PYF, Îles du Vent"
+true,TUA,"PYF, Îles Tuamotu-Gambier"
+true,REU,REU
+true,ASC,"SHN, Ascension"
+true,STH,"SHN, Saint Helena"
+true,SEY,SYC
+true,TAI,TWN
+true,HAW,"USA, Hawaii"
+true,VAN,VUT
+true,SOC,"YEM, Hadramawt, Qulensya Wa Abd Al Kuri+YEM, Hadramawt, Hidaybu"

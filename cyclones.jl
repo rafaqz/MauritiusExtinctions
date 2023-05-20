@@ -3,6 +3,7 @@ using CSV
 using Shapefile
 using TableView, Blink
 
+
 cyclones = CSV.File("/home/raf/PhD/Mauritius/ibtracs.since1980.list.v04r00.csv"; skipto=3) |> DataFrame
 cyclones
 w = Blink.Window()
@@ -12,10 +13,6 @@ wind_vars = names(cyclones)[occursin.(Ref("WIND"), names(cyclones))]
 collect(skipmissing(cyclones.WMO_WIND))
 
 world = Shapefile.Handle("/home/raf/PhD/Mauritius/world-administrative-boundaries/world-administrative-boundaries.shp")
-
-conversions = [
-   "CPP" => "Cape"
-   "CUB"
 
 
 
