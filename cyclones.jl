@@ -13,6 +13,12 @@ collect(skipmissing(cyclones.WMO_WIND))
 
 world = Shapefile.Handle("/home/raf/PhD/Mauritius/world-administrative-boundaries/world-administrative-boundaries.shp")
 
+conversions = [
+   "CPP" => "Cape"
+   "CUB"
+
+
+
 function fill_cyclones!(A, cyclones)
     hurricane = 0
     prevlon = -1000.0

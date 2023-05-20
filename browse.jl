@@ -1,3 +1,4 @@
+using DataFrames, CSV
 
 # Google search all species, opening the next when the browser is closed.
 for row in eachrow(subset(species, :Origin => ByRow(==("Endemic"))))
@@ -32,4 +33,12 @@ for sp in species.Species
     run(`evince --find=$(sp) "/home/raf/zotero_library/Journal Article/undefined/2013/Hume_2013_A synopsis of the pre-human avifauna of the Mascarene Islands.pdf"`)
 end
 
+plantpath = "/home/raf/Data/Extinction/Plants/Mascarene_extinct_plants.csv"
+extinct_plants = CSV.read(plantpath, DataFrame)
 
+for row in Tables.rows(extinct_plants)
+    sp = row["Accepted.binomial"]
+    search = replace(sp, "_" => "+")
+    # run(`chromium https\://www.google.com/search\?q=$(search)\&tbm=isch\&tbs=isz:cl`)
+    run(`chromium https\://www.google.com/search\?q=$(search)`)
+end

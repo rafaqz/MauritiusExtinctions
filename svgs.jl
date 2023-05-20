@@ -1,19 +1,30 @@
 using GeoInterface
+const GI = GeoInterface
 using Colors, GeometryBasics
 using GeoJSON
+using JSON3
 # using DataFrames
 # using GLMakie
 # using Makie
 # using CSV
 # using MapRasterization
 # using Tables
+includet("common.jl")
 includet("raster_common.jl")
 # includet("roads.jl")
 includet("water.jl")
 
 svg_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/forest.svg"
 json_path = splitext(svg_path)[1] * ".json"
+json_path
 mus_native_veg_poly = GeoJSON.read(read(json_path))
+GeoJSON.write("testfile.json", mus_native_veg_poly[1])
+GeoJSON.read(read("testfile.json"))
+using Plots
+plot([GI.geometry(f) for f in mus_native_veg_poly]; color)
+color = map(x -> getproperty(x, :category), mus_native_veg_poly)
+
+Plots.plot(mus_native_veg_poly)
 mus_native_veg_rast = round.(Int, rasterize(mus_native_veg_poly; to=dems.mus, fill=:category, missingval=0))
 mus_native_veg_mask = boolmask(mus_native_veg_rast)
 grade_fractions = (0.2, 0.5, 0.7)

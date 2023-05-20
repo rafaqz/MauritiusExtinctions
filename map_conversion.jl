@@ -1,4 +1,4 @@
-using Neighborhoods
+using Stencil
 using Rasters
 using Colors
 using FileIO
@@ -187,3 +187,28 @@ border = gdal_borders.mus
     Plots.gif(anim, "$(name)_clearing_timeline.gif", fps=0.8)
 # end
 savefig("time_from_ports.png")
+
+
+using Tyler
+using MakieDraw
+using Extents
+using TileProviders
+using GLMakie
+using GeometryBasics
+using GeoJSON
+using JSON3
+includet("raster_common.jl")
+
+geoms = GeoJSON.read(read("reunion_1790.json"))
+figure = Figure()
+axis = Axis(figure[1:10, 1:10])
+tyler = Tyler.Map(Extents.extent(dems.reu); provider=Google(), figure, axis, scale=2)
+canvas = MakieDraw.GeometryCanvas{Polygon}(canvas; #[Polygon([Point(1.0, 2.0), Point(1.0, 2.0)])]; 
+    figure=tyler.figure,
+    axis=tyler.axis,
+    # properties=(;landcover=Int[]),
+    propertynames=(:landcover,),
+    poly_kw=(; colorrange=(1, 2), transparency=true),
+)
+display(tyler.figure)
+GeoJSON.write("reunion_1790.json", canvas)

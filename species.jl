@@ -1,9 +1,14 @@
-using XLSX, DataFrames
+using CSV
+using DataFrames
+using XLSX
 using OrderedCollections
 using Chain
 using Plots, StatsPlots
 using DimensionalData, DimensionalData.LookupArrays
 using IntervalSets
+
+
+plants = 
 
 # pyplot()
 includet("tabular_data.jl")

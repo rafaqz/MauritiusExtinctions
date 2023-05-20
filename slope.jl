@@ -1,5 +1,5 @@
-using Neighborhoods
-using Neighborhoods: Window
+using Stencils
+using Stencils: Window
 using DataFrames
 
 abstract type SlopeFilter end
@@ -103,14 +103,14 @@ for (f, filt) in (:slope => :slope_filter, :aspect => :aspect_filter, :_slopeasp
         function $(f)(elevation::Raster, method=FD2(); cellsize=1)
             hood = Window{1}(); 
             padval = missingval(elevation)
-            newdata = Neighborhoods.broadcast_neighborhood(hood, parent(elevation); boundary=Remove(padval)) do w
+            newdata = Stencils.mapstencil(hood, parent(elevation); boundary=Stencils.Remove(padval)) do w
                 $(filt)(method, w, cellsize)
             end
             rebuild(elevation; data=newdata, name=$(QuoteNode(f))) 
         end
         function $(f)(elevation::AbstractArray, method=FD2(); cellsize=1)
             hood = Window{1}()
-            Neighborhoods.broadcast_neighborhood(hood, elevation, parent(elevation)) do w, e
+            Stencils.mapstencil(hood, elevation, parent(elevation)) do w, e
                 $(filt)(method, w, cellsize)
             end
         end

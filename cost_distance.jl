@@ -1,7 +1,7 @@
 using Rasters
 using DimensionalData
-using Neighborhoods
-using Neighborhoods: Window
+using Stencils
+using Stencils: Window
 using OffsetArrays
 using Unitful
 
@@ -12,7 +12,7 @@ function _initialise_cost!(active, accumulated_costs, origins, hood)
             @inbounds accumulated_costs[I] = o
             # Add an index to the `active` set if it has any neighbors not
             # in `origins` as we only need to use the edges of the origin areas.
-            if any(x -> !ismissing(x) && x == Inf * u"hr", Neighborhoods.neighborhood(origins, I))
+            if any(x -> !ismissing(x) && x == Inf * u"hr", Stencils.neighborhood(origins, I))
                 push!(active, I)
             end
         end
@@ -44,16 +44,16 @@ function cost_distance(origins, elevation, resistance=nothing; kw...)
     # be the `missingval`, as it will remain in any cells that were not touched by
     # the algorithm (because one of the other arrays has missing values there).
     hood = Moore{1}()
-    accumulated_time = NeighborhoodArray(fill(Inf * u"hr", size(origins)), hood; padding=Conditional(), boundary=Remove(typemax(Float64)))
-    origins = NeighborhoodArray(parent(origins), hood; padding=Conditional(), boundary=Remove(typemax(Float64)))
+    accumulated_time = StencilArray(fill(Inf * u"hr", size(origins)), hood; padding=Conditional(), boundary=Remove(typemax(Float64)))
+    origins = StencilArray(parent(origins), hood; padding=Conditional(), boundary=Remove(typemax(Float64)))
     # Write the cost-distance to the accumulator grid
     cost_distance!(accumulated_time, origins, elevation, resistance; hood, kw...)
     # Remove the padding edge, and wrap the output as an AbstractRaster
     # if costs was one, updating the name and `missingval`.
     if elevation isa AbstractRaster
-        return rebuild(elevation; data=Neighborhoods.parent(accumulated_time), name=:time, missingval=Inf * u"hr")
+        return rebuild(elevation; data=Stencils.parent(accumulated_time), name=:time, missingval=Inf * u"hr")
     else
-        return Neighborhoods.unpad_view(acc, 1)
+        return Stencils.unpad_view(acc, 1)
     end
 end
 function cost_distance!(accumulated_time, origins, elevation, resistance=nothing; 
@@ -80,7 +80,7 @@ function cost_distance!(accumulated_time, origins, elevation, resistance=nothing
             e1 = elevation[I]
             ismissingval(e1, missingval) && continue
             # Loop over the neighborhood offsets and distances from center cell
-            for (O, d) in zip(Neighborhoods.cartesian_offsets(hood), Neighborhoods.distances(hood))
+            for (O, d) in zip(Stencils.cartesian_offsets(hood), Stencils.distances(hood))
                 # Get the index of the neighboring cell
                 NI = O + I
                 checkbounds(Bool, elevation, NI) || continue
