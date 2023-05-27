@@ -1,17 +1,18 @@
 using DataFrames, CSV
 
 # Google search all species, opening the next when the browser is closed.
-for row in eachrow(subset(species, :Origin => ByRow(==("Endemic"))))
-    ismissing(row["Common name"]) || ismissing(row["Species"]) && continue
-    placenamed = false
-    for place in ("RéuReunion", "Mauritius", "Rodrigues", "Mascarene")
-        placenamed = occursin(place, row["Common name"]) 
-        @show row["Common name"] place placenamed
-        placenamed && break
-    end
-    placenamed && continue
-    search = replace(row["Species"], " " => "+")
-    run(`chromium https\://www.google.com/search\?q=$(search)`)
+for row in eachrow(species)
+    ismissing(row["Species"]) || continue
+    ismissing(row["Common_name"]) && continue
+    # placenamed = false
+    # for place in ("RéuReunion", "Mauritius", "Rodrigues", "Mascarene")
+    #     placenamed = occursin(place, row["Common name"]) 
+    #     @show row["Common name"] place placenamed
+    #     placenamed && break
+    # end
+    # placenamed && continue
+    search = replace(row["Common_name"], " " => "+")
+    run(`chromium https\://www.google.com/search\?q=\"$(search)\"`)
     # run(`chromium https\://www.google.com/search\?tbm=isch\&q=$(search)`)
 end
 mascarine_species
@@ -22,7 +23,7 @@ for row in Tables.rows(mascarine_species)
     ismissing(sp) && continue
     search = replace(sp, " " => "+")
     clipboard(row.Common_name)
-    run(`chromium https\://www.google.com/search\?q=$(search)\&tbm=isch\&tbs=isz:cl`)
+    run(`chromium https\://www.google.com/search\?q=$("search")\&tbm=isch\&tbs=isz:cl`)
     # run(`chromium https\://www.google.com/search\?tbm=isch\&q=$(search)`)
 end
 

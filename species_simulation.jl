@@ -1,3 +1,10 @@
+using DynamicGrids, Dispersal, Shapefile
+using LandscapeChange
+using CSV, DataFrames
+using ModelParameters
+
+includet("raster_common.jl")
+
 # settlement = (
 #     1598, "Port de Warwick/Grand port used as stopover", "Dutch", -20.3754, 57.7228,
 #     1606, "Port Louie used as stopover", "Dutch", -20.1597, 57.5012,
@@ -10,15 +17,64 @@
 #     1814, "Mauritius ceded to britain", "English",
 # )
 
-
-species_events = (
-    introductions = (
-        rats=(year, (y, x)),
-        cats=(year, (y, x)),
-        pigs=(year, (y, x)),
-        goats=(year, (y, x)),
-        macaque=(year, (y, x)),
-        myna=(year, (y, x)),
-        giant_snail=(year, (y, x)),
-    )
+species = CSV.read("/home/raf/PhD/Mascarenes/Tables/mascarine_species.csv", DataFrame;
+    types = Dict(:mus=>Bool, :reu=>Bool, :rod=>Bool),
 )
+
+e = subset(species, :Occurrence=>ByRow(==("Extinct")), skipmissing=true) 
+names(e)
+
+island_tables = map((mus=:mus, reu=:reu, rod=:rod)) do key
+    subset(e, key, skipmissing=true) 
+end
+map(nrow, island_tables)
+map(length ∘ collect ∘ skipmissing, (e.mus_extinct, e.reu_extinct, e.rod_extinct))
+# filter(e) do r
+    # ismissing(r.rod) && !ismissing(r.rod_extinct)
+# end
+
+get_species_names(table) = Tuple(Symbol.(replace.(table.Species, Ref(" " => "_"))))
+island_species = map(get_species_names, island_tables)
+island_names = NamedTuple{keys(island_species)}(keys(island_species))
+species_params = map(e.Rmax, e.Max_Density, e.mus_extinct, e.reu_extinct, e.rod_extinct) do rmax, max_density, mus_extinct, reu_extinct, rod_extinct
+    (; rmax, max_density, mus_extinct, reu_extinct, rod_extinct, hunting_suscept=1.0, cat_suscept=1.0, rat_suscept=1.0)
+end |> Tuple |> NamedVector{get_species_names(e)}
+
+island_params = map(island_species, island_names) do keys, island
+    spec = species_params[keys]
+    map(spec) do s
+        extinct = s[Symbol(island, "_extinct")]
+        base = (; s[(:rmax, :max_density, :hunting_suscept, :cat_suscept, :rat_suscept)]..., extinct)
+    end
+end
+island_params.mus.Bolyeria_multocarinata
+
+island_populations = map(island_params) do params
+    v = NamedVector(map(_ -> 100.0f0, params))
+    fill(v, 100, 100)
+end
+
+island_columns = map(island_params) do params
+    k = keys(first(params))
+    map(k) do key
+        NamedVector(map(r -> r[key], params))
+    end |> NamedTuple{k}
+end
+
+island_columns.mus.max_density
+island_params.mus
+
+init_pops = map(island_columns, masks) do params, mask
+    fill(map(Float32, params.max_density), size(mask)) .* mask
+end
+
+tspan = 1600:2020
+
+growth_rules = map(island_columns) do island
+    growth = Dispersal.LogisticGrowth{:populations,:populations}(;
+        rate=island.rmax,
+        carrycap=island.max_density,
+        timestep=1,
+        nsteps_type=Float32,
+    )
+end

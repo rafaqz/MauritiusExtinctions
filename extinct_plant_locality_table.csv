@@ -48,7 +48,6 @@ false,IND,IND
 false,ASS,"IND, Assam"
 false,CHT,"IND, Chhattisgarh"
 false,ITA,ITA
-false,JAP,JPN
 false,KAZ,KAZ
 false,KEN,KEN
 false,KGZ,KGZ
@@ -142,6 +141,7 @@ true,NCB,"IND, Andaman and Nicobar, Nicobar Islands"
 true,IRE,IRL
 true,SIC,"ITA, Sicily"
 true,JAM,JAM
+true,JAP,JPN
 true,NNS,"JPN, Okinawa"
 true,OGA,"JPN, Shizuoka, Unknown7"
 true,SRL,LKA
