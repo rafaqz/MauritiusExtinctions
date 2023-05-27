@@ -17,37 +17,34 @@ includet("raster_common.jl")
 #     1814, "Mauritius ceded to britain", "English",
 # )
 
-species = CSV.read("/home/raf/PhD/Mascarenes/Tables/mascarine_species.csv", DataFrame;
-    types = Dict(:mus=>Bool, :reu=>Bool, :rod=>Bool),
-)
-
-e = subset(species, :Occurrence=>ByRow(==("Extinct")), skipmissing=true) 
-names(e)
+s = CSV.read("/home/raf/PhD/Mascarenes/Tables/mascarine_species.csv", DataFrame) |> 
+    x -> subset(x, :Species => ByRow(!ismissing))
 
 island_tables = map((mus=:mus, reu=:reu, rod=:rod)) do key
-    subset(e, key, skipmissing=true) 
+    subset(s, key => x -> .!ismissing.(x))
 end
-map(nrow, island_tables)
-map(length ∘ collect ∘ skipmissing, (e.mus_extinct, e.reu_extinct, e.rod_extinct))
+map(length ∘ collect ∘ skipmissing, (s.mus_extinct, s.reu_extinct, s.rod_extinct))
 # filter(e) do r
     # ismissing(r.rod) && !ismissing(r.rod_extinct)
 # end
 
-get_species_names(table) = Tuple(Symbol.(replace.(table.Species, Ref(" " => "_"))))
-island_species = map(get_species_names, island_tables)
+get_species_names(table) = Tuple(Symbol.(replace.(skipmissing(table.Species), Ref(" " => "_"))))
+island_extinct = map(island_tables, island_names) do table, name
+    subset(table, Symbol(name, "_extinct") => ByRow(!ismissing))
+end
 island_names = NamedTuple{keys(island_species)}(keys(island_species))
-species_params = map(e.Rmax, e.Max_Density, e.mus_extinct, e.reu_extinct, e.rod_extinct) do rmax, max_density, mus_extinct, reu_extinct, rod_extinct
+island_extinct_names = map(get_species_names, island_extinct)
+species_params = map(s.Rmax, s.Max_Density, s.mus_extinct, s.reu_extinct, s.rod_extinct) do rmax, max_density, mus_extinct, reu_extinct, rod_extinct
     (; rmax, max_density, mus_extinct, reu_extinct, rod_extinct, hunting_suscept=1.0, cat_suscept=1.0, rat_suscept=1.0)
-end |> Tuple |> NamedVector{get_species_names(e)}
+end |> Tuple |> NamedVector{get_species_names(s)}
 
-island_params = map(island_species, island_names) do keys, island
+island_params = map(island_extinct_names, island_names) do keys, island
     spec = species_params[keys]
     map(spec) do s
         extinct = s[Symbol(island, "_extinct")]
         base = (; s[(:rmax, :max_density, :hunting_suscept, :cat_suscept, :rat_suscept)]..., extinct)
     end
 end
-island_params.mus.Bolyeria_multocarinata
 
 island_populations = map(island_params) do params
     v = NamedVector(map(_ -> 100.0f0, params))
