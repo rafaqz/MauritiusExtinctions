@@ -75,3 +75,45 @@ growth_rules = map(island_columns) do island
         nsteps_type=Float32,
     )
 end
+
+hunting = let hunting_suscept = hunting_suscept
+    Cell{:populations,:populations}() do data, pops, I
+        hp = get(data, Aux{:hunting_pressure}(), I)
+        pops .* (1 .- hunting_suscept .* hunting_pressure)
+    end
+end
+
+cat_predation = let cat_suscept = cat_suscept, 
+                    weights = weights
+    Cell{Tuple{:populations,:cats}}() do data, (pops, cats), I
+        max_predation = pops .* cat_suscept .* cats
+        max_nutrition = weights .* meat_kj .* potential_predation
+        max_required = cats * cat_K .* max_nutrition
+        predation = max_predation .* frac
+        newpops .- predation, newpreds
+    end
+end
+
+ruleset = Ruleset(growth, spread, cat_predation, rat_predation, hunting)
+
+output = MakieOutput(init_state;
+    aux,
+    fps=10,
+    tspan,
+    store=false,
+    mask=revmasks.mus,
+    boundary=Remove(),
+    padval=0,
+    ruleset,
+    sim_kw=(; printframe=true),
+) do fig, frame
+    axis = Axis(fig[1, 1])
+    species = Observable(Array(frame[].landcover))
+    i = Observable(1)
+    on(frame) do f
+        species[] = getindex.(f, i[])
+        notify(landcover)
+    end
+    hm = Makie.image!(axis, landcover; colorrange=(-0.5, 5.5), colormap=:inferno)
+    return nothing
+end
