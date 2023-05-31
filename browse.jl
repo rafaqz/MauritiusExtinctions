@@ -1,9 +1,11 @@
 using DataFrames, CSV
 
 # Google search all species, opening the next when the browser is closed.
-for row in eachrow(species)
-    ismissing(row["Species"]) || continue
-    ismissing(row["Common_name"]) && continue
+for row in eachrow(s)
+    # ismissing(row["Species"]) && continue
+    # ismissing(row["Common_name"]) && continue
+    row.Origin == "Endemic" || continue
+
     # placenamed = false
     # for place in ("RéuReunion", "Mauritius", "Rodrigues", "Mascarene")
     #     placenamed = occursin(place, row["Common name"]) 
@@ -11,11 +13,13 @@ for row in eachrow(species)
     #     placenamed && break
     # end
     # placenamed && continue
-    search = replace(row["Common_name"], " " => "+")
-    run(`chromium https\://www.google.com/search\?q=\"$(search)\"`)
+    search = replace(row["Species"], " " => "+")
+    # search = row["Species"]
+    # run(`chromium https\://www.google.com/search\?q=\"$(search)\"`)
+    run(`chromium https://www.iucnredlist.org/search\?query=$search\&searchType=species`)
     # run(`chromium https\://www.google.com/search\?tbm=isch\&q=$(search)`)
 end
-mascarine_species
+
 for row in Tables.rows(mascarine_species)
     sp = row.Species
     row.Origin === "Alien" && continue
