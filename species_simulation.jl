@@ -1,7 +1,10 @@
 using DynamicGrids, Dispersal, LandscapeChange, ModelParameters
+using StaticArrays 
 using Shapefile
 using CSV, DataFrames, XLSX, TerminalPager
 using GBIF2
+
+includet("raster_common.jl")
 
 # settlement = (
 #     1598, "Port de Warwick/Grand port used as stopover", "Dutch", -20.3754, 57.7228,
@@ -14,8 +17,6 @@ using GBIF2
 #     1806, "Mahebourge founded", "French", -20.4045, 57.7028,
 #     1814, "Mauritius ceded to britain", "English",
 # )
-
-# includet("raster_common.jl")
 
 # IUCNRedList.set_token("486f559a61285ba396234fc186897b94eda1bd15aa4216a8e1d9f4a8cf40d4c7")
 # spec = species_by_category("EX") 
@@ -81,22 +82,21 @@ mascarine_species_csv = "/home/raf/PhD/Mascarenes/Tables/mascarine_species.csv"
 s = CSV.read(mascarine_species_csv, DataFrame) |> 
     x -> subset(x, :Species => ByRow(!ismissing))
 
-s.GBIFSpecies = copy(s.Species)
-for i in eachindex(s.Species) 
-    sp = s.Species[i]
-    ismissing(sp) && continue
-    match = species_match(sp)
-    isnothing(match) && continue
-    s.GBIFSpecies[i] = match.species 
-end
-s.GBIFSpecies
+# s.GBIFSpecies = copy(s.Species)
+# for i in eachindex(s.Species) 
+#     sp = s.Species[i]
+#     ismissing(sp) && continue
+#     match = species_match(sp)
+#     isnothing(match) && continue
+#     s.GBIFSpecies[i] = match.species 
+# end
+# s.GBIFSpecies
 
 # CSV.write(mascarine_species_csv, s)
 iucn_extinct = CSV.read("/home/raf/Data/Extinction/redlist/extinct_species.csv", DataFrame)
 iucn2 = CSV.read("/home/raf/Data/Extinction/redlist/redlist_species_data_39da78ce-d594-4968-8043-489f2765d687/assessments.csv", DataFrame)
 
 names(iucn2)
-broadcast(string, iucn2.scientificName, Ref(": "), iucn2.threats) |> pager
 
 joined = leftjoin(s, iucn2; on=:GBIFSpecies=>:scientificName, matchmissing=:notequal)
 joined[!, [:Species, :threats]] |> pager
@@ -105,7 +105,7 @@ broadcast(string, joined.Species, Ref(": "), joined.threats) |> pager
 
 sp_nothing = filter(x -> isnothing(x[2]), sp_pairs)
 sp = filter(x -> !isnothing(x[2]), sp_pairs)
-gbif_sp = DataFrame(last.(sp))
+gbif_sp = DataFrame(last.(sp)
 first.(sp) .=> gbif_sp.species
 first.(sp)[first.(sp) .!== gbif_sp.species]
 
@@ -116,12 +116,14 @@ pantheria_csv = "/home/raf/Data/Traits/PanTHERIA/ECOL_90_184/PanTHERIA_1-0_WR05_
 pantheria = CSV.read(pantheria_csv, DataFrame; normalizenames=true, quoted=false)
 pantheria_mass = pantheria[!, [:MSW05_Binomial, :AdultBodyMass_g]]
 s_pantheria = leftjoin(s, pantheria_mass; on=:GBIFSpecies=>:MSW05_Binomial, matchmissing=:notequal, makeunique=true)
+names(pantheria)
 sort!(s_pantheria, :GBIFSpecies)
 
 avonet_csv = "/home/raf/Data/Traits/Avonet/ELEData/ELEData/TraitData/AVONET1_BirdLife.csv"
 avonet = CSV.read(avonet_csv, DataFrame; normalizenames=true)
 avonet_mass = avonet[!, [:Species1, :Mass]]
 s_avonet = leftjoin(s, avonet_mass; on=:GBIFSpecies=>:Species1, matchmissing=:notequal, makeunique=true)
+names(avonet)
 
 lizzard_csv = "/home/raf/Data/Traits/Lizards/Appendix S1 - Lizard data version 1.0.csv"
 lizzard = CSV.read(lizzard_csv, DataFrame; normalizenames=true)
@@ -136,6 +138,7 @@ lizzard_end = filter(r -> !ismissing(r.intercept) && r.Origin == "Endemic", s_li
 
 elton_bird_csv = "/home/raf/Data/Traits/EltonTraits/BirdFuncDat.txt"
 elton_bird = CSV.read(elton_bird_csv, DataFrame; normalizenames=true)
+names(avonet)
 
 elton_mammal_csv = "/home/raf/Data/Traits/EltonTraits/MamFuncDat.txt"
 elton_mammal = CSV.read(elton_mammal_csv, DataFrame; normalizenames=true)
@@ -273,44 +276,132 @@ init_pops = map(island_columns, masks) do params, mask
     fill(map(Float32, params.max_density), size(mask)) .* mask
 end
 
+
+# Population Based??
+# growth_rules = map(island_columns) do island
+#     growth = Dispersal.LogisticGrowth{:populations,:populations}(;
+#         rate=island.rmax,
+#         carrycap=island.max_density,
+#         timestep=1,
+#         nsteps_type=Float32,
+#     )
+# end
+
+# hunting = let hunting_suscept = hunting_suscept
+#     Cell{:populations,:populations}() do data, pops, I
+#         hp = get(data, Aux{:hunting_pressure}(), I)
+#         pops .* (1 .- hunting_suscept .* hunting_pressure)
+#     end
+# end
+
+# cat_predation = let cat_suscept = cat_suscept, 
+#                     weights = weights
+#     Cell{Tuple{:populations,:cats}}() do data, (pops, cats), I
+#         max_predation = pops .* cat_suscept .* cats
+#         max_nutrition = weights .* meat_kj .* potential_predation
+#         max_required = cats * cat_K .* max_nutrition
+#         predation = max_predation .* frac
+#         cats = 
+#         newpops .- predation, 
+#     end
+# end
+
+# ruleset = Ruleset(growth, spread, cat_predation, rat_predation, hunting)
+
+# Presence/absense Based??
+
+using DynamicGrids, Dispersal, LandscapeChange, ModelParameters
+using StaticArrays 
+using CSV, DataFrames, XLSX, TerminalPager
+using Rasters
+
+includet("raster_common.jl")
+pred_df = CSV.read("animals.csv", DataFrame)
+
+revmasks = map(masks) do A
+    reverse(A; dims=Y)
+end
+ag_masks = map(revmasks) do mask
+    Rasters.aggregate(Rasters.Center(), mask, 10)
+end
+
+pred_keys = Tuple(Symbol.(pred_df.name))
+pred_names = NamedVector{pred_keys}(pred_keys)
+pred_rmax = NamedVector{pred_keys}(Tuple(pred_df.rmax))
+pred_max_density = NamedVector{pred_keys}(Tuple(pred_df.rmax))
+pred_spread = InwardsDispersal{:pred_pops}(
+    radius=1,
+    formulation=ExponentialKernel()
+)
+pred_growth = LogisticGrowth{:pred_pops}(; 
+    rate=pred_rmax,
+    carrycap=pred_max_density,
+    timestep=1
+)
+hunting_suscept = rand(SVector{10})
+habitat_requirement = rand(SVector{10})
+pred_pops = map(ag_masks) do m
+    map(_ -> map(_->0.0, pred_names), m)
+end
+pred_suscept = map(hunting_suscept) do hs
+    rand()
+end
+
+# Every species is everywhere initially, in this dumb model
+endemic_presences = map(ag_masks) do mask
+    map(mask) do m
+        map(_ -> m, hunting_suscept) 
+    end
+end
+
+risks = let hunting_suscept=hunting_suscept, pred_suscept=pred_suscept
+    Cell{Tuple{:pred_pops,:endemic_presences},:endemic_presences}() do data, (pred_pops, endemic_presences), I
+        # hp = get(data, Aux{:hunting_pressure}(), I)
+        map(endemic_presences, hunting_suscept, pred_suscept) do present, hs, ps
+            if present
+                # rand() < hp * hs & rand() < sum(map(*, ps, pred_pops))
+                rand() < sum(map(*, ps, pred_pops))
+                # ... etc 
+            else
+                false
+            end
+        end
+    end
+end
+
+habitat = let habitat_requirement = habitat_requirement
+    Cell{:presences}() do data, presences, I
+        hp = get(data, Aux{:uncleared}(), I)
+        map(presences, habitat_requirement) do present, h
+            if present
+                rand() < hp * hs
+            else
+                false
+            end
+        end
+    end
+end
+
 tspan = 1600:2020
-
-growth_rules = map(island_columns) do island
-    growth = Dispersal.LogisticGrowth{:populations,:populations}(;
-        rate=island.rmax,
-        carrycap=island.max_density,
-        timestep=1,
-        nsteps_type=Float32,
-    )
+ruleset = Ruleset(pred_growth, pred_spread, risks)
+inits = map(pred_pops, endemic_presences) do pred_pops, endemic_presences
+    (; pred_pops, endemic_presences)
 end
+map(size, inits.mus)
+inits.mus.endemic_presences |> parent
 
-hunting = let hunting_suscept = hunting_suscept
-    Cell{:populations,:populations}() do data, pops, I
-        hp = get(data, Aux{:hunting_pressure}(), I)
-        pops .* (1 .- hunting_suscept .* hunting_pressure)
-    end
-end
-
-cat_predation = let cat_suscept = cat_suscept, 
-                    weights = weights
-    Cell{Tuple{:populations,:cats}}() do data, (pops, cats), I
-        max_predation = pops .* cat_suscept .* cats
-        max_nutrition = weights .* meat_kj .* potential_predation
-        max_required = cats * cat_K .* max_nutrition
-        predation = max_predation .* frac
-        cats = 
-        newpops .- predation, 
-    end
-end
-
-ruleset = Ruleset(growth, spread, cat_predation, rat_predation, hunting)
+output = ResultOutput(inits.mus;
+    mask=ag_masks.mus, # aux,
+    tspan, 
+)
+@time sim!(output, ruleset)
 
 output = MakieOutput(init_state;
     aux,
     fps=10,
     tspan,
     store=false,
-    mask=revmasks.mus,
+    mask=ag_masks.mus,
     boundary=Remove(),
     padval=0,
     ruleset,

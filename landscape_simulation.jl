@@ -7,6 +7,12 @@ using Unitful
 using StaticArrays
 using ReverseStackTraces
 
+
+# From woods and forests in Mauritius, p 40:40
+# 1880: 70,000 acres out of 300,000 remain
+# 35,000 were native (but "dilatipated and ruined?")
+# Also mentions that invasives replace natives
+
 includet("raster_common.jl")
 includet("roads.jl")
 includet("travel_cost.jl")
@@ -193,10 +199,6 @@ transitions = (
 )
 
 # The logic of sequential category change - can a transition happen at all
-revmasks = map(masks) do A
-    reverse(A; dims=Y)
-end
-
 # Human Population and species introduction events
 eventrule = let events=landscape_events.mus,
                 states=states,

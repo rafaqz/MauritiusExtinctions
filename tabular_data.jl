@@ -33,6 +33,7 @@ human_pop_timeline = map((mus=mus_pop, reu=reu_pop, rod=reu_pop)) do pop
     pop_vec = interpolate_years(pop, (:Year, :Population))
     DimArray(pop_vec, Ti(all_years); name=:Human_Population)
 end
+human_pop_timeline.reu[At(1700)]
 
 sugar_vec = interpolate_years(sugar_cane, (:Year, :Area))
 sugar_timeline = DimArray(sugar_vec, Ti(all_years); name=:Area_Sugar)
