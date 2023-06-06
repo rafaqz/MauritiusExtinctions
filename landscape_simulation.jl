@@ -126,8 +126,12 @@ landscape_events = (
         (year=1735, n=20#=?=#, geometry=(X=57.5012, Y=-20.1597)),  # "Colony at port louie as capital", "French",
     ],
     reu = [
-        (year=1665, n=20#=?=#, geometry=(X=57.5012, Y=-20.1597)),  # "Colony at port louie as capital", "French",
+        (year=1665, n=20#=?=#, geometry=(X=55.4485, Y=20.8785)),  # "Colony at port louie as capital", "French",
+
     ],
+    # reu = [
+    #     19.6795,63.4287,
+    # ]
 )
 fixed = false # or a raster mask of fixed landcover
 human_suitability = map(travel_times, slope_stacks, dems) do tt, ss, dem

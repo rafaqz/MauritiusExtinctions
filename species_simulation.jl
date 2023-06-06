@@ -272,10 +272,6 @@ end
 island_columns.mus.max_density
 island_params.mus
 
-init_pops = map(island_columns, masks) do params, mask
-    fill(map(Float32, params.max_density), size(mask)) .* mask
-end
-
 
 # Population Based??
 # growth_rules = map(island_columns) do island
@@ -311,109 +307,31 @@ end
 # Presence/absense Based??
 
 using DynamicGrids, Dispersal, LandscapeChange, ModelParameters
-using StaticArrays 
+using StaticArrays, GeoArrayOps
 using CSV, DataFrames, XLSX, TerminalPager
 using Rasters
-
+using GLMakie
+include("/home/raf/.julia/dev/LandscapeChange/src/makie.jl")
 includet("raster_common.jl")
 pred_df = CSV.read("animals.csv", DataFrame)
 
-revmasks = map(masks) do A
-    reverse(A; dims=Y)
-end
-ag_masks = map(revmasks) do mask
-    Rasters.aggregate(Rasters.Center(), mask, 10)
-end
+# using ProfileView 
+aggfactor = 8
+island = :reu
+include("species_rules.jl")
+# ruleset, output, output_kw = def_syms(;
+#     pred_df, aggfactor, island, dems, masks, slope_stacks, 
+# );
+# output
+@time sim!(output, ruleset);
+mk(getproperty(inits, island), rules; output_kw...)
 
-pred_keys = Tuple(Symbol.(pred_df.name))
-pred_names = NamedVector{pred_keys}(pred_keys)
-pred_rmax = NamedVector{pred_keys}(Tuple(pred_df.rmax))
-pred_max_density = NamedVector{pred_keys}(Tuple(pred_df.rmax))
-pred_spread = InwardsDispersal{:pred_pops}(
-    radius=1,
-    formulation=ExponentialKernel()
-)
-pred_growth = LogisticGrowth{:pred_pops}(; 
-    rate=pred_rmax,
-    carrycap=pred_max_density,
-    timestep=1
-)
-hunting_suscept = rand(SVector{10})
-habitat_requirement = rand(SVector{10})
-pred_pops = map(ag_masks) do m
-    map(_ -> map(_->0.0, pred_names), m)
-end
-pred_suscept = map(hunting_suscept) do hs
-    rand()
-end
-
-# Every species is everywhere initially, in this dumb model
-endemic_presences = map(ag_masks) do mask
-    map(mask) do m
-        map(_ -> m, hunting_suscept) 
-    end
-end
-
-risks = let hunting_suscept=hunting_suscept, pred_suscept=pred_suscept
-    Cell{Tuple{:pred_pops,:endemic_presences},:endemic_presences}() do data, (pred_pops, endemic_presences), I
-        # hp = get(data, Aux{:hunting_pressure}(), I)
-        map(endemic_presences, hunting_suscept, pred_suscept) do present, hs, ps
-            if present
-                # rand() < hp * hs & rand() < sum(map(*, ps, pred_pops))
-                rand() < sum(map(*, ps, pred_pops))
-                # ... etc 
-            else
-                false
-            end
-        end
-    end
-end
-
-habitat = let habitat_requirement = habitat_requirement
-    Cell{:presences}() do data, presences, I
-        hp = get(data, Aux{:uncleared}(), I)
-        map(presences, habitat_requirement) do present, h
-            if present
-                rand() < hp * hs
-            else
-                false
-            end
-        end
-    end
-end
-
-tspan = 1600:2020
-ruleset = Ruleset(pred_growth, pred_spread, risks)
-inits = map(pred_pops, endemic_presences) do pred_pops, endemic_presences
-    (; pred_pops, endemic_presences)
-end
-map(size, inits.mus)
-inits.mus.endemic_presences |> parent
-
-output = ResultOutput(inits.mus;
-    mask=ag_masks.mus, # aux,
-    tspan, 
-)
-@time sim!(output, ruleset)
-
-output = MakieOutput(init_state;
-    aux,
-    fps=10,
-    tspan,
-    store=false,
-    mask=ag_masks.mus,
-    boundary=Remove(),
-    padval=0,
-    ruleset,
-    sim_kw=(; printframe=true),
-) do fig, frame
-    axis = Axis(fig[1, 1])
-    species = Observable(Array(frame[].landcover))
-    i = Observable(1)
-    on(frame) do f
-        species[] = getindex.(f, i[])
-        notify(landcover)
-    end
-    hm = Makie.image!(axis, landcover; colorrange=(-0.5, 5.5), colormap=:inferno)
-    return nothing
-end
+# using CUDA, Adapt
+# CUDA.allowscalar(false)
+# using ProfileView @profview 
+# cu_output = Adapt.adapt(CuArray, output);
+# try
+    # sim!(cu_output, ruleset; proc=CuGPU());
+# catch err
+    # code_typed(err; interactive=true)
+# end
