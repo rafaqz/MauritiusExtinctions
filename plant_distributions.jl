@@ -11,6 +11,7 @@ using GeometryBasics
 using JSON3
 using ColorSchemes
 using GeoInterfaceRecipes
+using Statistics
 GeoInterfaceRecipes.@enable_geo_plots Polygon
 
 includet("raster_common.jl")
@@ -19,13 +20,26 @@ includet("water.jl")
 includet("map_file_list.jl")
 includet("svgs.jl")
 
+ch_original_veg_path= "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page33_mauritius_vegetation_colored.tif"
+ch_original_veg_raster = Raster(ch_original_veg_path; missingval=-9223372036854775808)
+Makie.heatmap(ch_original_veg_raster)
+ch_original_veg_json = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page33_mauritius_vegetation_colored.json"
+layer_names = JSON3.read(ch_original_veg_json).settings.category_name
+
+
 #############################################################################3
 # Mauritius vegetation
 
 mus_native_veg_df = DataFrame(mus_native_veg_poly)
 mus_native_veg_df.geometry = GeoInterface.convert.(GeometryBasics.Polygon, mus_native_veg_df.geometry)
-mus_native_veg_rast = rasterize(mus_native_veg_df; to=dems.mus, fill=:category)
-plot(mus_native_veg_rast)
+mus_native_veg_rast = rasterize(maximum, mus_native_veg_df; to=dems.mus, fill=:category, boundary=:touches)
+mus_native_rensity = rasterize(maximum, mus_native_veg_df; to=dems.mus, fill=:category, boundary=:touches)
+mus_native_veg_mask = boolmask(mus_native_veg_rast)
+grade_fractions = (0.2, 0.5, 0.7)
+mus_native_density = mask(rebuild(map(mus_native_veg_rast) do x
+    ismissing(x) || x == 0 ? 0.0 : grade_fractions[x]
+end; name=:native_density_1999); with=dems.mus, missingval=missing)
+Plots.plot(mus_native_density)
 
 set_theme!(palette = (color = ColorSchemes.tab20, patchcolor=RGBA.(ColorSchemes.tab20, 0.5)))
 load_image(img_path::String) = RGB{Float64}.(load(img_path) |> rotr90)
@@ -36,7 +50,13 @@ img = load_image(mus_vegmap_path)
 output_path = splitext(mus_vegmap_path)[1] * ".json"
 output = JSON3.read(read(output_path), MapRasterization.CategoryShapes{Polygon})
 output = MapRasterization.select_category_shapes(output, img)
-write(output_path, JSON3.write(output))
+vw_veg_json = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/VaugnWiehe_Vegetation.geojson"
+vw_fc = map(eachrow(DataFrame(output))) do row
+    GeoInterface.Feature(row.geometry; properties=(category=row.category, name=row.name))
+end |> GeoInterface.FeatureCollection
+GeoJSON.write(vw_veg_json, vw_fc)
+vw_fc = GeoJSON.read(vw_veg_json)
+vw_df = DataFrame(vw_fc)
 
 guide = (borders.mus, waterways_rivers, waterways_lakes, mus_native_veg_poly...);
 vw_ecotypes = warp_to_raster(mus_vegmap_path, dems.mus .* 0; 
@@ -94,22 +114,23 @@ end
 ecotype_group_masks = map(ecotype_groups) do df
     mask(boolmask(df; to=dems.mus); with=dems.mus)
 end |> RasterStack
-plot(ecotype_group_masks)
+Plots.plot(ecotype_group_masks)
 ecotype_rasters = map(ecotype_groups) do df
-    mask(rasterize(df; to=dems.mus, fill=:category); with=dems.mus)
+    mask(rasterize(last, df; to=dems.mus, fill=:category); with=dems.mus)
 end |> RasterStack
-plot(ecotype_rasters.native; 
+Plots.plot(ecotype_rasters; 
      color=palette(:batlow,  UnitRange(extrema(skipmissing(ecotype_rasters.invasive))...)),
 )
-plot(ecotype_rasters.invasive; color=palette(:thermal, UnitRange(extrema(skipmissing(ecotype_rasters.invasive))...)))
+Plots.plot(ecotype_rasters.invasive; color=palette(:thermal, UnitRange(extrema(skipmissing(ecotype_rasters.invasive))...)))
 # masked_ecotype_rasters = map(ecotype_rasters) do A
 # end
 m = boolmask(slices.mus.timelines.cleared.cleared_1905; missingval=0)
-plot(m)
+Plots.plot(m)
 
 native_1937_alread_cleared = rebuild(replace_missing(ecotype_rasters.native .* m, 0); name="actually_cleared")
-plot(plot(native_1937_alread_cleared), plot(ecotype_rasters.native))
+Plots.plot(Plots.plot(native_1937_alread_cleared), Plots.plot(ecotype_rasters.native))
 
+# Generate 1937 native density from Vaugn and Whie
 mus_native_density_1937 = let m = ecotype_group_masks
     map(m.native, m.invasive, m.plantation) do n, i, p 
         if p 
@@ -125,9 +146,14 @@ mus_native_density_1937 = let m = ecotype_group_masks
         end
     end
 end |> x -> rebuild(mask(x; with=dems.mus, x, missingval=missing); name=:native_density_1937)
+# Correct for poor outlines in the 1937 map by taking the maximum quality of 1937 and 1999. 
+# This does *not* correct for where the 1937 area is too large.
+# There are few changes, mostly some edges around ferney and tamarin gorge
+mus_native_density_1937 .= max.(mus_native_density_1937, mus_native_density)
+# 1600 native density is just a mask of 1s
 mus_native_density_1600 = rebuild(mus_native_density_1937 .> -1; name=:native_density_1600)
 native_density = RasterStack(mus_native_density_1600, mus_native_density_1937, mus_native_density)
-plot(native_density; c=:bamako, layout=(1, 3), size=(1000, 300))
+Plots.plot(native_density; c=:bamako, layout=(1, 3), size=(1000, 300), clims=(0, 1))
 savefig("mus_native_density.png")
 
 #

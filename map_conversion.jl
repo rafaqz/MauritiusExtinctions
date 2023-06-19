@@ -1,4 +1,4 @@
-using Stencil
+using Stencils
 using Rasters
 using Colors
 using FileIO
@@ -49,6 +49,15 @@ Jardinage
 # end
 #
 
+img_path = "/home/raf/PhD/Mascarenes/maps/Rodrigues/Gade_1985_native.png"
+run(`gimp $img_path`)
+img = load_image(img_path)
+output = MapRasterization.CategorySelector(img; ncategories=5)
+output.figure
+summary = MapRasterization.CategorySummary(output);
+ms = MapRasterization.MapSelection(output)
+JSON3.write(swap_ext(img_path, ".json"), ms)
+# run(`gimp $img_path`)
 # using Plots
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/atlas_19C_land_use.jpg"
 # run(`gimp $img_path`)
@@ -63,7 +72,7 @@ img = load_image(img_path)
 # segs = map(d -> d["segmentation"], y) |> stack
 # heatmap(sum(segs; dims=3)[:, :, 1])
 Makie.set_theme!(theme_black())
-features = GeoJSON.read(read("mus_landuse_1965_100_polygons.json"))
+# features = GeoJSON.read(read("mus_landuse_1965_100_polygons.json"))
 output = MapRasterization.CategorySelector(img; polygons=features, ncategories=11)
 summary = MapRasterization.CategorySummary(output);
 ms = MapRasterization.MapSelection(output)

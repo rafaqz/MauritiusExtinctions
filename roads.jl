@@ -5,6 +5,7 @@ includet("raster_common.jl")
 roads_paths = (;
     mus = joinpath(datadir, "Generated/Roads/mus/mus_roads.tif"),
     reu = joinpath(datadir, "Generated/Roads/reu/reu_roads.tif"),
+    rod = joinpath(datadir, "Generated/Roads/reu/rod_roads.tif"),
 )
 
 road_series = map(roads_paths, dems) do path, dem
@@ -153,6 +154,14 @@ roads_added_by_1905 = GeoJSON.read(read(roads_added_by_1905_path))
 roads_1905 = GeoInterface.FeatureCollection(
     vcat(collect(GeoInterface.getfeature(roads_1854)), collect(GeoInterface.getfeature(roads_added_by_1905)))
 )
+
+const GI = GeoInterface
+rod_json = joinpath(datadir, "Roads/rod_ways.geojson")
+rod_roads = GI.convert.(Ref(GeometryBasics), filter(GI.geometry.(GeoJSON.read(read(rod_json)))) do x
+    GI.trait(x) isa LineStringTrait
+end)
+Makie.plot(rod_roads)
+
 
 # GeoJSON.write(roads_1763_path, roads_1763)
 # GeoJSON.write(roads_added_by_1810_path, roads_added_by_1810)

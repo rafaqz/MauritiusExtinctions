@@ -1,5 +1,7 @@
 using DynamicGrids, Dispersal, LandscapeChange, ModelParameters
 using StaticArrays 
+using Statistics
+using StatsBase
 using Shapefile
 using CSV, DataFrames, XLSX, TerminalPager
 using GBIF2
@@ -77,10 +79,13 @@ includet("raster_common.jl")
 #     species_synonyms(row.scientific_name)
 # end
 # CSV.write("/home/raf/Data/Extinction/redlist/extinct_species.csv", ex_ew; transform=(col, val) -> something(val, missing))
+#
 
 mascarine_species_csv = "/home/raf/PhD/Mascarenes/Tables/mascarine_species.csv"
 s = CSV.read(mascarine_species_csv, DataFrame) |> 
-    x -> subset(x, :Species => ByRow(!ismissing))
+    x -> subset(x, :Species => ByRow(!ismissing), :GBIFSpecies => ByRow(!ismissing))
+filter(p -> p[2] == 2, countmap(s.GBIFSpecies))
+
 
 # s.GBIFSpecies = copy(s.Species)
 # for i in eachindex(s.Species) 
@@ -96,11 +101,9 @@ s = CSV.read(mascarine_species_csv, DataFrame) |>
 iucn_extinct = CSV.read("/home/raf/Data/Extinction/redlist/extinct_species.csv", DataFrame)
 iucn2 = CSV.read("/home/raf/Data/Extinction/redlist/redlist_species_data_39da78ce-d594-4968-8043-489f2765d687/assessments.csv", DataFrame)
 
-names(iucn2)
-
 joined = leftjoin(s, iucn2; on=:GBIFSpecies=>:scientificName, matchmissing=:notequal)
-joined[!, [:Species, :threats]] |> pager
-broadcast(string, joined.Species, Ref(": "), joined.threats) |> pager
+# joined[!, [:Species, :threats]] |> pager
+# broadcast(string, joined.Species, Ref(": "), joined.threats) |> pager
 
 
 sp_nothing = filter(x -> isnothing(x[2]), sp_pairs)
@@ -145,11 +148,30 @@ elton_mammal = CSV.read(elton_mammal_csv, DataFrame; normalizenames=true)
 
 elton_mass = vcat(elton_mammal[!, [:Scientific, :BodyMass_Value]], elton_bird[!, [:Scientific, :BodyMass_Value]])
 s_elton = leftjoin(s, elton_mass; on=:GBIFSpecies=>:Scientific, matchmissing=:notequal)
+
+bird_mass_path = "/home/raf/PhD/Mascarenes/Tables/Bird Mass filled (Jan 22 2015)_WDK.xlsx"
+bird_mass_xl = XLSX.readxlsx(bird_mass_path)
+bird_mass_df = DataFrame(XLSX.eachtablerow(bird_mass_xl["Bird Mass filled"]))
+s_bird_mass = leftjoin(s, bird_mass_df; on=:GBIFSpecies=>:BirdLife_SpecName, matchmissing=:notequal, makeunique=true, order=:left)
+
+reptile_mass_path = "/home/raf/PhD/Mascarenes/Tables/Reptile body mass database Meiri 2010.xlsx"
+reptile_mass_xl = XLSX.readxlsx(reptile_mass_path)
+reptile_mass_df = DataFrame(XLSX.eachtablerow(reptile_mass_xl[1]))
+s_reptile_mass = leftjoin(s, reptile_mass_df; on=:GBIFSpecies=>:Name, matchmissing=:notequal, makeunique=true, order=:left)
+
+frugivores_path = "/home/raf/PhD/Mascarenes/Tables/Dryad frugivore occurrence database 1-3-17.xlsx"
+frugivores_xl = XLSX.readxlsx(frugivores_path)
+frugivores_df = DataFrame(XLSX.eachtablerow(frugivores_xl["Frugivore occurrence and traits"]))
+s_frugivores = leftjoin(s, frugivores_df; on=:GBIFSpecies=>:Species_name, matchmissing=:notequal, makeunique=true, order=:left)
+s_frugivores_mass = combine(groupby(s_frugivores, :GBIFSpecies), :Body_mass => mean)
+
 sort!(s_elton, :GBIFSpecies)
 sort!(s_avonet, :GBIFSpecies)
 sort!(s_pantheria, :GBIFSpecies)
+sort!(s_frugivores, :GBIFSpecies)
+sort!(s_bird_mass, :GBIFSpecies)
 sort!(s, :GBIFSpecies)
-filter(r -> ismissing(r.Mass), s)
+# filter(r -> ismissing(r.Mass), s)
 
 function combine_mass(a, b)
     map(a, b) do s1, s2
@@ -164,11 +186,18 @@ end
 s.Mass = combine_mass(s.Mass, s_avonet.Mass_1)
 s.Mass = combine_mass(s.Mass, s_elton.BodyMass_Value)
 s.Mass = combine_mass(s.Mass, s_pantheria.AdultBodyMass_g)
+s.Mass = combine_mass(s.Mass, s_bird_mass.filledmass)
+s.Mass = combine_mass(s.Mass, s_reptile_mass[!, "mass measure"])
+s.Mass = combine_mass(s.Mass, s_frugivores_mass.Body_mass_mean)
+subset(s, :Mass => x -> ismissing.(x), :Origin => ByRow(==("Endemic")))
 s.Mass_Avonet = s_avonet.Mass_1 
 s.Mass_Pantheria = s_pantheria.AdultBodyMass_g 
 s.Mass_Elton = s_elton.BodyMass_Value 
+s.Mass_Frugivores = s_frugivores_mass.Body_mass_mean
+s.Mass_bird_mass = s_bird_mass.filledmass
+s.Mass_reptile_mass = s_reptile_mass[!, "mass measure"]
 
-filter(r -> ismissing(r.Mass) && r.Origin == "Endemic", s) |> pager
+# filter(r -> ismissing(r.Mass) && r.Origin == "Endemic", s) |> pager
 
 # elton_end = filter(r -> r.Origin == "Endemic" && !ismissing(r.BodyMass_Value), s_elton)
 # elton_end = filter(r -> r.Origin == "Endemic" && !ismissing(r.Mass), s)
@@ -226,15 +255,9 @@ s.has_trait_data .|= in.(s.Species, Ref(elton_bird.Scientific)) # only adds 4
 s.has_trait_data .|= in.(s.Species, Ref(combine.iucn2020_binomial)) # only adds 1
 # s.has_trait_data .|= in.(s.Species, Ref(elton_mammal.Scientific)) # Adds nothing 
 sum(skipmissing(s.has_trait_data))
-filter(r -> ismissing(r.has_trait_data), s) |> pager
+# filter(r -> ismissing(r.has_trait_data), s) |> pager
 
 
-
-
-island_tables = map((mus=:mus, reu=:reu, rod=:rod)) do key
-    subset(s, key => x -> .!ismissing.(x))
-end
-map(length ∘ collect ∘ skipmissing, (s.mus_extinct, s.reu_extinct, s.rod_extinct))
 # filter(e) do r
     # ismissing(r.rod) && !ismissing(r.rod_extinct)
 # end
@@ -243,34 +266,34 @@ get_species_names(table) = Tuple(Symbol.(replace.(skipmissing(table.Species), Re
 island_extinct = map(island_tables, island_names) do table, name
     subset(table, Symbol(name, "_extinct") => ByRow(!ismissing))
 end
-island_names = NamedTuple{keys(island_species)}(keys(island_species))
+island_names = NamedTuple{keys(island_tables)}(keys(island_tables))
 island_extinct_names = map(get_species_names, island_extinct)
-species_params = map(s.Rmax, s.Max_Density, s.mus_extinct, s.reu_extinct, s.rod_extinct) do rmax, max_density, mus_extinct, reu_extinct, rod_extinct
-    (; rmax, max_density, mus_extinct, reu_extinct, rod_extinct, hunting_suscept=1.0, cat_suscept=1.0, rat_suscept=1.0)
-end |> Tuple |> NamedVector{get_species_names(s)}
+# species_params = map(s.Rmax, s.Max_Density, s.mus_extinct, s.reu_extinct, s.rod_extinct) do rmax, max_density, mus_extinct, reu_extinct, rod_extinct
+#     (; rmax, max_density, mus_extinct, reu_extinct, rod_extinct)
+# end |> Tuple |> NamedVector{get_species_names(s)}
 
-island_params = map(island_extinct_names, island_names) do keys, island
-    spec = species_params[keys]
-    map(spec) do s
-        extinct = s[Symbol(island, "_extinct")]
-        base = (; s[(:rmax, :max_density, :hunting_suscept, :cat_suscept, :rat_suscept)]..., extinct)
-    end
-end
+# island_params = map(island_extinct_names, island_names) do keys, island
+#     spec = species_params[keys]
+#     map(spec) do s
+#         extinct = s[Symbol(island, "_extinct")]
+#         base = (; s[(:rmax, :max_density, :hunting_suscept, :cat_suscept, :rat_suscept)]..., extinct)
+#     end
+# end
 
-island_populations = map(island_params) do params
-    v = NamedVector(map(_ -> 100.0f0, params))
-    fill(v, 100, 100)
-end
+# island_populations = map(island_params) do params
+#     v = NamedVector(map(_ -> 100.0f0, params))
+#     fill(v, 100, 100)
+# end
 
-island_columns = map(island_params) do params
-    k = keys(first(params))
-    map(k) do key
-        NamedVector(map(r -> r[key], params))
-    end |> NamedTuple{k}
-end
+# island_columns = map(island_params) do params
+#     k = keys(first(params))
+#     map(k) do key
+#         NamedVector(map(r -> r[key], params))
+#     end |> NamedTuple{k}
+# end
 
-island_columns.mus.max_density
-island_params.mus
+# island_columns.mus.max_density
+# island_params.mus
 
 
 # Population Based??
@@ -311,20 +334,59 @@ using StaticArrays, GeoArrayOps
 using CSV, DataFrames, XLSX, TerminalPager
 using Rasters
 using GLMakie
-include("/home/raf/.julia/dev/LandscapeChange/src/makie.jl")
-includet("raster_common.jl")
+
+includet("/home/raf/.julia/dev/LandscapeChange/src/makie.jl")
+includet("optimisation.jl")
+includet("species_rules.jl")
+include("raster_common.jl")
+
 pred_df = CSV.read("animals.csv", DataFrame)
+mascarine_species_csv = "/home/raf/PhD/Mascarenes/Tables/mascarine_species.csv"
+all_species = CSV.read(mascarine_species_csv, DataFrame) |> 
+    x -> subset(x, :Species => ByRow(!ismissing))
+island_tables = map((mus=:mus, reu=:reu, rod=:rod)) do key
+    df = DataFrame(subset(all_species, key => x -> .!ismissing.(x)))
+    df.presence = df[!, key]
+    df.extinct = map(df[!, "$(key)_extinct"]) do e
+        ismissing(e) ? missing : eval(Meta.parse(e))::UnitRange
+    end
+    df.introduced = map(df[!, "$(key)_introduced"]) do e
+        ismissing(e) ? missing : eval(Meta.parse(e))::UnitRange
+    end
+    df
+end
+island_extinct_tables = map(island_tables) do tbl
+    DataFrame(subset(tbl, :extinct => x -> .!ismissing.(x)))
+end
+
+aggfactor = 8
 
 # using ProfileView 
-aggfactor = 8
+
+ruleset, inits, outputs, outputs_kw = def_syms(
+    pred_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables
+);
+
 island = :reu
-include("species_rules.jl")
-# ruleset, output, output_kw = def_syms(;
-#     pred_df, aggfactor, island, dems, masks, slope_stacks, 
-# );
-# output
-@time sim!(output, ruleset);
-mk(getproperty(inits, island), rules; output_kw...)
+# using ProfileView
+# @profview 
+
+@time map(outputs) do output
+    sim!(output, ruleset);
+end
+
+# @time sims = let trans_output=trans_output, ruleset=ruleset 
+#     tasks = map(1:100) do i
+#         Threads.@spawn sim!(deepcopy(trans_output), ruleset).frames
+#     end
+#     map(fetch, tasks)
+# end;
+
+# l = presence_loss(sims; tspan, ncells, last_obs)
+# pairs(l)
+
+mk(inits[island], ruleset; outputs_kw[island]...)
+
 
 # using CUDA, Adapt
 # CUDA.allowscalar(false)

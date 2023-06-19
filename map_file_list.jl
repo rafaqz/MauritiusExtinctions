@@ -410,18 +410,21 @@ function warp_to_raster(img_path::String, template::Raster;
     if save && isfile(splitext(img_path)[1] * ".json")
         df = CSV.read(csv_path, DataFrame)
         output = open_output(object_type, img_path)
+        poly = 1
         if object_type <: MapRasterization.MapSelection
             out = Int.(reshape(output.output, size(img)))
-            rs = MapRasterization.applywarp(out; template, points=df, missingval=0)
+            warper = MapRasterization.Warper(df, template, poly)
+            rs = MapRasterization.warp(warper, out; missingval=0)
             raster_path = splitext(img_path)[1] * ".tif"
-            write(raster_path, rs)
+            # write(raster_path, rs)
             rs = mask(Raster(raster_path); with=template)
             write(raster_path, rs)
             return rs
         elseif object_type <: MapRasterization.CategoryShapes
+            warper = MapRasterization.Warper(df, template, poly)
             warped_geoms = map(output.shapes) do sh
                 geoms = Polygon.(sh)
-                warped = MapRasterization.applywarp(geoms; template, points=df)
+                warped = MapRasterization.warp(warper, geoms)
                 map(warped) do g
                     collect(GeoInterface.getpoint(g))
                 end
