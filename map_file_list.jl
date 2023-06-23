@@ -136,7 +136,7 @@ function make_raster_slices(masks, categories; path="/home/raf/PhD/Mascarenes/Da
         map(island_files) do file
             image_path = file.filename
             raster_path = splitext(image_path)[1] * ".tif"
-            raw = view(Raster(raster_path), Band(1))
+            raw = Raster(raster_path)
             json_path = splitext(file.filename)[1] * ".json"
             data = JSON3.read(read(json_path), MapRasterization.MapSelection)
             grouped = map(file.layers) do layer
@@ -258,7 +258,11 @@ function make_raster_slices(masks, categories; path="/home/raf/PhD/Mascarenes/Da
             1968=>masks.mus .& cleared_1968,
             1992=>masks.mus .& cleared_1992,
         ]
-        cleared = RasterSeries(last.(cleared), Ti(first.(cleared); sampling=Intervals(End())))
+
+        cleared = RasterSeries(last.(cleared), Ti(first.(cleared); 
+            span=Irregular(1500, first(last(cleared))),
+            sampling=Intervals(End()),
+        ))
         abandoned = [
             1600=>masks.mus .& abandoned_1600,
             1709=>masks.mus .& abandoned_1709,
@@ -274,7 +278,10 @@ function make_raster_slices(masks, categories; path="/home/raf/PhD/Mascarenes/Da
             1968=>masks.mus .& abandoned_1968,
             1992=>masks.mus .& abandoned_1992,
         ]
-        abandoned = RasterSeries(last.(abandoned), Ti(first.(abandoned); sampling=Intervals(End())))
+        abandoned = RasterSeries(last.(abandoned), Ti(first.(abandoned); 
+            span=Irregular(1500, first(last(abandoned))),
+            sampling=Intervals(End())
+        ))
         urban = [
             1600=>masks.mus .& urban_1600,
             1721=>masks.mus .& urban_1721,
@@ -284,14 +291,20 @@ function make_raster_slices(masks, categories; path="/home/raf/PhD/Mascarenes/Da
             1965=>masks.mus .& urban_1965,
             1992=>masks.mus .& urban_1992,
         ]
-        urban = RasterSeries(last.(urban), Ti(first.(urban); sampling=Intervals(End())))
+        urban = RasterSeries(last.(urban), Ti(first.(urban); 
+            span=Irregular(1500, first(last(urban))),
+            sampling=Intervals(End()),
+        ))
         forestry = [
             1600=>emptymask,
             1905=>emptymask,
             1966=>masks.mus .& forestry_1965,
             1992=>masks.mus .& forestry_1992,
         ]
-        forestry = RasterSeries(last.(forestry), Ti(first.(forestry); sampling=Intervals(End())))
+        forestry = RasterSeries(last.(forestry), Ti(first.(forestry); 
+            span=Irregular(1500, first(last(forestry))),
+            sampling=Intervals(End()),
+        ))
         # function _combine(F, C, A, U)
         #     A = broadcast(F, C, A, U, masks.mus) do f, c, a, u, m
         #         if !m

@@ -12,7 +12,7 @@ function _initialise_cost!(active, accumulated_costs, origins, hood)
             @inbounds accumulated_costs[I] = o
             # Add an index to the `active` set if it has any neighbors not
             # in `origins` as we only need to use the edges of the origin areas.
-            if any(x -> !ismissing(x) && x == Inf * u"hr", Stencils.neighborhood(origins, I))
+            if any(x -> !ismissing(x) && x == Inf * u"hr", Stencils.stencil(origins, I))
                 push!(active, I)
             end
         end

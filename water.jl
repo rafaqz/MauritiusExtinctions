@@ -27,7 +27,8 @@ end
 
 # distance_to_water = map(island_keys, dems, watermasks) do i, dem, watermask
 #     rast = mask(nearest_distances(watermask); with=dem)
-#     write(joinpath(distancedir, string(i), "to_water.tif"), rast)
+#     dir = mkpath(joinpath(distancedir, string(i)))
+#     write(joinpath(dir, "to_water.tif"), rast; force=true)
 #     rast
 # end
 distance_to_water = map(island_keys) do k

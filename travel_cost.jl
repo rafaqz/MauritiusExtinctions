@@ -5,7 +5,7 @@ includet("ports.jl")
 includet("slope.jl")
 includet("raster_common.jl")
 
-files = get_map_files()
+files = define_map_files()
 slices = make_raster_slices(masks, lc_categories)
 slices.mus.timelines.cleared
 
@@ -60,7 +60,7 @@ end
         cost_distance(o, e, r; cellsize=step(lookup(dems.mus, X)) * 111.0u"km")
     end
 end
-Plots.plot(travel_times.mus)
+# Plots.plot(travel_times.mus)
 
 # plot(travel_times.reu; clims=(0u"hr", 25u"hr"), legend=false, ticks=:none)
 # plot(travel_times.mus; clims=(0u"hr", 12u"hr"), legend=false, ticks=:none)

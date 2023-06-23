@@ -18,7 +18,7 @@ includet("raster_common.jl")
 # includet("roads.jl")
 includet("water.jl")
 includet("map_file_list.jl")
-includet("svgs.jl")
+# includet("svgs.jl")
 
 ch_original_veg_path= "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page33_mauritius_vegetation_colored.tif"
 ch_original_veg_raster = Raster(ch_original_veg_path; missingval=-9223372036854775808)

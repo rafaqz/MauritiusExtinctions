@@ -44,14 +44,20 @@ ports = (
             Saint_Denis=(-20.876, 55.446),
         ),
         minor=(;
-            Le_Port=(-20.937, 55.293),
             Saint_Benoit=(-21.0392, 55.722),
-            Saint_Denis=(-20.876, 55.446),
             Saint_Joseph=(-21.389, 55.644),
             Saint_Paul=(-21.008, 55.270),
             Saint_Phillipe=(-21.364, 55.767),
             Saint_Pierre=(-21.344, 55.481),
             Sale=(-21.269, 55.335),
+        ),
+    ),
+    rod=(;
+        major=(;
+           Port_Mathurin=(-19.680814, 63.420713),
+        ),
+        minor=(;
+           Port_Sud_Est=(-19.743029, 63.450912),
         ),
     ),
 )

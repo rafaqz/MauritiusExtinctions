@@ -7,28 +7,26 @@ using Unitful
 using StaticArrays
 using ReverseStackTraces
 
-
 # From woods and forests in Mauritius, p 40:40
 # 1880: 70,000 acres out of 300,000 remain
 # 35,000 were native (but "dilatipated and ruined?")
 # Also mentions that invasives replace natives
 
-includet("raster_common.jl")
-includet("roads.jl")
-includet("travel_cost.jl")
-includet("tabular_data.jl")
-includet("/home/raf/.julia/dev/LandscapeChange/src/makie.jl")
+include("raster_common.jl")
+include("roads.jl")
+include("travel_cost.jl")
+include("tabular_data.jl")
+include("/home/raf/.julia/dev/LandscapeChange/src/makie.jl")
 
-Plots.plot(masks.mus)
 println("Getting timeline slices...")
 includet("map_file_list.jl")
 files = define_map_files()
 slices = make_raster_slices(masks, lc_categories)
 set_theme!(theme_dark())
 Rasters.rplot(Rasters.combine(slices.mus.timelines.cleared, Ti); colormap=:batlow, colorrange=(0, 1))
-lc = map(slices.mus.timelines.lc) do A
-    reverse(A; dims=Y)
-end |> x -> set(x, Ti=>Intervals(End())) |> x -> set(x, Ti=>Irregular((0, 1992)))
+# lc = map(slices.mus.timelines.lc) do A
+#     reverse(A; dims=Y)
+# end |> x -> set(x, Ti=>Intervals(End())) |> x -> set(x, Ti=>Irregular((0, 1992)))
 # a = @animate for A in lc
 #     Plots.plot(A; legend=false, clims=(1, 5))
 # end
@@ -82,29 +80,33 @@ human_pop_timeline.mus
 
 # best_slices = lc[At([1600, 1709, 1723, 1772, 1810, 1905, 1992])]
 # Plots.plot(best_slices)
-cat_counts = map(lc) do slice
-    map(states) do state
-        count(x -> x === state, slice)
-    end |> NamedTuple
-end;
+bounds(lookup(slices.mus.timelines.cleared, Ti))
+cat_counts = map(slices.mus.timelines) do category
+    map(category) do slice
+        count(slice)
+    end
+end
+cat_counts |> pairs
 Plots.scatter(human_pop_timeline.mus)
-pop_cat_counts = map(lookup(cat_counts, Ti)) do t
-    (; cat_counts[At(t)]..., pop=human_pop_timeline.mus[At(t)])
+pop_cat_counts = map(slices.mus.timelines, cat_counts) do ct, cc
+    map(lookup(ct, Ti)) do t
+        (; count=cc[Contains(t)], pop=human_pop_timeline.mus[At(t)])
+    end
 end
 
 using GLM, StatsPlots
 # Cleared land is used for urbanisation by 1992, so don't use it in the model
-cleared_model = lm(@formula(cleared ~ pop^2 + pop), pop_cat_counts)
-urban_model = lm(@formula(urban ~ pop^2 + pop), pop_cat_counts)
+cleared_model = lm(@formula(count ~ pop^2 + pop), pop_cat_counts.cleared)
+urban_model = lm(@formula(count ~ pop^2 + pop), pop_cat_counts.urban)
 ti = dims(human_pop_timeline.mus, Ti)
 pops = map(pop -> (; pop), human_pop_timeline.mus)
 cleared_pred = DimArray(predict(cleared_model, parent(pops)), ti)
 urban_pred = DimArray(predict(urban_model, parent(pops)), ti)
 lc_predictions = map((cleared, urban) -> (; cleared, urban), cleared_pred, urban_pred)
 Plots.plot(cleared_pred)
-Plots.scatter!(map(x -> x.urban, cat_counts))
+Plots.scatter!(cat_counts.urban)
 Plots.plot!(urban_pred)
-Plots.scatter!(map(x -> x.cleared, cat_counts))
+Plots.scatter!(cat_counts.cleared)
 Plots.plot!(human_pop_timeline.mus)
 
 b = (; bounds=(0.0, 2.0))
@@ -129,9 +131,10 @@ landscape_events = (
         (year=1665, n=20#=?=#, geometry=(X=55.4485, Y=20.8785)),  # "Colony at port louie as capital", "French",
 
     ],
-    # reu = [
-    #     19.6795,63.4287,
-    # ]
+    rod = [
+        # TODO: put real dates here
+        (year=1665, n=20#=?=#, geometry=(X=55.4485, Y=20.8785)),
+    ]
 )
 fixed = false # or a raster mask of fixed landcover
 human_suitability = map(travel_times, slope_stacks, dems) do tt, ss, dem
@@ -142,6 +145,7 @@ human_suitability = map(travel_times, slope_stacks, dems) do tt, ss, dem
     end
     Rasters.combine(slices, Ti)
 end
+plot(travel_times.rod)
 
 distance_to_water = map(island_keys) do k
     view(Raster(joinpath(distancedir, string(k), "to_water.tif")), Band(1))
@@ -149,18 +153,42 @@ end
 # plot(suitability.mus; clims=(0, 1), legend=false)
 # plot(suitability.reu; clims=(0, 1), legend=false)
 suitability = map(human_suitability, distance_to_water) do hs, dtw
-    dtw = 1 ./ (1 .+ sqrt.(replace_missing(dtw, Inf)))
+    # dtw = 1 ./ (1 .+ sqrt.(replace_missing(dtw, Inf)))
     native = ones(axes(hs))
-    cleared = hs .^ 2 .* dtw
+    cleared = hs .^ 2# .* dtw
     abandoned = 1 .- hs
-    urban = hs .^ 21 .* dtw
+    urban = hs .^ 21# .* dtw
     forestry = ones(axes(hs))
     map(native, cleared, abandoned, urban, forestry) do n, c, a, u, f
         NamedVector(native=n, cleared=c, abandoned=a, urban=u, forestry=f)
     end
 end
-Plots.plot(distance_to_water.mus)
-Plots.plot(human_suitability.mus[Ti=1])
+Plots.plot(distance_to_water.rod)
+Plots.plot(human_suitability.mus[Ti=6])
+Plots.plot(human_suitability.rod[Ti=1])
+Plots.plot(human_suitability.reu[Ti=20])
+pop_density.reu |> plot
+
+# Check that suitability makes sense
+#
+suit = human_suitability.rod
+pop = pop_density.rod
+pop_models = map(human_suitability, pop_density) do suit, pop
+    ag_pop_density = Rasters.aggregate(sum, pop, 20; skipmissingval=true)
+    ag_pop_density = replace(ag_pop_density, NaN=>0.0)
+    resample_suit = mask!(resample(suit[Ti=1]; to=ag_pop_density); with=ag_pop_density)
+    mask!(ag_pop_density; with=resample_suit)
+    df = RasterStack((pop=replace_missing(ag_pop_density), suit=replace_missing(resample_suit)))
+    plot(df)
+    model = lm(@formula(pop ~ suit), df)
+end
+map(r2, pop_models)
+plot(dems.mus)
+
+using Statistics
+Rasters.aggregate(sum, pop_density.reu, 50; skipmissingval=true) |> plot
+
+
 
 # The amount of influence neighbors have
 b = (; bounds=(1.00, 5.0))

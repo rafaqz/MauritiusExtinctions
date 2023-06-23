@@ -8,7 +8,11 @@ roads_paths = (;
     rod = joinpath(datadir, "Generated/Roads/reu/rod_roads.tif"),
 )
 
-road_series = map(roads_paths, dems) do path, dem
+# Empty roads for rodrigues
+# rodroads = falses(axes(dems.rod))
+# write(roads_paths.rod, rodroads)
+
+road_series = map(roads_paths, dems[keys(roads_paths)]) do path, dem
     series = map(A -> Bool.(A), RasterSeries(path, Ti))
     mask(series; with=dem, missingval=missing)
 end
@@ -123,7 +127,7 @@ includet("map_file_list.jl")
 mus_roads_path = joinpath(datadir, "Generated/Roads/mus/mus_roads.tif")
 reu_roads_path = joinpath(datadir, "Generated/Roads/reu/reu_roads.tif")
 
-files = get_map_files()
+files = define_map_files()
 
 img_path = files.mus.atlas_dutch_period.filename
 img_path = files.mus.atlas_18C_land_use.filename
@@ -132,7 +136,8 @@ img_path = files.mus.atlas_18C_land_use.filename
 csv_path = splitext(img_path)[1] * ".csv"
 points = isfile(csv_path) ? open_warp_points(img_path) : nothing
 img = load_image(img_path)
-rs = MapRasterization.applywarp(img; template=dems.mus, points, missingval=0)
+warper = MapRasterization.Warper(; template=dems.mus, point_table=points)
+rs = MapRasterization.warp(warper, img; missingval=0)
 rs = map(identity, rs)
 
 roadsdir = joinpath(datadir, "Generated/Roads")

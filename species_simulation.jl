@@ -81,11 +81,25 @@ includet("raster_common.jl")
 # CSV.write("/home/raf/Data/Extinction/redlist/extinct_species.csv", ex_ew; transform=(col, val) -> something(val, missing))
 #
 
+function set_gbif_species!(df, specieskey)
+    if !("GBIFSpecies" in names(df))
+        df.GBIFSpecies .= ""
+    end
+    specvec = getproperty(df, specieskey)
+    for i in eachindex(specvec) 
+        df.GBIFSpecies[i] == "" || continue
+        sp = specvec[i]
+        ismissing(sp) && continue
+        @show sp
+        match = species_match(sp)
+        isnothing(match) || ismissing(match.species) && continue
+        df.GBIFSpecies[i] = match.species 
+    end
+end
+
 mascarine_species_csv = "/home/raf/PhD/Mascarenes/Tables/mascarine_species.csv"
 s = CSV.read(mascarine_species_csv, DataFrame) |> 
     x -> subset(x, :Species => ByRow(!ismissing), :GBIFSpecies => ByRow(!ismissing))
-filter(p -> p[2] == 2, countmap(s.GBIFSpecies))
-
 
 # s.GBIFSpecies = copy(s.Species)
 # for i in eachindex(s.Species) 
@@ -97,35 +111,51 @@ filter(p -> p[2] == 2, countmap(s.GBIFSpecies))
 # end
 # s.GBIFSpecies
 
-# CSV.write(mascarine_species_csv, s)
+CSV.write(mascarine_species_csv, s)
 iucn_extinct = CSV.read("/home/raf/Data/Extinction/redlist/extinct_species.csv", DataFrame)
-iucn2 = CSV.read("/home/raf/Data/Extinction/redlist/redlist_species_data_39da78ce-d594-4968-8043-489f2765d687/assessments.csv", DataFrame)
+iucn_extinct.threats |> pager
+iucn_csv = "/home/raf/Data/Extinction/redlist/redlist_species_data_39da78ce-d594-4968-8043-489f2765d687/assessments_gbif.csv"
+iucn_df = CSV.read(iucn_csv, DataFrame)
+set_gbif_species!(iucn_df, :scientificName)
+CSV.write(iucn_csv, iucn_df)
 
-joined = leftjoin(s, iucn2; on=:GBIFSpecies=>:scientificName, matchmissing=:notequal)
+run(`libreoffice /home/raf/Data/Extinction/redlist/redlist_species_data_39da78ce-d594-4968-8043-489f2765d687/assessments_gbif.csv`)
+
+s_iucn = leftjoin(s, iucn_df; on=:GBIFSpecies, matchmissing=:notequal, makeunique=true)
+s_iucn
+.habitat
+sort!(s_iucn, :GBIFSpecies)
+sort!(s, :GBIFSpecies)
+s.iucn_habitat = s_iucn.habitat 
+s.iucn_rationale = s_iucn.rationale 
+s.iucn_threats = s_iucn.threats 
 # joined[!, [:Species, :threats]] |> pager
 # broadcast(string, joined.Species, Ref(": "), joined.threats) |> pager
 
 
-sp_nothing = filter(x -> isnothing(x[2]), sp_pairs)
-sp = filter(x -> !isnothing(x[2]), sp_pairs)
-gbif_sp = DataFrame(last.(sp)
-first.(sp) .=> gbif_sp.species
-first.(sp)[first.(sp) .!== gbif_sp.species]
+# sp_nothing = filter(x -> isnothing(x[2]), sp_pairs)
+# sp = filter(x -> !isnothing(x[2]), sp_pairs)
+# gbif_sp = DataFrame(last.(sp)
+# first.(sp) .=> gbif_sp.species
+# first.(sp)[first.(sp) .!== gbif_sp.species]
+# redlist_extinct_csv = "/home/raf/Data/Traits/redlist_species_data_1f74a1f8-0b29-4567-9766-046807e966ca/taxonomy.csv"
+# redlist = CSV.read(redlist_extinct_csv, DataFrame; normalizenames=true)
 
-redlist_extinct_csv = "/home/raf/Data/Traits/redlist_species_data_1f74a1f8-0b29-4567-9766-046807e966ca/taxonomy.csv"
-redlist = CSV.read(redlist_extinct_csv, DataFrame; normalizenames=true)
-
-pantheria_csv = "/home/raf/Data/Traits/PanTHERIA/ECOL_90_184/PanTHERIA_1-0_WR05_Aug2008.txt"
-pantheria = CSV.read(pantheria_csv, DataFrame; normalizenames=true, quoted=false)
-pantheria_mass = pantheria[!, [:MSW05_Binomial, :AdultBodyMass_g]]
-s_pantheria = leftjoin(s, pantheria_mass; on=:GBIFSpecies=>:MSW05_Binomial, matchmissing=:notequal, makeunique=true)
-names(pantheria)
+# pantheria_csv = "/home/raf/Data/Traits/PanTHERIA/ECOL_90_184/PanTHERIA_1-0_WR05_Aug2008.txt"
+# pantheria = CSV.read(pantheria_csv, DataFrame; normalizenames=true, quoted=false)
+# set_gbif_species!(pantheria, :MSW05_Binomial)
+pantheria_csv = "/home/raf/Data/Traits/PanTHERIA/ECOL_90_184/PanTHERIA_1-0_WR05_Aug2008_gbif.csv"
+CSV.write(pantheria_csv, pantheria)
+pantheria_mass = pantheria[!, [:GBIFSpecies, :AdultBodyMass_g]]
+s_pantheria = leftjoin(s, pantheria_mass; on=:GBIFSpecies, matchmissing=:notequal, makeunique=true)
 sort!(s_pantheria, :GBIFSpecies)
 
-avonet_csv = "/home/raf/Data/Traits/Avonet/ELEData/ELEData/TraitData/AVONET1_BirdLife.csv"
+avonet_csv = "/home/raf/Data/Traits/Avonet/ELEData/ELEData/TraitData/AVONET1_BirdLife_gbif.csv"
 avonet = CSV.read(avonet_csv, DataFrame; normalizenames=true)
-avonet_mass = avonet[!, [:Species1, :Mass]]
-s_avonet = leftjoin(s, avonet_mass; on=:GBIFSpecies=>:Species1, matchmissing=:notequal, makeunique=true)
+# set_gbif_species!(avonet, :Species1)
+# CSV.write(avonet_csv, avonet)
+avonet_mass = avonet[!, [:GBIFSpecies, :Mass]]
+s_avonet = leftjoin(s, avonet; on=:GBIFSpecies, matchmissing=:notequal, makeunique=true)
 names(avonet)
 
 lizzard_csv = "/home/raf/Data/Traits/Lizards/Appendix S1 - Lizard data version 1.0.csv"
@@ -135,41 +165,75 @@ names(lizzard)
 
 mass_cols = ["Binomial", "mass_equation_Feldman_et_al_2016_unless_stated_", "intercept", "slope"]
 lizzard_mass = lizzard[!, mass_cols]
-s_lizzard = leftjoin(s, lizzard_mass; on=:GBIFSpecies=>:Binomial, matchmissing=:notequal, makeunique=true)
+s_lizzard = leftjoin(s, lizzard_mass; on=:GBIFSpecies, matchmissing=:notequal, makeunique=true)
 lizzard_end = filter(r -> !ismissing(r.intercept) && r.Origin == "Endemic", s_lizzard)
 # lizzard_end |> pager
 
-elton_bird_csv = "/home/raf/Data/Traits/EltonTraits/BirdFuncDat.txt"
+elton_bird_csv = "/home/raf/Data/Traits/EltonTraits/BirdFuncDat_gbif.txt"
 elton_bird = CSV.read(elton_bird_csv, DataFrame; normalizenames=true)
-names(avonet)
+set_gbif_species!(elton_bird, :Scientific)
+CSV.write(elton_bird_csv, elton_bird)
+names(elton_bird)
 
-elton_mammal_csv = "/home/raf/Data/Traits/EltonTraits/MamFuncDat.txt"
+# elton_mammal_csv = "/home/raf/Data/Traits/EltonTraits/MamFuncDat_csv.txt"
+# set_gbif_species!(elton_mammal, :Scientific)
+elton_mammal_csv = "/home/raf/Data/Traits/EltonTraits/MamFuncDat_gbif.csv"
 elton_mammal = CSV.read(elton_mammal_csv, DataFrame; normalizenames=true)
+CSV.write(elton_mammal_csv, elton_mammal)
+names(elton_mammal)
 
-elton_mass = vcat(elton_mammal[!, [:Scientific, :BodyMass_Value]], elton_bird[!, [:Scientific, :BodyMass_Value]])
-s_elton = leftjoin(s, elton_mass; on=:GBIFSpecies=>:Scientific, matchmissing=:notequal)
+elton_mass = vcat(elton_mammal[!, [:GBIFSpecies, :BodyMass_Value]], elton_bird[!, [:GBIFSpecies, :BodyMass_Value]])
+s_elton = leftjoin(s, elton_mass; on=:GBIFSpecies, matchmissing=:notequal)
 
-bird_mass_path = "/home/raf/PhD/Mascarenes/Tables/Bird Mass filled (Jan 22 2015)_WDK.xlsx"
-bird_mass_xl = XLSX.readxlsx(bird_mass_path)
-bird_mass_df = DataFrame(XLSX.eachtablerow(bird_mass_xl["Bird Mass filled"]))
-s_bird_mass = leftjoin(s, bird_mass_df; on=:GBIFSpecies=>:BirdLife_SpecName, matchmissing=:notequal, makeunique=true, order=:left)
+# bird_mass_path = "/home/raf/PhD/Mascarenes/Tables/Bird Mass filled (Jan 22 2015)_WDK.xlsx"
+# bird_mass_xl = XLSX.readxlsx(bird_mass_path)
+# bird_mass_df = DataFrame(XLSX.eachtablerow(bird_mass_xl["Bird Mass filled"]))
+# set_gbif_species!(bird_mass_df, :BirdLife_SpecName)
+# CSV.write(bird_mass_csv, bird_mass_df)
+bird_mass_csv = "/home/raf/PhD/Mascarenes/Tables/Bird Mass filled (Jan 22 2015)_WDK_gbif.csv"
+bird_mass_df = CSV.read(bird_mass_csv, DataFrame)
+s_bird_mass = leftjoin(s, bird_mass_df; on=:GBIFSpecies, matchmissing=:notequal, makeunique=true, order=:left)
 
-reptile_mass_path = "/home/raf/PhD/Mascarenes/Tables/Reptile body mass database Meiri 2010.xlsx"
-reptile_mass_xl = XLSX.readxlsx(reptile_mass_path)
-reptile_mass_df = DataFrame(XLSX.eachtablerow(reptile_mass_xl[1]))
-s_reptile_mass = leftjoin(s, reptile_mass_df; on=:GBIFSpecies=>:Name, matchmissing=:notequal, makeunique=true, order=:left)
+# reptile_mass_path = "/home/raf/PhD/Mascarenes/Tables/Reptile body mass database Meiri 2010.xlsx"
+# reptile_mass_xl = XLSX.readxlsx(reptile_mass_path)
+# reptile_mass_df = DataFrame(XLSX.eachtablerow(reptile_mass_xl[1]))
+# set_gbif_species!(reptile_mass_df, :Name)
+# CSV.write(reptile_mass_csv, reptile_mass_df)
+reptile_mass_csv = "/home/raf/PhD/Mascarenes/Tables/Reptile body mass database Meiri 2010_gbif.csv"
+reptile_mass_df = CSV.read(reptile_mass_csv, DataFrame)
+s_reptile_mass = leftjoin(s, reptile_mass_df; on=:GBIFSpecies, matchmissing=:notequal, makeunique=true, order=:left)
 
-frugivores_path = "/home/raf/PhD/Mascarenes/Tables/Dryad frugivore occurrence database 1-3-17.xlsx"
-frugivores_xl = XLSX.readxlsx(frugivores_path)
-frugivores_df = DataFrame(XLSX.eachtablerow(frugivores_xl["Frugivore occurrence and traits"]))
-s_frugivores = leftjoin(s, frugivores_df; on=:GBIFSpecies=>:Species_name, matchmissing=:notequal, makeunique=true, order=:left)
-s_frugivores_mass = combine(groupby(s_frugivores, :GBIFSpecies), :Body_mass => mean)
+# frugivores_path = "/home/raf/PhD/Mascarenes/Tables/Dryad frugivore occurrence database 1-3-17.xlsx"
+# frugivores_xl = XLSX.readxlsx(frugivores_path)
+# frugivores_df = DataFrame(XLSX.eachtablerow(frugivores_xl["Frugivore occurrence and traits"]))
+frugivores_path = "Dryad frugivore occurrence database 1-3-17.csv"
+frugivores_df = CSV.read(frugivores_path, DataFrame)
+s_frugivores = leftjoin(s, frugivores_df; on=:GBIFSpecies, matchmissing=:notequal, makeunique=true, order=:left)
+s_frugivores_mass = DataFrames.combine(groupby(s_frugivores, :GBIFSpecies), :Body_mass => mean)
+# s_not_frugivores = antijoin(s, frugivores_df; on=:GBIFSpecies=>:Species_name, matchmissing=:notequal, makeunique=true)
+# subset(s_not_frugivores, :Origin => ByRow(==("Endemic")))
+# subset(s, :Origin => ByRow(==("Endemic")))
+
+# frugivores_df.GBIFSpecies = copy(frugivores_df.Species_name)
+# for i in eachindex(frugivores_df.Species_name) 
+#     sp = frugivores_df.Species_name[i]
+#     ismissing(sp) && continue
+#     @show sp
+#     match = species_match(sp)
+#     isnothing(match) && continue
+#     frugivores_df.GBIFSpecies[i] = match.species 
+# end
+# frugivores_df.GBIFSpecies
+# CSV.write(frugivores_path, frugivores_df)
+
+# subset(s_not_frugivores, :Origin => ByRow(==("Endemic")))
 
 sort!(s_elton, :GBIFSpecies)
 sort!(s_avonet, :GBIFSpecies)
 sort!(s_pantheria, :GBIFSpecies)
-sort!(s_frugivores, :GBIFSpecies)
+sort!(s_frugivores_mass, :GBIFSpecies)
 sort!(s_bird_mass, :GBIFSpecies)
+sort!(s_reptile_mass, :GBIFSpecies)
 sort!(s, :GBIFSpecies)
 # filter(r -> ismissing(r.Mass), s)
 
@@ -186,10 +250,11 @@ end
 s.Mass = combine_mass(s.Mass, s_avonet.Mass_1)
 s.Mass = combine_mass(s.Mass, s_elton.BodyMass_Value)
 s.Mass = combine_mass(s.Mass, s_pantheria.AdultBodyMass_g)
-s.Mass = combine_mass(s.Mass, s_bird_mass.filledmass)
 s.Mass = combine_mass(s.Mass, s_reptile_mass[!, "mass measure"])
 s.Mass = combine_mass(s.Mass, s_frugivores_mass.Body_mass_mean)
+s.Mass = combine_mass(s.Mass, s_bird_mass.filledmass)
 subset(s, :Mass => x -> ismissing.(x), :Origin => ByRow(==("Endemic")))
+
 s.Mass_Avonet = s_avonet.Mass_1 
 s.Mass_Pantheria = s_pantheria.AdultBodyMass_g 
 s.Mass_Elton = s_elton.BodyMass_Value 
