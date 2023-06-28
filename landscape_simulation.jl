@@ -6,24 +6,76 @@ using StatsPlots
 using Unitful
 using StaticArrays
 using ReverseStackTraces
+using GLMakie
 
 # From woods and forests in Mauritius, p 40:40
 # 1880: 70,000 acres out of 300,000 remain
 # 35,000 were native (but "dilatipated and ruined?")
 # Also mentions that invasives replace natives
 
-include("raster_common.jl")
-include("roads.jl")
+includet("raster_common.jl")
+includet("roads.jl")
 include("travel_cost.jl")
 include("tabular_data.jl")
 include("/home/raf/.julia/dev/LandscapeChange/src/makie.jl")
 
 println("Getting timeline slices...")
 includet("map_file_list.jl")
-files = define_map_files()
-slices = make_raster_slices(masks, lc_categories)
+# files = define_map_files()
+# slices = make_raster_slices(masks, lc_categories)
+lc = slices.mus.timelines.lc
+slices.mus.timelines.lc[1]
+
 set_theme!(theme_dark())
-Rasters.rplot(Rasters.combine(slices.mus.timelines.cleared, Ti); colormap=:batlow, colorrange=(0, 1))
+ps = map(lookup(lc, Ti)) do t
+    r = replace_missing(lc[Ti(At(t))], NaN)
+    figure = Figure(; 
+        backgroundcolor=:transparent,
+    )
+    axis = Axis(figure[1, 1];
+        xticklabelsvisible=false, 
+        yticklabelsvisible=false,
+        xticksvisible=false, 
+        yticksvisible=false,
+        xgridvisible=false,
+        ygridvisible=false,
+        bottomspinevisible=false,
+        topspinevisible=false,
+        leftspinevisible=false,
+        rightspinevisible=false,
+        aspect=DataAspect(),
+    )
+    text = "$t"
+    textpos = 57.3, -20.0
+    Makie.text!(axis, textpos...; text, fontsize=80, align=(:left, :top)) 
+    p = Makie.heatmap!(axis, r; 
+        colormap=:batlow, 
+        colorrange=(0, 6),
+    )
+    save("images/mus_lc_$t.png", figure)
+    p
+end
+
+using GLMakie
+CairoMakie.activate!()
+GLMakie.activate!()
+# savefig("mauritius_timeline.png")
+Rasters.rplot(Rasters.combine(slices.mus.timelines.lc, Ti); 
+    colormap=:batlow, colorrange=(0, 5),
+    aspect=DataAspect(),
+    axis = (
+        xticklabelsvisible=false, 
+        yticklabelsvisible=false,
+        xticksvisible=false, 
+        yticksvisible=false,
+        xgridvisible=false,
+        ygridvisible=false,
+        bottomspinevisible=false,
+        topspinevisible=false,
+        leftspinevisible=false,
+        rightspinevisible=false,
+    ),
+)
 # lc = map(slices.mus.timelines.lc) do A
 #     reverse(A; dims=Y)
 # end |> x -> set(x, Ti=>Intervals(End())) |> x -> set(x, Ti=>Irregular((0, 1992)))

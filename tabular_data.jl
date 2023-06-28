@@ -38,6 +38,35 @@ human_pop_timeline.reu[At(1700)]
 sugar_vec = interpolate_years(sugar_cane, (:Year, :Area))
 sugar_timeline = DimArray(sugar_vec, Ti(all_years); name=:Area_Sugar)
 
+Makie.scatter()
+Makie.scatter!(sugar_timeline .* 10000)
+
+using CairoMakie
+
+set_theme!(theme_ggplot2())
+fig = Figure(resolution = (400, 400));
+ax1 = fig[1:5, 1:4] = Axis(fig, xlabel = "year")
+ax2 = fig[1:5, 1:4] = Axis(fig)
+
+plot_kw = (; transparency=true, linewidth=2)
+plot1 = Makie.lines!(ax1, lookup(human_pop_timeline.mus, Ti), human_pop_timeline.mus; 
+    color=(:lightblue, 0.6), plot_kw...
+)
+plot2 = Makie.lines!(ax2, lookup(sugar_timeline, Ti), sugar_timeline; 
+    color=(:red, 0.6), plot_kw...
+)
+ax2.yaxisposition = :right
+ax2.yticklabelalign = (:left, :center)
+ax2.xticklabelsvisible = false
+ax2.xticklabelsvisible = false
+ax1.ygridvisible=false
+ax2.ygridvisible=false
+ax2.xlabelvisible = false
+linkxaxes!(ax1,ax2)
+Legend(fig[6, 1:4], [plot1, plot2], ["Human Population", "Sugarcane expansion"])
+fig
+save("lucc_drivers.png", fig)
+
 # Plot
 # Plots.plot(human_pop_timeline.mus)
 # Plots.plot(sugar_timeline)

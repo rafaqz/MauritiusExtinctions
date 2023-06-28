@@ -42,11 +42,11 @@ Laves anciennes et Saverunes?a??
 Jardinage
 =#
 
-# files = define_map_files()
-# for island in files
-#     foreach(file -> choose_categories(first(file); save=true), island)
-#     yield()
-# end
+files = define_map_files()
+for island in files
+    foreach(file -> choose_categories(first(file); save=false), island)
+    yield()
+end
 #
 
 img_path = "/home/raf/PhD/Mascarenes/maps/Rodrigues/Gade_1985_native.png"

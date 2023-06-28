@@ -12,13 +12,6 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes/Data/Selected")
     # The function will later be broadcasted over masks of the separate layers to combine them
     # Mostly is `|` which is "or" so we make a mask of values that are true in one or the other file
     file_details = (mus=(;
-        landcover_1965 = (filename="Mauritius/Undigitised/mus_landuse_1965_100_hi_c.pdf", poly=1, layers=(;
-            urban="Built_up",
-            cleared=["Sugar", "Vegetables", "Tea"],
-            forestry="Forest_plantation",
-            water="Reservoirs",
-            unsure=["Forest_natural", "Rock", "Swamps", "Scrub", "Savannah"], 
-        )),
         atlas_1992_vegetation = (filename="Mauritius/Undigitised/atlas_1992_vegetation.jpg", poly=1, layers=(;)),
         atlas_1992_agriculture = (filename="Mauritius/Undigitised/atlas_1992_agriculture.jpg", poly=1, layers=(;
             urban="urban",
@@ -63,7 +56,7 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes/Data/Selected")
             urban = (; urban_1810="urban_1810", urban_1905=["urban_1810", "urban_1905"]),
             abandoned=(
                 abandoned_1905=["cleared_1810_abdn_1905", "cleared_1854_abdn_1905", "cleared_1905_abdn_1905",],
-                abandoned_1968=["cleared_1854_abdn_1968", "cleared_1905_abdn_1905", "cleared_1905_abdn_1968", "cleared_1968_abdn_1968"],
+                abandoned_1968=["cleared_1810_abdn_1905", "cleared_1854_abdn_1968", "cleared_1905_abdn_1905", "cleared_1905_abdn_1968", "cleared_1968_abdn_1968"],
             ),
             # uncleared=(uncleared_1772=["cleared_1810", "not_cleared_1810"), uncleared_1968="not_cleared_1968"),
         )),
@@ -88,6 +81,13 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes/Data/Selected")
                     forest_1870=["forest_1872", "cleared_1870-72"],
                     forest_1872="forest_1872",
             ),
+        )),
+        landcover_1965 = (filename="Mauritius/Undigitised/mus_landuse_1965_100_hi_c.pdf", poly=1, layers=(;
+            urban="Built_up",
+            cleared=["Sugar", "Vegetables", "Tea"],
+            forestry="Forest_plantation",
+            water="Reservoirs",
+            unsure=["Forest_natural", "Rock", "Swamps", "Scrub", "Savannah"], 
         )),
      ), reu=(;
         # cadet_invasives=(filename="Reunion/Undigitised/cadet_invasives.jpg", poly=1, layers=(;)),
@@ -153,14 +153,15 @@ function make_raster_slices(masks, categories; path="/home/raf/PhD/Mascarenes/Da
         m = rasters.mus
         emptymask = falses(dims(masks.mus))
 
-        forestry_1965 =m.landcover_1965.grouped.forestry
-        forestry_1992 =m.atlas_1992_agriculture.grouped.forestry
+        forestry_1965 = m.landcover_1965.grouped.forestry
+        forestry_1992 = m.atlas_1992_agriculture.grouped.forestry .| forestry_1965
 
+        # Assume we never abandon urban areas
         urban_1600 = emptymask
         urban_1721 = emptymask
         urban_1763 = m.atlas_18C_land_use.grouped.urban.urban_1763
         urban_1810 = m.atlas_19C_land_use.grouped.urban.urban_1810 .| urban_1763
-        urban_1905 = m.atlas_19C_land_use.grouped.urban.urban_1905 .| urban_1810 .| urban_1763
+        urban_1905 = m.atlas_19C_land_use.grouped.urban.urban_1905 .| urban_1810
         urban_1965 = m.landcover_1965.grouped.urban .| urban_1905
         urban_1992 = m.atlas_1992_agriculture.grouped.urban .| urban_1965
 
@@ -181,11 +182,11 @@ function make_raster_slices(masks, categories; path="/home/raf/PhD/Mascarenes/Da
         cleared_1810 = m.atlas_18C_land_use.grouped.cleared.cleared_1810
         # Atlas 19C
         cleared_19C = m.atlas_19C_land_use.grouped.cleared
-        cleared_1810 = cleared_19C.cleared_1810 .& .!(urban_1810)
-        cleared_1854 = cleared_19C.cleared_1854 .& .!(urban_1810)
-        cleared_1905 = cleared_19C.cleared_1905 .& .!(urban_1905)
+        cleared_1810 = cleared_19C.cleared_1810
+        cleared_1854 = cleared_19C.cleared_1854
+        cleared_1905 = cleared_19C.cleared_1905
         cleared_1965 = m.landcover_1965.grouped.cleared
-        cleared_1968 = cleared_19C.cleared_1968 .& cleared_1965 .& .!(urban_1965 .| forestry_1965).& masks.mus 
+        cleared_1968 = cleared_19C.cleared_1968 .| cleared_1965
 
         fraser_forest = m.fraser_1835_from_gleadow.grouped.uncleared.forest_1835
         # Gleadow hand drawn 19C maps
@@ -216,11 +217,9 @@ function make_raster_slices(masks, categories; path="/home/raf/PhD/Mascarenes/Da
         # abandoned_1870 = ((abandoned_1854 .| cleared_1854) .& .!(cleared_1870 .| urban_1810))
         # abandoned_1872 = ((abandoned_1870 .| cleared_1870) .& .!(cleared_1872 .| urban_1810))
         abandoned_1905 = m.atlas_19C_land_use_2.grouped.abandoned.abandoned_1905_cleared_1968 .|
-            m.atlas_19C_land_use.grouped.abandoned.abandoned_1905 .& .!(cleared_1905 .| urban_1905)
-        abandoned_1968 = abandoned_1810 .|
-            m.atlas_19C_land_use.grouped.abandoned.abandoned_1905 .|
-            m.atlas_19C_land_use.grouped.abandoned.abandoned_1968 .|
-            ((abandoned_1905 .| cleared_1905) .& .!(urban_1965 .| forestry_1965 .| cleared_1968))
+            m.atlas_19C_land_use.grouped.abandoned.abandoned_1905 .& .!(cleared_1905)
+        abandoned_1965 = ((abandoned_1905 .| cleared_1905) .& .!(cleared_1965))
+        abandoned_1968 = m.atlas_19C_land_use.grouped.abandoned.abandoned_1968 .| abandoned_1965
         # There is no abandonment data for 1992 so we use 
         # previous abandonned land and the difference with 1968 cleared land
         abandoned_1992 = (abandoned_1810 .| abandoned_1968 .| cleared_1968) .& 
@@ -265,13 +264,14 @@ function make_raster_slices(masks, categories; path="/home/raf/PhD/Mascarenes/Da
         ))
         abandoned = [
             1600=>masks.mus .& abandoned_1600,
+            1638=>masks.mus .& abandoned_1600,
             1709=>masks.mus .& abandoned_1709,
             1711=>masks.mus .& abandoned_1711,
             1721=>masks.mus .& abandoned_1721,
             1772=>masks.mus .& abandoned_1772,
             1810=>masks.mus .& abandoned_1810,
             1835=>masks.mus .& abandoned_1835,
-            # 1854=>abandoned_1854,
+            1854=>abandoned_1854,
             # 1870=>abandoned_1870,
             # 1872=>abandoned_1872,
             1905=>masks.mus .& abandoned_1905,
@@ -298,34 +298,52 @@ function make_raster_slices(masks, categories; path="/home/raf/PhD/Mascarenes/Da
         forestry = [
             1600=>emptymask,
             1905=>emptymask,
-            1966=>masks.mus .& forestry_1965,
+            1965=>masks.mus .& forestry_1965,
             1992=>masks.mus .& forestry_1992,
         ]
         forestry = RasterSeries(last.(forestry), Ti(first.(forestry); 
             span=Irregular(1500, first(last(forestry))),
             sampling=Intervals(End()),
         ))
-        # function _combine(F, C, A, U)
-        #     A = broadcast(F, C, A, U, masks.mus) do f, c, a, u, m
-        #         if !m
-        #             0
-        #         elseif f
-        #             categories.forestry
-        #         elseif u
-        #             categories.urban
-        #         elseif a
-        #             categories.abandoned
-        #         elseif c
-        #             categories.cleared
-        #         else
-        #             categories.native
-        #         end
-        #     end
-        #     rebuild(A; missingval=0)
-        # end
+
+        water_1905 = m.atlas_19C_land_use.grouped.water
+        water_1965 = m.landcover_1965.grouped.water .| water_1905
+        water_1992 = m.atlas_1992_agriculture.grouped.water .| water_1965
+        water = [
+            1905=>masks.mus .& water_1905
+            1965=>masks.mus .& water_1965
+            1992=>masks.mus .& water_1992
+        ]
+        water = RasterSeries(last.(water), Ti(first.(water); 
+            span=Irregular(1500, first(last(water))),
+            sampling=Intervals(End()),
+        ))
+        function _combine(W, F, C, A, U)
+            A = broadcast(W, F, C, A, U, masks.mus) do w, f, c, a, u, m
+                if !m
+                    0
+                elseif w
+                    categories.water
+                elseif f
+                    categories.forestry
+                elseif u
+                    categories.urban
+                elseif a
+                    categories.abandoned
+                elseif c
+                    categories.cleared
+                else
+                    categories.native
+                end
+            end
+            rebuild(A; missingval=0)
+        end
         # Combine cleared and abandoned Bool masks into Int rasters
-        # lc = map(_combine, forestry, cleared, abandoned, urban)
-        (; cleared, abandoned, urban, forestry)
+        lc = RasterSeries(map(lookup(cleared, Ti)) do t
+            i = Ti(Contains(t))
+            _combine(water[i], forestry[i], cleared[i], abandoned[i], urban[i])
+        end, dims(cleared, Ti))
+        (; cleared, abandoned, urban, forestry, water, lc)
     end
 
     reu_timelines = let
@@ -378,7 +396,6 @@ end
 function _category_to_raster(raster::Raster, category_names::Vector, x)
     error("slice must be a String, NamedTuple or Vector{String}, got $x")
 end
-
 
 open_output(T, x::NamedTuple) = open_output(x.filename)
 function open_output(T, filename::String)
@@ -455,11 +472,12 @@ function choose_categories(img_path::String;
 )
     img = load_image(img_path)
     if isnothing(output)
-        output = MapRasterization.selectcolors(img)
+        cs = MapRasterization.CategorySelector(img)
     else
-        output = MapRasterization.selectcolors(img, output)
+        cs = MapRasterization.CategorySelector(img, output)
     end
     if save
+        output = MapRasterization.MapSelection(cs)
         json_path = splitext(img_path)[1] * ".json"
         if isfile(json_path)
             backup_path = splitext(img_path)[1] * "_backup.json"
@@ -467,7 +485,7 @@ function choose_categories(img_path::String;
         end
         write(json_path, JSON3.write(output))
     end
-    return output
+    return cs
 end
 
 load_image(img_path::String) = RGB{Float64}.(load(img_path) |> rotr90)

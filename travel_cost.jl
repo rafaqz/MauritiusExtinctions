@@ -7,7 +7,6 @@ includet("raster_common.jl")
 
 files = define_map_files()
 slices = make_raster_slices(masks, lc_categories)
-slices.mus.timelines.cleared
 
 travel_origins = map(dems, ports) do d, p 
     o = map(_ -> Inf * u"hr", d)
