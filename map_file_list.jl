@@ -12,6 +12,15 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes/Data/Selected")
     # The function will later be broadcasted over masks of the separate layers to combine them
     # Mostly is `|` which is "or" so we make a mask of values that are true in one or the other file
     file_details = (mus=(;
+        atlas_18C_land_use = (filename="Mauritius/Undigitised/atlas_18C_land_use.jpg", poly=1, layers=(;
+            cleared=(
+                cleared_1772=["urban_1763", "cleared_1772", "abandoned_1810"],
+                cleared_1810=["urban_1763", "cleared_1772", "urban_1810", "cleared_1810"],
+            ),
+            urban = (urban_1763="urban_1763", urban_1810=["urban_1763", "urban_1810"]),
+            abandoned=(abandoned_1810="abandoned_1810",),
+            # uncleared=(uncleared_1772=["cleared_1810", "not_cleared_1810"), uncleared_1810="not_cleared_1810"),
+        )),
         atlas_1992_vegetation = (filename="Mauritius/Undigitised/atlas_1992_vegetation.jpg", poly=1, layers=(;)),
         atlas_1992_agriculture = (filename="Mauritius/Undigitised/atlas_1992_agriculture.jpg", poly=1, layers=(;
             urban="urban",
@@ -32,15 +41,6 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes/Data/Selected")
             uncleared="undisturbed",
             ebony_harvest="ebony_harvest",
             cleared="cleared",
-        )),
-        atlas_18C_land_use = (filename="Mauritius/Undigitised/atlas_18C_land_use.jpg", poly=1, layers=(;
-            cleared=(
-                cleared_1772=["urban_1763", "cleared_1772", "abandoned_1810"],
-                cleared_1810=["urban_1763", "cleared_1772", "urban_1810", "cleared_1810"],
-            ),
-            urban = (urban_1763="urban_1763", urban_1810=["urban_1763", "urban_1810"]),
-            abandoned=(abandoned_1810="abandoned_1810",),
-            # uncleared=(uncleared_1772=["cleared_1810", "not_cleared_1810"), uncleared_1810="not_cleared_1810"),
         )),
         atlas_19C_land_use = (filename="Mauritius/Undigitised/atlas_19C_land_use.jpg", poly=1, layers=(;
             cleared=(;

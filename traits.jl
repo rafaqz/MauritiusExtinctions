@@ -84,6 +84,7 @@ Interfaces.implements(ArrayInterface{:setindex!}, Array)
 iucn_reptiles = CSV.read("/home/raf/PhD/Traits/IUCN data/Reptile IUCN/assessments.csv", DataFrame)
 names(iucn_reptiles)
 
+
 @time pan_theria = CSV.read("/home/raf/PhD/Mauritius/Data/Traits/PanTHERIA/ECOL_90_184/PanTHERIA_1-0_WR05_Aug2008.txt", DataFrame; missingstring=["-999.00", "-999"]) 
 @time elton_mammals = CSV.read("/home/raf/PhD/Mauritius/Data/Traits/EltonTraits/MamFuncDat.txt", DataFrame)
 @time elton_birds = CSV.read("/home/raf/PhD/Mauritius/Data/Traits/EltonTraits/BirdFuncDat.txt", DataFrame)
