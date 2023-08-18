@@ -33,7 +33,10 @@ layer_names = JSON3.read(ch_original_veg_json).settings.category_name
 mus_native_veg_df = DataFrame(mus_native_veg_poly)
 mus_native_veg_df.geometry = GeoInterface.convert.(GeometryBasics.Polygon, mus_native_veg_df.geometry)
 mus_native_veg_rast = rasterize(maximum, mus_native_veg_df; to=dems.mus, fill=:category, boundary=:touches)
-mus_native_rensity = rasterize(maximum, mus_native_veg_df; to=dems.mus, fill=:category, boundary=:touches)
+mus_native_veg_tif_path = "/home/raf/PhD/Mascarenes/Data/Generated/mus_native_veg.tif"
+Rasters.rplot(mus_native_veg_rast)
+write(mus_native_veg_tif_path, replace_missing(mus_native_veg_rast, 0); force=true)
+mus_native_density = rasterize(maximum, mus_native_veg_df; to=dems.mus, fill=:category, boundary=:touches)
 mus_native_veg_mask = boolmask(mus_native_veg_rast)
 grade_fractions = (0.2, 0.5, 0.7)
 mus_native_density = mask(rebuild(map(mus_native_veg_rast) do x

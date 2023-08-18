@@ -89,7 +89,7 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes/Data/Selected")
             water="Reservoirs",
             unsure=["Forest_natural", "Rock", "Swamps", "Scrub", "Savannah"], 
         )),
-     ), reu=(;
+    ), reu=(;
         # cadet_invasives=(filename="Reunion/Undigitised/cadet_invasives.jpg", poly=1, layers=(;)),
         # atlas_vegetation = (filename="Reunion/Undigitised/atlas_vegetation.jpg", poly=1, layers=(;)),
         # atlas_ownership = (filename="Reunion/Undigitised/atlas_ownership.jpg", poly=1, layers=(;)),
@@ -136,7 +136,7 @@ function make_raster_slices(masks, categories; path="/home/raf/PhD/Mascarenes/Da
         map(island_files) do file
             image_path = file.filename
             raster_path = splitext(image_path)[1] * ".tif"
-            raw = Raster(raster_path)
+            raw = fix_order(Raster(raster_path))
             json_path = splitext(file.filename)[1] * ".json"
             data = JSON3.read(read(json_path), MapRasterization.MapSelection)
             grouped = map(file.layers) do layer
@@ -151,7 +151,7 @@ function make_raster_slices(masks, categories; path="/home/raf/PhD/Mascarenes/Da
     # make time slices for each land-cover type.
     mus_timelines = let
         m = rasters.mus
-        emptymask = falses(dims(masks.mus))
+        emptymask = falses(dims(masks.mus); missingval=false)
 
         forestry_1965 = m.landcover_1965.grouped.forestry
         forestry_1992 = m.atlas_1992_agriculture.grouped.forestry .| forestry_1965
@@ -309,6 +309,7 @@ function make_raster_slices(masks, categories; path="/home/raf/PhD/Mascarenes/Da
         water_1905 = m.atlas_19C_land_use.grouped.water
         water_1965 = m.landcover_1965.grouped.water .| water_1905
         water_1992 = m.atlas_1992_agriculture.grouped.water .| water_1965
+        
         water = [
             1905=>masks.mus .& water_1905
             1965=>masks.mus .& water_1965
@@ -318,6 +319,12 @@ function make_raster_slices(masks, categories; path="/home/raf/PhD/Mascarenes/Da
             span=Irregular(1500, first(last(water))),
             sampling=Intervals(End()),
         ))
+        # lc_classes = (cleared, abandoned, urban, forestry, water)
+        # all_times = intersect(map(a -> lookup(a, Ti), lc_classes)...)
+        # native = DimArray(Ti(all_times)) do t
+        #     .!(cleared[At(t)] .| abandoned[At(t)] .| urban[At(t)] .| forestry[At(t)] .| water[At(t)]) .& masks.mus
+        # end
+
         function _combine(W, F, C, A, U)
             A = broadcast(W, F, C, A, U, masks.mus) do w, f, c, a, u, m
                 if !m
@@ -362,6 +369,13 @@ function make_raster_slices(masks, categories; path="/home/raf/PhD/Mascarenes/Da
             [cleared_1715, cleared_1765, cleared_1780, cleared_1815, cleared_1960],
             Ti([1715, 1765, 1780, 1815, 1960]; sampling=Intervals(End())),
         )
+
+        # lc_classes = (cleared, urban,)
+        # all_times = intersect(map(a -> lookup(a, Ti), lc_classes)...)
+        # native = DimArray(Ti(all_times)) do t
+        #     .!(cleared[At(t)] .| urban[At(t)]) .& masks.mus
+        # end
+
         # We don't have abandonment data for Reunion
         (; urban, cleared)
     end
@@ -380,17 +394,24 @@ function _category_raster(raster::Raster, category_names::Vector, layers::NamedT
 end
 function _category_raster(raster::Raster, category_names::Vector, layer_components::Vector{String})
     layers = map(l -> _category_raster(raster, category_names, l), layer_components)
-    broadcast(|, layers...)
+    out = rebuild(Bool.(broadcast(|, layers...)); missingval=false)
+    @assert eltype(out) == Bool
+    @assert missingval(out) == false
+    return out
 end
-function _category_raster(raster, category_names::Vector, category::String)
+function _category_raster(raster::Raster, category_names::Vector, category::String)
     I = findall(==(category), map(String, category_names))
     if length(I) == 0
         error("could not find $category in $(category_names)")
     end
-    out = raster .== first(I)
+    # Get all values matching the first category as a mask
+    out = rebuild(Bool.(raster .== first(I)); missingval=false)
+    # Add pixels for any subsequent categories
     foreach(I[2:end]) do i
         out .|= raster .== first(i)
     end
+    @assert eltype(out) == Bool
+    @assert missingval(out) == false
     return out
 end
 function _category_to_raster(raster::Raster, category_names::Vector, x)
