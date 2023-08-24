@@ -12,10 +12,15 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes/Data/Selected")
     # The function will later be broadcasted over masks of the separate layers to combine them
     # Mostly is `|` which is "or" so we make a mask of values that are true in one or the other file
     file_details = (mus=(;
+        atlas_dutch_period = (filename="Mauritius/Undigitised/atlas_dutch_period.jpg", poly=1, layers=(;
+            uncleared="undisturbed",
+            ebony_harvest="ebony_harvest",
+            cleared="cleared",
+        )),
         atlas_18C_land_use = (filename="Mauritius/Undigitised/atlas_18C_land_use.jpg", poly=1, layers=(;
             cleared=(
-                cleared_1772=["urban_1763", "cleared_1772", "abandoned_1810"],
-                cleared_1810=["urban_1763", "cleared_1772", "urban_1810", "cleared_1810"],
+                cleared_1772=["cleared_1772", "abandoned_1810"],
+                cleared_1810=["cleared_1772", "cleared_1810"],
             ),
             urban = (urban_1763="urban_1763", urban_1810=["urban_1763", "urban_1810"]),
             abandoned=(abandoned_1810="abandoned_1810",),
@@ -37,20 +42,15 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes/Data/Selected")
                      "private_forest_or_wasteland"],
         )),
         vegetation = (filename="Mauritius/Undigitised/page33_mauritius_vegetation_colored.png", poly=1, layers=(;)),
-        atlas_dutch_period = (filename="Mauritius/Undigitised/atlas_dutch_period.jpg", poly=1, layers=(;
-            uncleared="undisturbed",
-            ebony_harvest="ebony_harvest",
-            cleared="cleared",
-        )),
         atlas_19C_land_use = (filename="Mauritius/Undigitised/atlas_19C_land_use.jpg", poly=1, layers=(;
             cleared=(;
                 # We assume that clearing happened some time before the area
                 # became urban, so we include 1905 urban in 1810 cleared
                 # because these urban areas of the map hide information about clearing.
-                cleared_1810=["cleared_1810", "urban_1810", "urban_1905", "cleared_1810_abdn_1905"],
-                cleared_1854=["cleared_1810", "urban_1810", "urban_1905", "cleared_1854", "cleared_1810_abdn_1905", "cleared_1854_abdn_1905", "cleared_1854_abdn_1968"],
-                cleared_1905=["cleared_1810", "urban_1810", "urban_1905", "cleared_1854", "cleared_1905", "cleared_1854_abdn_1968", "cleared_1905_abdn_1968"],
-                cleared_1968=["cleared_1810", "urban_1810", "urban_1905", "cleared_1854", "cleared_1905", "cleared_1968"],
+                cleared_1810=["cleared_1810", "urban_1905", "cleared_1810_abdn_1905"],
+                cleared_1854=["cleared_1810", "urban_1905", "cleared_1854", "cleared_1810_abdn_1905", "cleared_1854_abdn_1905", "cleared_1854_abdn_1968"],
+                cleared_1905=["cleared_1810", "cleared_1854", "cleared_1905", "cleared_1854_abdn_1968", "cleared_1905_abdn_1968"],
+                cleared_1968=["cleared_1810", "cleared_1854", "cleared_1905", "cleared_1968"],
             ),
             water = "lakes",
             urban = (; urban_1810="urban_1810", urban_1905=["urban_1810", "urban_1905"]),
@@ -186,7 +186,7 @@ function make_raster_slices(masks, categories; path="/home/raf/PhD/Mascarenes/Da
         cleared_1854 = cleared_19C.cleared_1854
         cleared_1905 = cleared_19C.cleared_1905
         cleared_1965 = m.landcover_1965.grouped.cleared
-        cleared_1968 = cleared_19C.cleared_1968 .| cleared_1965
+        cleared_1968 = cleared_19C.cleared_1968 .| cleared_1965 .& .!(forestry_1965 .| urban_1965 .| abandoned_1965)
 
         fraser_forest = m.fraser_1835_from_gleadow.grouped.uncleared.forest_1835
         # Gleadow hand drawn 19C maps
@@ -218,12 +218,12 @@ function make_raster_slices(masks, categories; path="/home/raf/PhD/Mascarenes/Da
         # abandoned_1872 = ((abandoned_1870 .| cleared_1870) .& .!(cleared_1872 .| urban_1810))
         abandoned_1905 = m.atlas_19C_land_use_2.grouped.abandoned.abandoned_1905_cleared_1968 .|
             m.atlas_19C_land_use.grouped.abandoned.abandoned_1905 .& .!(cleared_1905)
-        abandoned_1965 = ((abandoned_1905 .| cleared_1905) .& .!(cleared_1965))
-        abandoned_1968 = m.atlas_19C_land_use.grouped.abandoned.abandoned_1968 .| abandoned_1965
+        abandoned_1965 = ((abandoned_1905 .| cleared_1905) .& .!(cleared_1965 .| urban_1965 .| forestry_1965))
+        abandoned_1968 = m.atlas_19C_land_use.grouped.abandoned.abandoned_1968
         # There is no abandonment data for 1992 so we use 
         # previous abandonned land and the difference with 1968 cleared land
-        abandoned_1992 = (abandoned_1810 .| abandoned_1968 .| cleared_1968) .& 
-            # And remove anything cleared or urban in 1992
+        abandoned_1992 = (abandoned_1968 .| cleared_1968) .& 
+            # And remove anything cleared, urban or forestry in 1992
             .!(cleared_1992 .| urban_1992 .| forestry_1992)
 
         # We need abandonement data from 1810 so this is moved later
@@ -233,11 +233,11 @@ function make_raster_slices(masks, categories; path="/home/raf/PhD/Mascarenes/Da
         # in 1810 or abandoned in 1854 are also abandoned in 1835
         abandoned_1835 = fraser_forest .& (abandoned_1810 .| cleared_1810 .| abandoned_1854)
 
-        sg_forest = m.surveyor_general_1872_from_gleadow.grouped.forest
-        uncleared_1905 = .!(urban_1905 .| cleared_1905 .| abandoned_1905)
-        cleared_1850 = .!(uncleared_1905 .& sg_forest.forest_1850) .& .!(urban_1810)
-        cleared_1870 = .!(uncleared_1905 .& sg_forest.forest_1870) .| cleared_1854 .& .!(urban_1810)
-        cleared_1872 = .!(uncleared_1905 .& sg_forest.forest_1872) .| cleared_1854 .& .!(urban_1810)
+        # sg_forest = m.surveyor_general_1872_from_gleadow.grouped.forest
+        # uncleared_1905 = .!(urban_1905 .| cleared_1905 .| abandoned_1905)
+        # cleared_1850 = .!(uncleared_1905 .& sg_forest.forest_1850) .& .!(urban_1810)
+        # cleared_1870 = .!(uncleared_1905 .& sg_forest.forest_1870) .| cleared_1854 .& .!(urban_1810)
+        # cleared_1872 = .!(uncleared_1905 .& sg_forest.forest_1872) .| cleared_1854 .& .!(urban_1810)
 
         cleared = [
             1600=>masks.mus .& cleared_1600,
@@ -271,7 +271,7 @@ function make_raster_slices(masks, categories; path="/home/raf/PhD/Mascarenes/Da
             1772=>masks.mus .& abandoned_1772,
             1810=>masks.mus .& abandoned_1810,
             1835=>masks.mus .& abandoned_1835,
-            1854=>abandoned_1854,
+            1854=>masks.mus .& abandoned_1854,
             # 1870=>abandoned_1870,
             # 1872=>abandoned_1872,
             1905=>masks.mus .& abandoned_1905,

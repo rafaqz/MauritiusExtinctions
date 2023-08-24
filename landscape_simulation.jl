@@ -14,7 +14,6 @@ using ThreadsX
 # 1880: 70,000 acres out of 300,000 remain
 # 35,000 were native (but "dilatipated and ruined?")
 # Also mentions that invasives replace natives
-
 includet("raster_common.jl")
 includet("roads.jl")
 include("travel_cost.jl")
@@ -22,84 +21,22 @@ include("tabular_data.jl")
 include("/home/raf/.julia/dev/LandscapeChange/src/makie.jl")
 
 println("Getting timeline slices...")
-includet("map_file_list.jl")
+# includet("map_file_list.jl")
+includet("map_file_list_2.jl")
 # files = define_map_files()
-slices = make_raster_slices(masks, lc_categories)
-lc = slices.mus.timelines.lc
-slices.mus.timelines.lc[1]
-
-# set_theme!(theme_dark())
-# ps = map(lookup(lc, Ti)) do t
-#     r = replace_missing(lc[Ti(At(t))], NaN)
-#     figure = Figure(; 
-#         backgroundcolor=:transparent,
-#     )
-#     axis = Axis(figure[1, 1];
-#         xticklabelsvisible=false, 
-#         yticklabelsvisible=false,
-#         xticksvisible=false, 
-#         yticksvisible=false,
-#         xgridvisible=false,
-#         ygridvisible=false,
-#         bottomspinevisible=false,
-#         topspinevisible=false,
-#         leftspinevisible=false,
-#         rightspinevisible=false,
-#         aspect=DataAspect(),
-#     )
-#     text = "$t"
-#     textpos = 57.3, -20.0
-#     Makie.text!(axis, textpos...; text, fontsize=80, align=(:left, :top)) 
-#     p = Makie.heatmap!(axis, r; 
-#         colormap=:batlow, 
-#         colorrange=(0, 6),
-#     )
-#     save("images/mus_lc_$t.png", figure)
-#     p
-# end
-
-# CairoMakie.activate!()
-# GLMakie.activate!()
-# savefig("mauritius_timeline.png")
-# Rasters.rplot(Rasters.combine(slices.mus.timelines.lc, Ti); 
-#     colormap=:batlow, colorrange=(0, 5),
-#     aspect=DataAspect(),
-#     axis = (
-#         xticklabelsvisible=false, 
-#         yticklabelsvisible=false,
-#         xticksvisible=false, 
-#         yticksvisible=false,
-#         xgridvisible=false,
-#         ygridvisible=false,
-#         bottomspinevisible=false,
-#         topspinevisible=false,
-#         leftspinevisible=false,
-#         rightspinevisible=false,
-#     ),
-# )
-# lc = map(slices.mus.timelines.lc) do A
-#     reverse(A; dims=Y)
-# end |> x -> set(x, Ti=>Intervals(End())) |> x -> set(x, Ti=>Irregular((0, 1992)))
-# a = @animate for A in lc
-#     Plots.plot(A; legend=false, clims=(1, 5))
-# end
-# Plots.gif(a, "timeseries.gif", fps=1)
-# Plots.plot(lc; size=(2000,1300), legend=false, clims=(1, 5))
-# savefig("mauritius_timeline.png")
+slices = make_raster_slices(masks, lc_categories; category_names);
+# Rasters.rplot(slices.mus.timelines.abandoned; colorrange=(0, 1))
+nv_ser = namedvector_raster.(slices.mus.timeline)
+# sandwich!(nv_ser)
+striped = let states = Tuple(states)
+    map(nv_ser) do raster
+        stripe_raster(raster, states)
+    end
+end
+Rasters.rplot(striped; colorrange=(1, 6))
 
 const P = Param
-
-states = NamedVector(lc_categories)
-# to category from category
-logic = NamedVector(
-    native    = (native=true,  cleared=false, abandoned=false, urban=false, forestry=false, water=false),
-    cleared   = (native=true,  cleared=true,  abandoned=true,  urban=false, forestry=true,  water=false),
-    abandoned = (native=false, cleared=true,  abandoned=true,  urban=false, forestry=true,  water=false),
-    urban     = (native=true,  cleared=true,  abandoned=true,  urban=true,  forestry=true,  water=false),
-    forestry  = (native=false, cleared=false, abandoned=false, urban=false, forestry=true,  water=false),
-    water     = (native=false, cleared=false, abandoned=false, urban=false, forestry=false, water=true ),
-)
-staterule.logic
+const NV = NamedVector
 
 function can_change(states, logic, to, from, checked=(), path=())
     if logic[to][from]
@@ -116,6 +53,17 @@ function can_change(states, logic, to, from, checked=(), path=())
         end |> any
     end
 end
+
+states = NamedVector(lc_categories)
+# to category from category
+logic = NV(
+    native    = NV(native=true,  cleared=false, abandoned=false, urban=false, forestry=false,  water=false),
+    cleared   = NV(native=true,  cleared=true,  abandoned=true,  urban=false, forestry=false,  water=false),
+    abandoned = NV(native=false, cleared=true,  abandoned=true,  urban=false, forestry=false,  water=false),
+    urban     = NV(native=true,  cleared=true,  abandoned=true,  urban=true,  forestry=false,  water=false),
+    forestry  = NV(native=true,  cleared=true,  abandoned=true,  urban=false, forestry=true,   water=false),
+    water     = NV(native=true,  cleared=true,  abandoned=true,  urban=true,  forestry=false,  water=true),
+)
 # to category from category with intermediate steps
 indirect_logic = map(states) do s1
     map(states) do s2
@@ -123,6 +71,22 @@ indirect_logic = map(states) do s1
     end
 end
 pairs(indirect_logic)
+
+nv_ser1 = update_forwards(indirect_logic, nv_ser)
+nv_ser2 = update_backwards(indirect_logic, nv_ser1)
+
+ser1_striped = stripe_raster(nv_ser1, states)
+ser2_striped = stripe_raster(nv_ser2, states)
+fig = Figure()
+empty!(fig); Rasters.rplot(fig[1, 1], striped[8:end]; colorrange=(1, 6))
+empty!(fig); Rasters.rplot(fig[1, 1], ser1_striped[8:end]; colorrange=(1, 6))
+empty!(fig); Rasters.rplot(fig[1, 1], ser2_striped[8:end]; colorrange=(1, 6))
+
+
+future = (native=true, cleared=false, abandoned=false, urban=false, forestry=false, water=false)
+present = (native=true, cleared=false, abandoned=true, urban=true, forestry=false, water=false)
+update_backwards(indirect_logic, future, present)
+
 
 function countcats(data, categories=union(data))
     map(categories) do cat
@@ -358,7 +322,6 @@ pressure = let preds=lc_predictions, ngridcells=size(sum(masks.mus))
             max(0.0, predicted.urban) / max(nurban, max(0.0, predicted.urban) / smoothing)
         cleared = leverage * sign(predicted.cleared - ncleared) * 
             max(0.0, predicted.cleared) / max(ncleared, max(0.0, predicted.cleared) / smoothing)
-        @show urban cleared
         NamedVector(; native, cleared, abandoned, urban, forestry, water)
     end
 end
@@ -497,4 +460,73 @@ simdata = DynamicGrids.SimData(result_output, ruleset);
 # getproperty.(annual_transition_timeline, :native)
 # x = annual_transition_timeline[1]
 
+
+Rasters.rplot(history.abandoned)
+Rasters.rplot(history.cleared)
+Rasters.rplot(history.urban)
+Rasters.rplot(history.native)
+Rasters.rplot(history.forestry)
+
+Rasters.rplot(slices.mus.files.landcover_1965.grouped.cleared)
+
+
+# set_theme!(theme_dark())
+#
+# ps = map(lookup(lc, Ti)) do t
+#     r = replace_missing(lc[Ti(At(t))], NaN)
+#     figure = Figure(; 
+#         backgroundcolor=:transparent,
+#     )
+#     axis = Axis(figure[1, 1];
+#         xticklabelsvisible=false, 
+#         yticklabelsvisible=false,
+#         xticksvisible=false, 
+#         yticksvisible=false,
+#         xgridvisible=false,
+#         ygridvisible=false,
+#         bottomspinevisible=false,
+#         topspinevisible=false,
+#         leftspinevisible=false,
+#         rightspinevisible=false,
+#         aspect=DataAspect(),
+#     )
+#     text = "$t"
+#     textpos = 57.3, -20.0
+#     Makie.text!(axis, textpos...; text, fontsize=80, align=(:left, :top)) 
+#     p = Makie.heatmap!(axis, r; 
+#         colormap=:batlow, 
+#         colorrange=(0, 6),
+#     )jj\zz
+#     save("images/mus_lc_$t.png", figure)
+#     p
+# end
+
+# CairoMakie.activate!()
+# GLMakie.activate!()
+# savefig("mauritius_timeline.png")
+# Rasters.rplot(Rasters.combine(slices.mus.timelines.lc, Ti); 
+#     colormap=:batlow, colorrange=(0, 5),
+#     aspect=DataAspect(),
+#     axis = (
+#         xticklabelsvisible=false, 
+#         yticklabelsvisible=false,
+#         xticksvisible=false, 
+#         yticksvisible=false,
+#         xgridvisible=false,
+#         ygridvisible=false,
+#         bottomspinevisible=false,
+#         topspinevisible=false,
+#         leftspinevisible=false,
+#         rightspinevisible=false,
+#     ),
+# )
+# lc = map(slices.mus.timelines.lc) do A
+#     reverse(A; dims=Y)
+# end |> x -> set(x, Ti=>Intervals(End())) |> x -> set(x, Ti=>Irregular((0, 1992)))
+# a = @animate for A in lc
+#     Plots.plot(A; legend=false, clims=(1, 5))
+# end
+# Plots.gif(a, "timeseries.gif", fps=1)
+# Plots.plot(lc; size=(2000,1300), legend=false, clims=(1, 5))
+# savefig("mauritius_timeline.png")
 

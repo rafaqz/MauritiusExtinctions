@@ -16,10 +16,11 @@ output = MakieOutput(init_state;
     landcover = Observable(Array(frame[].landcover))
     ks = Array(frame[].landcover)
     known_slices = Observable(ks)
-    if time[] == 1
-        ks .= 0
-    end
     on(frame) do f
+        if time[] == 1
+            println("zeroing")
+            ks .= 0
+        end
         landcover[] = f.landcover
         t = tspan[time[]]
         map(NamedTuple(history), NamedTuple(states)) do timeseries, state
