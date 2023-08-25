@@ -20,6 +20,11 @@ include("travel_cost.jl")
 include("tabular_data.jl")
 include("/home/raf/.julia/dev/LandscapeChange/src/makie.jl")
 
+# homiisland = Raster("/home/raf/PhD/Mascarenes/Data/Generated/Landcover/mus_landcover.tif")
+# homiisland2 = resample(homiisland; to=dems.mus)
+# Rasters.rplot(homiisland2 .== 8)
+# write("/home/raf/PhD/Mascarenes/Data/Generated/Landcover/mus_landcover_2.tif")
+
 println("Getting timeline slices...")
 # includet("map_file_list.jl")
 includet("map_file_list_2.jl")
@@ -54,6 +59,8 @@ function can_change(states, logic, to, from, checked=(), path=())
     end
 end
 
+
+
 states = NamedVector(lc_categories)
 # to category from category
 logic = NV(
@@ -72,15 +79,23 @@ indirect_logic = map(states) do s1
 end
 pairs(indirect_logic)
 
+slices = make_raster_slices(masks, lc_categories; category_names);
+# Rasters.rplot(slices.mus.timelines.abandoned; colorrange=(0, 1))
+nv_ser = namedvector_raster.(slices.mus.timeline)
+# sandwich!(nv_ser)
+striped = let states = Tuple(states)
+    map(nv_ser) do raster
+        stripe_raster(raster, states)
+    end
+end
 nv_ser1 = update_forwards(indirect_logic, nv_ser)
 nv_ser2 = update_backwards(indirect_logic, nv_ser1)
-
 ser1_striped = stripe_raster(nv_ser1, states)
 ser2_striped = stripe_raster(nv_ser2, states)
 fig = Figure()
-empty!(fig); Rasters.rplot(fig[1, 1], striped[8:end]; colorrange=(1, 6))
-empty!(fig); Rasters.rplot(fig[1, 1], ser1_striped[8:end]; colorrange=(1, 6))
-empty!(fig); Rasters.rplot(fig[1, 1], ser2_striped[8:end]; colorrange=(1, 6))
+empty!(fig); Rasters.rplot(fig[1, 1], striped[1:end]; colorrange=(1, 6))
+empty!(fig); Rasters.rplot(fig[1, 1], ser1_striped[1:end]; colorrange=(1, 6))
+empty!(fig); Rasters.rplot(fig[1, 1], ser2_striped[1:end]; colorrange=(1, 6), colormap=cgrad(:batlow; categorical=true))
 
 
 future = (native=true, cleared=false, abandoned=false, urban=false, forestry=false, water=false)
