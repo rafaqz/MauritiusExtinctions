@@ -93,10 +93,21 @@ nv_ser2 = update_backwards(indirect_logic, nv_ser1)
 ser1_striped = stripe_raster(nv_ser1, states)
 ser2_striped = stripe_raster(nv_ser2, states)
 fig = Figure()
+
 empty!(fig); Rasters.rplot(fig[1, 1], striped[1:end]; colorrange=(1, 6))
 empty!(fig); Rasters.rplot(fig[1, 1], ser1_striped[1:end]; colorrange=(1, 6))
 empty!(fig); Rasters.rplot(fig[1, 1], ser2_striped[1:end]; colorrange=(1, 6), colormap=cgrad(:batlow; categorical=true))
 
+x = map(nv_ser[end], nv_ser2[end]) do xs, ys
+    if count(xs) == 1
+        map(xs, ys) do x, y
+            x && x != y 
+        end
+    else
+        map(_ -> false, xs)
+    end
+end;
+Rasters.rplot(stripe_raster(x, states); clims=(1, 6))
 
 future = (native=true, cleared=false, abandoned=false, urban=false, forestry=false, water=false)
 present = (native=true, cleared=false, abandoned=true, urban=true, forestry=false, water=false)
