@@ -162,6 +162,10 @@ roads_1905 = GeoInterface.FeatureCollection(
 
 const GI = GeoInterface
 rod_json = joinpath(datadir, "Roads/rod_ways.geojson")
+rod_json = joinpath(datadir, "Roads/mus_ways.geojson")
+mus_roads = GI.convert.(Ref(GeometryBasics), filter(GI.geometry.(GeoJSON.read(read(rod_json)))) do x
+    GI.trait(x) isa LineStringTrait
+end)
 rod_roads = GI.convert.(Ref(GeometryBasics), filter(GI.geometry.(GeoJSON.read(read(rod_json)))) do x
     GI.trait(x) isa LineStringTrait
 end)

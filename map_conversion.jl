@@ -12,11 +12,57 @@ using MapRasterization
 using GLMakie
 GLMakie.activate!()
 includet("common.jl")
-includet("map_file_list.jl"
+includet("map_file_list.jl")
 includet("raster_common.jl")
 includet("water.jl")
 
 swap_ext(path, newext) = string(splitext(path)[1], newext)
+
+for pdf in readdir("/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds"; join=true)
+    name, ext = splitext(pdf)
+    ext == ".pdf" || continue
+    png = name * ".png" 
+    run(`pdftoppm $pdf $png -png -r 300`)
+end
+
+img_path = "/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds/31.png-1.png"
+img_path = "/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds/9.png-1.png"
+img_path = "/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds/48.png-1.png"
+img_path = "/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds/49_2.png-1.png"
+cs = choose_categories(img_path)
+rast = polywarp(img_path, dems.mus)
+Rasters.rplot(rast)
+
+output = MapRasterization.MapSelection(cs)
+json_path = splitext(img_path)[1] * ".json"
+if isfile(json_path)
+    backup_path = splitext(img_path)[1] * "_backup.json"
+    cp(json_path, backup_path; force=true)
+end
+write(json_path, JSON3.write(output))
+
+img = load_image(img_path)
+warp_path = splitext(img_path)[1] * ".csv"
+point_table = CSV.read(warp_path, DataFrame)
+warpselector = MapRasterization.WarpSelector(img; 
+    template=dems.mus, guide=(borders.mus, mus_roads),
+    point_table, 
+)
+CSV.write(warp_path, warpselector.warper.point_table[])
+
+template = dems.mus
+function polywarp(img_path, template)
+    cs = choose_categories(img_path);
+    warp_path = splitext(img_path)[1] * ".csv"
+    point_table = CSV.read(warp_path, DataFrame)
+    polygon_vecs = map(MultiPolygon ∘ getindex, cs.obs.polygons)
+    warper = MapRasterization.Warper(; point_table, template)
+    polygons = MapRasterization.warp(warper, polygon_vecs)
+    raster = rasterize(last, polygons; to=template, fill=eachindex(polygons))
+    raster_path = splitext(img_path)[1] * ".tif"
+    write(raster_path, raster; force=true) 
+    return raster
+end
 
 # using JSON3
 # using Images
@@ -27,7 +73,7 @@ swap_ext(path, newext) = string(splitext(path)[1], newext)
 # using Dictionaries
 # using GeoDataFrames
 # using DataFrames, CSV, Tables
-
+aa
 # includet("roads.jl")
 # includet("svgs.jl")
 

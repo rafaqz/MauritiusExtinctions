@@ -20,6 +20,8 @@ include("travel_cost.jl")
 include("tabular_data.jl")
 include("/home/raf/.julia/dev/LandscapeChange/src/makie.jl")
 
+states = NamedVector(lc_categories)
+
 # homiisland = Raster("/home/raf/PhD/Mascarenes/Data/Generated/Landcover/mus_landcover.tif")
 # homiisland2 = resample(homiisland; to=dems.mus)
 # Rasters.rplot(homiisland2 .== 8)
@@ -28,40 +30,17 @@ include("/home/raf/.julia/dev/LandscapeChange/src/makie.jl")
 println("Getting timeline slices...")
 # includet("map_file_list.jl")
 includet("map_file_list_2.jl")
-# files = define_map_files()
+files = define_map_files()
 slices = make_raster_slices(masks, lc_categories; category_names);
 # Rasters.rplot(slices.mus.timelines.abandoned; colorrange=(0, 1))
 nv_ser = namedvector_raster.(slices.mus.timeline)
 # sandwich!(nv_ser)
-striped = let states = Tuple(states)
-    map(nv_ser) do raster
-        stripe_raster(raster, states)
-    end
-end
-Rasters.rplot(striped; colorrange=(1, 6))
+striped = stripe_raster(nv_ser, states)
+# Rasters.rplot(striped[5:end]; colorrange=(1, 6))
 
-const P = Param
+const P = Param 
 const NV = NamedVector
 
-function can_change(states, logic, to, from, checked=(), path=())
-    if logic[to][from]
-        return true
-    else
-        return map(states) do s
-            if s == to || s in checked
-                false
-            elseif logic[to][s]
-                can_change(states, logic, s, from, (checked..., to), (path..., from))
-            else
-                false
-            end
-        end |> any
-    end
-end
-
-
-
-states = NamedVector(lc_categories)
 # to category from category
 logic = NV(
     native    = NV(native=true,  cleared=false, abandoned=false, urban=false, forestry=false,  water=false),
@@ -82,37 +61,54 @@ pairs(indirect_logic)
 slices = make_raster_slices(masks, lc_categories; category_names);
 # Rasters.rplot(slices.mus.timelines.abandoned; colorrange=(0, 1))
 nv_ser = namedvector_raster.(slices.mus.timeline)
-# sandwich!(nv_ser)
-striped = let states = Tuple(states)
-    map(nv_ser) do raster
-        stripe_raster(raster, states)
-    end
-end
-nv_ser1 = update_forwards(indirect_logic, nv_ser)
-nv_ser2 = update_backwards(indirect_logic, nv_ser1)
-ser1_striped = stripe_raster(nv_ser1, states)
-ser2_striped = stripe_raster(nv_ser2, states)
+striped = stripe_raster(nv_ser, states)
+compiled = compile_timeline(indirect_logic, nv_ser; fill=true, continuity=false, transition=false)
+compiled = compile_timeline(indirect_logic, nv_ser; fill=true, continuity=false, transition=false)
+simplified = compile_timeline(indirect_logic, nv_ser; fill=true, continuity=true, transition=false)
+trans = compile_timeline(indirect_logic, nv_ser; fill=true, continuity=false, transition=true)
+complete = compile_timeline(logic, nv_ser; fill=true, continuity=true, transition=true)
+striped_compiled = stripe_raster(compiled.timeline, states)
+striped_simplified = stripe_raster(simplified.timeline, states)
+striped_complete = stripe_raster(complete.timeline, states)
+striped_trans = stripe_raster(trans.timeline, states)
+striped_error = stripe_raster(complete.error, states)
+# diff = map((x, y) -> (x .& .!(y)), simplified.timeline, compiled.timeline)
+# striped_diff = stripe_raster(diff, states)
+rnge = Ti(4:size(striped, Ti))
+colorrange = (1, 6)
 fig = Figure()
+empty!(fig); Rasters.rplot(fig[1, 1], striped[rnge]; colorrange)
+empty!(fig); Rasters.rplot(fig[1, 1], striped_compiled[rnge]; colorrange)
+empty!(fig); Rasters.rplot(fig[1, 1], striped_simplified[rnge]; colorrange)
+empty!(fig); Rasters.rplot(fig[1, 1], striped_trans[rnge]; colorrange)
+empty!(fig); Rasters.rplot(fig[1, 1], striped_complete[rnge]; colorrange)
+empty!(fig); Rasters.rplot(fig[1, 1], striped_error[rnge]; colorrange)
 
-empty!(fig); Rasters.rplot(fig[1, 1], striped[1:end]; colorrange=(1, 6))
-empty!(fig); Rasters.rplot(fig[1, 1], ser1_striped[1:end]; colorrange=(1, 6))
-empty!(fig); Rasters.rplot(fig[1, 1], ser2_striped[1:end]; colorrange=(1, 6), colormap=cgrad(:batlow; categorical=true))
+a = NV(native=false, cleared=false, abandoned=false, urban=true, forestry=true, water=true)
+b = NV(native=false, cleared=true, abandoned=false, urban=false, forestry=false, water=false)
+_merge_all_possible(a, b, logic) |> pairs
+_merge_all_possible(b, a, logic) |> pairs
 
-x = map(nv_ser[end], nv_ser2[end]) do xs, ys
-    if count(xs) == 1
-        map(xs, ys) do x, y
-            x && x != y 
-        end
-    else
-        map(_ -> false, xs)
-    end
-end;
-Rasters.rplot(stripe_raster(x, states); clims=(1, 6))
+tbl = Shapefile.Table("/home/raf/PhD/Mascarenes/Data/Claudia/Black River Gorges and other shapes/npcs.shp") |> DataFrame
+tbl = Shapefile.Table("/home/raf/PhD/Mascarenes/Data/Claudia/Demo/GIS WILD LIFE FOUNDATION/SHAPE FILE/land_use_WGS_region.shp") |> DataFrame
+union(tbl.LAND_USE)
+swamps = filter(:LAND_USE => x -> !ismissing(x) && x == "Marsh or Swamp", tbl)
+cleared = filter( :LAND_USE => 
+  x -> !ismissing(x) && x in ("Other Plantation", "Sugar Cane", "Other PlanTation", "Tea Plantation", "Sugar cane"), tbl)
+# swamps_rast = boolmask(swamps; to=masks.mus)
+cleared_rast = boolmask(cleared; to=masks.mus)
+other_rast = .!(cleared_rast)
+lc = cleared_rast .* 1 .+ other_rast .* 2 .* masks.mus
+write("/home/raf/PhD/Mascarenes/Data/Generated/Landcover/mus_wlf_shape.tif", lc)
 
-future = (native=true, cleared=false, abandoned=false, urban=false, forestry=false, water=false)
-present = (native=true, cleared=false, abandoned=true, urban=true, forestry=false, water=false)
-update_backwards(indirect_logic, future, present)
 
+
+# for pdf in readdir("/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds"; join=true)
+#     name, ext = splitext(pdf)
+#     ext == ".pdf" || continue
+#     png = name * ".png" 
+#     run(`pdftoppm $pdf $png -png -r 300`)
+# end
 
 function countcats(data, categories=union(data))
     map(categories) do cat
@@ -125,14 +121,25 @@ human_pop_timeline.mus
 
 # best_slices = lc[At([1600, 1709, 1723, 1772, 1810, 1905, 1992])]
 # Plots.plot(best_slices)
-DimensionalData.bounds(lookup(slices.mus.timelines.cleared, Ti))
-eltype(slices.mus.timelines.cleared)
+DimensionalData.bounds(lookup(slices.mus.timeline, Ti))
+eltype(slices.mus.timeline)
 cats1 = (:cleared, :abandoned, :urban, :forestry, :water)
-cat_counts = map(slices.mus.timelines[cats1]) do category
-    map(category) do slice
-        count(slice)
+cat_counts = map(slice(complete.timeline, Ti)) do slice
+    total_counts = zeros(Int, size(first(slice)))
+    known_counts = zeros(Int, size(first(slice)))
+    for categories in slice
+        total_counts .+= categories
+        if count(categories) == 1
+            known_counts .+= categories
+        end
     end
+    return total_counts, known_counts
 end
+
+map(first.(cat_counts), last.(cat_counts)) do t, k
+    collect(zip(keys(states), k, t))
+end
+
 Plots.scatter(human_pop_timeline.mus)
 pop_cat_counts = map(slices.mus.timelines[cats1], cat_counts) do ct, cc
     map(lookup(ct, Ti)) do t
