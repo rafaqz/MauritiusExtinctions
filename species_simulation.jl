@@ -79,7 +79,6 @@ includet("raster_common.jl")
 #     species_synonyms(row.scientific_name)
 # end
 # CSV.write("/home/raf/Data/Extinction/redlist/extinct_species.csv", ex_ew; transform=(col, val) -> something(val, missing))
-#
 
 function set_gbif_species!(df, specieskey)
     if !("GBIFSpecies" in names(df))
@@ -424,15 +423,19 @@ island_extinct_tables = map(island_tables) do tbl
     DataFrame(subset(tbl, :extinct => x -> .!ismissing.(x)))
 end
 
-aggfactor = 8
+aggfactor = 4
+
 
 # using ProfileView 
 
+dems.mus
 ruleset, inits, outputs, outputs_kw = def_syms(
     pred_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables
 );
+@time sim!(outputs.mus, ruleset);
 
-island = :reu
+island = :mus
+mk(inits[island], ruleset; outputs_kw[island]...)
 # using ProfileView
 # @profview 
 
@@ -449,8 +452,6 @@ end
 
 # l = presence_loss(sims; tspan, ncells, last_obs)
 # pairs(l)
-
-mk(inits[island], ruleset; outputs_kw[island]...)
 
 
 # using CUDA, Adapt

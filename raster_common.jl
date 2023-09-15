@@ -8,6 +8,9 @@ using RasterDataSources
 using Rasters
 using Rasters: Between, trim, Band
 using Unitful
+using Distributions
+using DimensionalData
+using DimensionalData.LookupArrays
 
 println("Loading functions...")
 includet("common.jl")

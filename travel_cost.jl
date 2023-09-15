@@ -5,8 +5,7 @@ includet("ports.jl")
 includet("slope.jl")
 includet("raster_common.jl")
 
-files = define_map_files()
-slices = make_raster_slices(masks, lc_categories)
+# slices = make_raster_slices(masks, lc_categories)
 
 travel_origins = map(dems, ports) do d, p 
     o = map(_ -> Inf * u"hr", d)
@@ -24,10 +23,10 @@ elevation = map(dem -> dem .* u"m", dems)
 resistance = map(road_series) do island_road_series
     map(island_road_series) do roads
         broadcast(roads) do r
-            if ismissing(r) 
+            if ismissing(r)
                 Inf
             elseif r
-                relative_movement_speed[:dirt_road]
+                relative_movement_speed[:road]
             else
                 relative_movement_speed[:cleared_land]
             end
