@@ -294,32 +294,38 @@ end
 #     forestry=P(1.0; b...),
 # )
 pressure = let preds=lc_predictions, ngridcells=size(sum(masks.mus))
-    leverage=P(1.0; bounds=(0.0, 20.0))
+    leverage=P(1.0; bounds=(0.0, 10.0))
     smoothing=P(1.0; bounds=(1.0, 5.0))
     # cleared=P(1.5; b...),
-    abandoned=P(1.0; b...)
     # urban=P(1.4; b...)
-    forestry=P(1.0; b...)
-    native = 0.0
-    water = 0.0
+    abandoned = 1e-2
+    forestry = 1.0
+    native = -Inf # Never regrows
+    water = Inf # Put it in as soon as its on the next map
     (data, rule) -> begin
         predicted = preds[At(currenttime(data))]
         stategrid = data[:landcover]
-        # ngridcells = if isnothing(DynamicGrids.mask(data))
-        #     length(stategrid)
-        # else
-        #     sum(DynamicGrids.mask(data))
-        # end
-        ncleared = ThreadsX.sum(==(rule.states.cleared), parent(stategrid); init=0.0)
-        nurban = ThreadsX.sum(==(rule.states.urban), parent(stategrid); init=0.0)
-        # println(stdout, (; ncleared, pcleared=predicted.cleared, nurban, purban=predicted.urban))
-        urban = leverage * sign(predicted.urban - nurban) * 
-            max(0.0, predicted.urban) / max(nurban, max(0.0, predicted.urban) / smoothing)
-        cleared = leverage * sign(predicted.cleared - ncleared) * 
-            max(0.0, predicted.cleared) / max(ncleared, max(0.0, predicted.cleared) / smoothing)
+        hist = view(DynamicGrids.aux(data).history, Ti(Contains(currenttime(data))))
+        allowed_cleared = ThreadsX.count(x -> x.cleared, hist; init=0)
+        allowed_urban = ThreadsX.count(x -> x.urban, hist; init=0)
+        ncleared = ThreadsX.sum(==(rule.states.cleared), parent(stategrid); init=0)
+        nurban = ThreadsX.sum(==(rule.states.urban), parent(stategrid); init=0)
+        urban = calc_pressure(leverage, smoothing, nurban, predicted.urban, allowed_urban)
+        cleared = calc_pressure(leverage, smoothing, ncleared, predicted.cleared, allowed_cleared)
+        @show urban cleared allowed_urban allowed_cleared
         NamedVector(; native, cleared, abandoned, urban, forestry, water)
     end
 end
+
+using DimensionalData, GLMakie
+function calc_pressure(leverage, smoothing, n, p, a)
+    leverage * (p - n) / max(a, oneunit(a))
+    # leverage * (p / n)
+    # max(1.0, p) / max(n,  max(1.0, p) / smoothing)
+end
+A = map(xy -> calc_pressure(1, 0.1, xy..., 10000), DimPoints((n=0:100, p=0:100)))
+Makie.heatmap(A)
+v = 1.0 + (-log(rand()^1.0))
 
 n, c, a, u, f, w = states
 precursors = (
@@ -347,8 +353,8 @@ init_state = (;
     landcover=Rasters.mask!(fill(1, dims(masks.mus); missingval=0), with=masks.mus)
 )
 
-Rasters.rplot(init_state.landcover; colorrange=(1, 6))
-Rasters.rplot(striped_history; colorrange=(1, 6))
+# Rasters.rplot(init_state.landcover; colorrange=(1, 6))
+# Rasters.rplot(striped_history; colorrange=(1, 6))
 aux = map(fix_order, (; suitability=suitability.mus, history))
 tspan = 1600:2018
 array_output = ArrayOutput(init_state;
@@ -364,6 +370,9 @@ simdata = DynamicGrids.SimData(array_output, ruleset);
 @time sim!(array_output, ruleset; simdata, proc=CPUGPU(), printframe=true); 
 predicted_lc = Rasters.combine(RasterSeries(array_output, dims(array_output)))
 uncleared = rebuild(predicted_lc.landcover .== states.native; missingval=false, refdims=())
+using NCDatasets, Rasters
+# write("uncleared.nc", UInt8.(uncleared); force=true)
+uncleared = Bool.(Raster("uncleared.nc"))
 
 output = MakieOutput(init_state;
     aux, tspan,
