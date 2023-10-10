@@ -27,12 +27,13 @@ end
 @model function species_observations(ruleset, init, encounter_probabilities, visibility, species; kw...) where Keys
     # Observation visibility prior for each species
     visibility .~ Normal.(species.visibility, 1.0)
+
     # Need some distributions between zero and one...
-    cat .~ Binomial.(species.susceptibility.cat, 1.0)
-    rat .~ Binomial.(species.susceptibility.rat, 1.0)
-    human .~ Binomial.(species.susceptibility.human, 1.0)
+    cat .~ Beta.(species.susceptibility.cat, 1.0) # the model should be hierarchical and have a second step that models the susceptibility on some combination on the traits
+    rat .~ Beta.(species.susceptibility.rat, 1.0) # those traits could be body_size, class, flying, ground_nesting, -vory, nocturnal, (life history, e.g. life span, clutch size - related to body size though)
+    human .~ Beta.(species.susceptibility.human, 1.0)
     # How much native habitat is favoured
-    habitat .~ Binomial.(species.susceptibility.habitat, 1.0)
+    habitat .~ Beta.(species.susceptibility.habitat, 1.0)
     # Define the threat rule with these values
     threatrule = define_threats(human, cat, rat, habitat)
     # build a new ruleset
