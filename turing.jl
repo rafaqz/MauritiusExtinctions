@@ -63,6 +63,8 @@ obs = cat(getindex.(Ref(mus_native), :, species_names)...; dims=Dim{:species}(sp
 preds = cat(getindex.(Ref(mus_native_filled), :, species_names)...; dims=Y(species_names))
 humans = human_pop_timeline.mus[Near(lookup(mus_native.Raphus_cucullatus, Ti))]
 
+mascarene_species_csv = "/home/raf/PhD/Mascarenes/MauritiusExtinctions/mascarine_species.csv"
+mascarene_species = CSV.read(mascarine_species_csv, DataFrame)
 
 
 

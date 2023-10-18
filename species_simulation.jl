@@ -91,7 +91,6 @@ outputs.mus[At(1800)] |> pairs
 island = :mus
 mk(inits[island], ruleset; outputs_kw[island]...)
 
-
 @time map(outputs) do output
     sim!(output, ruleset);
 end
