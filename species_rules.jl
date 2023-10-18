@@ -1,11 +1,11 @@
 using DynamicGrids, Dispersal, LandscapeChange, ModelParameters
 using StaticArrays
 using Rasters
+using ThreadsX
 const DG = DynamicGrids
 
 # Priors
 # Cats prefere prey under 250g (Parsons 2018)
-
 
 function def_syms(
     pred_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables
@@ -25,7 +25,7 @@ function def_syms(
     ag_slope = map(slope_stacks) do s
         Rasters.aggregate(maximum, replace_missing(s.slope, 0), aggfactor)
     end
-    ag_uncleared = Rasters.aggregate(Center(), uncleared, (X(aggfactor), Y(aggfactor)))
+    ag_uncleared = modify(BitArray, Rasters.aggregate(Center(), uncleared, (X(aggfactor), Y(aggfactor))))
 
     ag_roughness = map(dems) do dem
         # Clip roughness at a maximum of 500
@@ -75,19 +75,6 @@ function def_syms(
         end |> Tuple |> NamedTuple{pred_keys}
     end
 
-    introduction_rule = SetGrid{:pred_pops}() do data, pred_pops, t
-        D = dims(DG.init(data).pred_pops)
-        current_year = currenttime(data)
-        intros = DG.aux(data)[:introductions]
-        foreach(intros) do intro
-            if intro.year == current_year
-                p = intro.geometry
-                I = DimensionalData.dims2indices(D, (X(Contains(p.X)), Y(Contains(p.Y))))
-                pred_pops[I...] = pred_pops[I...] .+ intro.init 
-            end
-        end
-    end
-
     pred_rmax = PredNV(pred_df.rmax)
     pred_max_density = PredNV(pred_df.max_density)
     pred_pops = map(ag_masks) do m
@@ -114,6 +101,21 @@ function def_syms(
     endemic_presences = map(ag_masks, hunting_suscepts) do mask, hunting_suscept
         map(mask) do m
             map(_ -> m, hunting_suscept) 
+        end
+    end
+
+    #### Rules ##########################################################333
+
+    introduction_rule = SetGrid{:pred_pops}() do data, pred_pops, t
+        D = dims(DG.init(data).pred_pops)
+        current_year = currenttime(data)
+        intros = DG.aux(data)[:introductions]
+        foreach(intros) do intro
+            if intro.year == current_year
+                p = intro.geometry
+                I = DimensionalData.dims2indices(D, (X(Contains(p.X)), Y(Contains(p.Y))))
+                pred_pops[I...] = pred_pops[I...] .+ intro.init 
+            end
         end
     end
 
@@ -174,7 +176,7 @@ function def_syms(
                 # isnan(sp) && error("sp is NaN")
                 slope_factor = 1 - min(abs(d - dem_center) / (15 * aggfactor), 1) # TODO needs cell size here
                 # @show N  k  sp slope_factor one_individual
-                propagules = N * k * sp * slope_factor .+ ((rand(typeof(N)) .- 0.5) .* 100 .* one_individual)
+                propagules = N .* k .* sp .* slope_factor .+ ((rand(typeof(N)) .- 0.5) .* 100.0 .* one_individual)
                 # any(isnan, propagules) && error()
                 @inbounds add!(data[:pred_pops], propagules, i...)
                 sum += propagules
@@ -186,7 +188,7 @@ function def_syms(
 
     pred_growth = LogisticGrowth{:pred_pops}(; 
         rate=pred_rmax,
-        carrycap=map(_ -> 1.0, pred_max_density),
+        carrycap=pred_max_density,
         timestep=1.0,
     )
     # This is not really allee extinction, just assuring
@@ -221,7 +223,14 @@ function def_syms(
     inits = map(pred_pops, endemic_presences) do pred_pops, endemic_presences
         (; pred_pops, endemic_presences)
     end
-    ruleset = Ruleset(introduction_rule, pred_spread, pred_allee, pred_growth, endemic_recouperation, risks, clearing)
+    ruleset = Ruleset(
+        introduction_rule, 
+        pred_spread, 
+        pred_allee, pred_growth, 
+        endemic_recouperation, risks, clearing; 
+        boundary=Ignore()
+    )
+    # ruleset = Ruleset(Chain(endemic_recouperation, risks, clearing); boundary=Ignore())
 
     outputs_kw = map(island_names, ns_extinct, tspans) do island, n_extinct, tspan
         aux = (; 
@@ -236,12 +245,14 @@ function def_syms(
         (; aux, mask=getproperty(stencil_masks, island), tspan, n_extinct)
     end
     outputs = map(inits, outputs_kw) do init, kw
-        ResultOutput(init; kw...) 
+        ArrayOutput(init; kw...) 
+        # trans_output = TransformedOutput(init; kw...) do f
+        #     Base.reduce(parent(parent(f.endemic_presences)); init=zero(eltype(f.endemic_presences))) do acc, xs 
+        #         map(|, acc, xs)
+        #     end
+        # end
     end
     # Sum as we go
-    # trans_output = TransformedOutput(getproperty(inits, island); outputs_kw...) do f
-    #     sum(f.endemic_presences)
-    # end
     # ncells = sum(DG.mask(output))
     # last_obs = map(island_names) do island
     #     ExtinctNV(map(first, getproperty(island_extinct_tables, island).extinct))

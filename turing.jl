@@ -4,18 +4,13 @@ using AdvancedMH
 using Plots
 using LinearAlgebra
 
-# Encounter probability is the inverse of 
-# the square of the cost distance?
-function encounter_probability(cost_distance)
-    1 / cost_distance ^ 2
-end
-
-function obs_probability(ruleset, init, encounter_probabilities, visibility; kw...)
-    output = TransformedOutput(init; kw...) do data
-        encounter_probs = view(encounter_probabilities, Ti(Contains(timestep(data))))
-        sum(splat(*), zip(data.species, encounter_probs, visibility))
+function predict_extinctions(ruleset, init; tspan, kw...)
+    output = TransformedOutput(init; tspan, kw...) do data
+        map(>(0), sum(data.species))
     end
-    return sim!(output, ruleset)
+    sim!(output, ruleset)
+    # Return NamedVector of years to extinction
+    return sum(sim) .+ first(tspan) .- 1
 end
 
 function define_threats(human, cat, rat, habitat)
@@ -24,29 +19,61 @@ function define_threats(human, cat, rat, habitat)
     # or we will get recompilation problems
 end
 
-@model function species_observations(ruleset, init, encounter_probabilities, visibility, species; kw...) where Keys
-    # Observation visibility prior for each species
-    visibility .~ Normal.(species.visibility, 1.0)
-
-    # Need some distributions between zero and one...
-    cat .~ Beta.(species.susceptibility.cat, 1.0) # the model should be hierarchical and have a second step that models the susceptibility on some combination on the traits
-    rat .~ Beta.(species.susceptibility.rat, 1.0) # those traits could be body_size, class, flying, ground_nesting, -vory, nocturnal, (life history, e.g. life span, clutch size - related to body size though)
-    human .~ Beta.(species.susceptibility.human, 1.0)
+@model function extinction_model(sim, traits, priors, extinct_dates)
+    # Predator/Human level parameters for each trait
+    pred_mass_effects .~ Beta.(priors.mass)
+    pred_groundnesting_effects .~ Normal(0, 5)
+    pred_flight_effects .~ Normal(0, 5)
+    # pred_class_effects .~ Normal.(priors.class, 3)
+    # Human edibility effect
+    edibility_effect ~ Normal(priors.edibility)
+    # Species level parameters
+    spec_mass_effect = map(.*, traits.mass, pred_mass_effects)
+    # Combine binary parameters with values
+    spec_flight_effects = map(.*, traits.flight, pred_flight_effects)
+    spec_groundnesting_effects = map(.*, traits.groundnesting, pred_groundnesting_effects)
+    spec_combined_effects = map(.+, spec_mass_effects, spec_flight_effects, spec_groundnesting_effects)
+    spec_edibility_effects = map(.*, traits.edibility, edibility_effect)
+    human = spec_combined_effects.human .+ edibility_effect
     # How much native habitat is favoured
-    habitat .~ Beta.(species.susceptibility.habitat, 1.0)
+    habitat .~ Beta.(priors.habitat, 1.0)
     # Define the threat rule with these values
-    threatrule = define_threats(human, cat, rat, habitat)
+    threatrule = define_threats(human, spec_combined_effects, habitat)
     # build a new ruleset
     ruleset = DynamicGrids.StaticRuleset(threatrule, otherrules...)
-    # Run the simulation
-    for i = 1:S
-        # obs is a DimArray over time of NamedVector for each species
-        obs_predicted = obs_probability(ruleset, init, encounter_probabilities, visibility; kw...)
-        sum(zip(obs_recorded, obs_predicted)) do (r::Bool, p::AbstractFloat)
-            # some loss function 
-        end
+    # Run the simulation `nreplicates` times
+    mean_predictions = mean(1:nreplicates) do
+        predict_extinctions(sim, encounter_probabilities)
     end
+    return extinct_dates .~ Normal.(mean_predictions, 10)
 end
+
+mus_native = deepcopy(obs.mus.native)
+mus_native_filled = mapcols(deepcopy(mus_native)) do col
+    if eltype(col) == Bool
+        l = findlast(col)
+        isnothing(l) && return col
+        range = 1:l
+        col[range] .= true
+    end
+    return col
+end
+species_names = Symbol.(names(mus_native_filled)[2:20])
+obs = cat(getindex.(Ref(mus_native), :, species_names)...; dims=Dim{:species}(species_names))
+preds = cat(getindex.(Ref(mus_native_filled), :, species_names)...; dims=Y(species_names))
+humans = human_pop_timeline.mus[Near(lookup(mus_native.Raphus_cucullatus, Ti))]
+
+
+
+
+using FillArrays
+using Turing, Distributions
+using MCMCChains, Plots, StatsPlots
+using StatsFuns: logistic
+using MLDataUtils: shuffleobs, stratifiedobs, rescale!
+using Random
+
+
 
 # @views function main()
 θ = [2.0; 3.0]
@@ -54,7 +81,7 @@ n = 1000 # sample size
 S = 1000 # number of simulation draws
 # the data generating process
 function dgp(θ, n)
-    [rand(Exponential(θ[1]), n) rand(Poisson(θ[2]), n)] 
+    [rand(Exponential(θ[1]), n) rand(Poisson(θ[2]), n)]
 end
 
 # summary statistics for estimation
@@ -65,7 +92,7 @@ end
 y = dgp(θ, n)
 z = moments(y)
 
-@macroexpand @model function abc(z)
+@model function abc(z)
     zs = zeros(S, size(z,1))
     # create the prior: the product of the following array of marginal priors
     θ ~ arraydist([LogNormal(1.,1.); LogNormal(1.,1.)])
@@ -103,134 +130,311 @@ function mymodel(x)
     sum(rand(x))
 end
 
-@macroexpand 
+using PDMats
+@btime f(zs)
+using DimensionalData
+zs = rand((S), (2000))
+p = PDMat(Cholesky(LowerTriangular(cov(zs; dims=1))))
+(1 + 1/S) * cov(zs)
+function f(zs)
+    S = 10
+    zs = rand(S, 200)
+    Σ = PDMat(Cholesky(LowerTriangular((1.0 + 1/S) * cov(zs))))
+    m = vec(mean(zs, dims=1))
+    d = MvNormal(m, Σ)
+    plot(rand(d, 20))
+end
+
+@macroexpand
 @model function test_model(y)
     λ ~ Poisson(4)
-    error ~ truncated(Normal(0, 1); lower = 0.0)    
-    y_hat = [mymodel(λ) for i in 1:100]    
+    error ~ truncated(Normal(0, 1); lower = 0.0)
+    y_hat = [mymodel(λ) for i in 1:100]
     y ~ MvNormal(y_hat, error)
 end
+logpdf(distr, y)
 
 model = test_model(y)
 sample(model, PG(10), 100)
 
-vals = [mymodel(2) for i in 1:100]    
+vals = [mymodel(2) for i in 1:100]
 
 MvNormal(y_hat, error)
 
+using Turing, Distributions
+using StatsPlots
 
-function test_model(__model__::DynamicPPL.Model, __varinfo__::DynamicPPL.AbstractVarInfo, __context__::AbstractPPL.AbstractContext, y; )
-    @show y
-    #= REPL[32]:1 =#
-    begin
-        #= REPL[32]:1 =#
-        #= REPL[32]:2 =#
-        begin
-            var"##dist#381" = Poisson(4)
-            var"##vn#378" = (DynamicPPL.resolve_varnames)((AbstractPPL.VarName){:λ}(), var"##dist#381")
-            var"##isassumption#379" = begin
-                    if (DynamicPPL.contextual_isassumption)(__context__, var"##vn#378")
-                        if !((DynamicPPL.inargnames)(var"##vn#378", __model__)) || (DynamicPPL.inmissings)(var"##vn#378", __model__)
-                            true
-                        else
-                            λ === missing
-                        end
-                    else
-                        false
-                    end
-                end
-            if (DynamicPPL.contextual_isfixed)(__context__, var"##vn#378")
-                λ = (DynamicPPL.getfixed_nested)(__context__, var"##vn#378")
-            elseif var"##isassumption#379"
-                begin
-                    (var"##value#382", __varinfo__) = (DynamicPPL.tilde_assume!!)(__context__, (DynamicPPL.unwrap_right_vn)((DynamicPPL.check_tilde_rhs)(var"##dist#381"), var"##vn#378")..., __varinfo__)
-                    λ = var"##value#382"
-                    var"##value#382"
-                end
-            else
-                if !((DynamicPPL.inargnames)(var"##vn#378", __model__))
-                    λ = (DynamicPPL.getconditioned_nested)(__context__, var"##vn#378")
-                end
-                (var"##value#380", __varinfo__) = (DynamicPPL.tilde_observe!!)(__context__, (DynamicPPL.check_tilde_rhs)(var"##dist#381"), λ, var"##vn#378", __varinfo__)
-                var"##value#380"
-            end
-        end
-        #= REPL[32]:3 =#
-        begin
-            var"##dist#386" = truncated(Normal(0, 1); lower = 0.0)
-            var"##vn#383" = (DynamicPPL.resolve_varnames)((AbstractPPL.VarName){:error}(), var"##dist#386")
-            var"##isassumption#384" = begin
-                    if (DynamicPPL.contextual_isassumption)(__context__, var"##vn#383")
-                        if !((DynamicPPL.inargnames)(var"##vn#383", __model__)) || (DynamicPPL.inmissings)(var"##vn#383", __model__)
-                            true
-                        else
-                            error === missing
-                        end
-                    else
-                        false
-                    end
-                end
-            if (DynamicPPL.contextual_isfixed)(__context__, var"##vn#383")
-                error = (DynamicPPL.getfixed_nested)(__context__, var"##vn#383")
-            elseif var"##isassumption#384"
-                begin
-                    (var"##value#387", __varinfo__) = (DynamicPPL.tilde_assume!!)(__context__, (DynamicPPL.unwrap_right_vn)((DynamicPPL.check_tilde_rhs)(var"##dist#386"), var"##vn#383")..., __varinfo__)
-                    error = var"##value#387"
-                    var"##value#387"
-                end
-            else
-                if !((DynamicPPL.inargnames)(var"##vn#383", __model__))
-                    error = (DynamicPPL.getconditioned_nested)(__context__, var"##vn#383")
-                end
-                (var"##value#385", __varinfo__) = (DynamicPPL.tilde_observe!!)(__context__, (DynamicPPL.check_tilde_rhs)(var"##dist#386"), error, var"##vn#383", __varinfo__)
-                var"##value#385"
-            end
-        end
-        #= REPL[32]:4 =#
-        y_hat = [mymodel(λ) for i = 1:100]
-        #= REPL[32]:5 =#
-        begin
-            #= /home/raf/.julia/packages/DynamicPPL/txq74/src/compiler.jl:555 =#
-            var"##retval#393" = begin
-                    var"##dist#391" = MvNormal(y_hat, error)
-                    var"##vn#388" = (DynamicPPL.resolve_varnames)((AbstractPPL.VarName){:y}(), var"##dist#391")
-                    var"##isassumption#389" = begin
-                            if (DynamicPPL.contextual_isassumption)(__context__, var"##vn#388")
-                                if !((DynamicPPL.inargnames)(var"##vn#388", __model__)) || (DynamicPPL.inmissings)(var"##vn#388", __model__)
-                                    true
-                                else
-                                    y === missing
-                                end
-                            else
-                                false
-                            end
-                        end
-                    if (DynamicPPL.contextual_isfixed)(__context__, var"##vn#388")
-                        y = (DynamicPPL.getfixed_nested)(__context__, var"##vn#388")
-                    elseif var"##isassumption#389"
-                        begin
-                            (var"##value#392", __varinfo__) = (DynamicPPL.tilde_assume!!)(__context__, (DynamicPPL.unwrap_right_vn)((DynamicPPL.check_tilde_rhs)(var"##dist#391"), var"##vn#388")..., __varinfo__)
-                            y = var"##value#392"
-                            var"##value#392"
-                        end
-                    else
-                        if !((DynamicPPL.inargnames)(var"##vn#388", __model__))
-                            y = (DynamicPPL.getconditioned_nested)(__context__, var"##vn#388")
-                        end
-                        (var"##value#390", __varinfo__) = (DynamicPPL.tilde_observe!!)(__context__, (DynamicPPL.check_tilde_rhs)(var"##dist#391"), y, var"##vn#388", __varinfo__)
-                        var"##value#390"
-                    end
-                end
-            #= /home/raf/.julia/packages/DynamicPPL/txq74/src/compiler.jl:556 =#
-            @show y
-            return (var"##retval#393", __varinfo__)
-        end
+@model function gdemo(y)
+    s² ~ InverseGamma(1, 1)
+    m ~ Normal(0.5, sqrt(s²))
+    for i in eachindex(y)
+        y[i] ~ Normal(m, sqrt(s²))
     end
 end
-begin
-    $(Expr(:meta, :doc))
-    function test_model(y; )
-        #= REPL[32]:1 =#
-        return (DynamicPPL.Model)(test_model, NamedTuple{(:y,)}((y,)); )
-    end
+a = rand(1000)
+chn = sample(gdemo(a), NUTS(), 1000)
+var(a)
+mean(a)
+plot(chn)
+s² = InverseGamma(2, 3)
+m = Normal(0.5, 1)
+x_bar = mean(a)
+N = length(a)
+
+mean_exp = (m.σ * m.μ + N * x_bar) / (m.σ + N)
+
+plot(InverseGamma(1, 1); xlims=(0, 3))
+plot(Normal(1, 20))
+Normal(m, sqrt(s²))
+return y ~ Normal(m, sqrt(s²))
+
+# Import libraries.
+using Turing, StatsPlots, Random
+
+# Set the true probability of heads in a coin.
+p_true = 0.8
+
+# Iterate from having seen 0 observations to 100 observations.
+Ns = 0:100
+
+# Draw data from a Bernoulli distribution, i.e. draw heads or tails.
+Random.seed!(12)
+data = rand(Bernoulli(p_true), last(Ns))
+
+using Turing, Statistics, Distributions, Random, LinearAlgebra, StatsPlots
+using AdvancedMH
+# Declare our Turing model.
+@model function coinflip(y)
+    # Our prior belief about the probability of heads in a coin.
+    p ~ Beta(1, 1)
+
+    # The number of observations.
+    N = length(y)
+    # Heads or tails of a coin are drawn from a Bernoulli distribution.
+    y .~ Bernoulli.(p)
 end
+
+# Settings of the Hamiltonian Monte Carlo (HMC) sampler.
+iterations = 1000
+ϵ = 0.05
+τ = 10
+
+# Start sampling.
+chain = sample(coinflip(data), HMC(ϵ, τ), iterations)
+len = 1000
+burnin = 100
+chain = sample(coinflip(data), 
+    MH(:p => AdvancedMH.RandomWalkProposal(MvNormal(zeros(2), 0.25*I))),
+    MCMCThreads(), len+burnin, 4
+)
+chain = chain[burnin+1:end,:,:]
+display(chain)
+
+# Plot a summary of the sampling process for the parameter p, i.e. the probability of heads in a coin.
+histogram(chain[:p])
+
+
+@model function gdemo(y)
+    s ~ InverseGamma(2,3)
+    m ~ Normal(1.7, sqrt(s))
+    y .~ Normal.(m, sqrt(s))
+end
+
+# Use a static proposal for s and random walk with proposal
+# standard deviation of 0.25 for m.
+data = rand(1000) .+ 1.2
+mean(data)
+chain = sample(
+  gdemo(data),
+  MH(
+      :s => AdvancedMH.StaticProposal(InverseGamma(2,3)),
+      :m => AdvancedMH.RandomWalkProposal(Normal(0, 0.25))
+  ),
+  10_000
+)
+mean(chain)
+
+
+# Import Turing.
+using Turing
+# Package for loading the data set.
+using RDatasets
+# Package for visualization.
+using StatsPlots
+# Functionality for splitting the data.
+using MLUtils: splitobs
+# Functionality for constructing arrays with identical elements efficiently.
+using FillArrays
+# Functionality for normalizing the data and evaluating the model predictions.
+using StatsBase
+# Functionality for working with scaled identity matrices.
+using LinearAlgebra
+# Set a seed for reproducibility.
+using Random
+Random.seed!(0);
+using Distributions: Normal
+
+# Load the dataset.
+data = RDatasets.dataset("datasets", "mtcars")
+
+# Show the first six rows of the dataset.
+first(data, 6)
+
+# Remove the model column.
+select!(data, Not(:Model))
+
+# Split our dataset 70%/30% into training/test sets.
+trainset, testset = map(DataFrame, splitobs(data; at=0.7, shuffle=true))
+
+# Turing requires data in matrix form.
+target = :MPG
+train = Matrix(select(trainset, Not(target)))
+test = Matrix(select(testset, Not(target)))
+train_target = trainset[:, target]
+test_target = testset[:, target]
+
+# Standardize the features.
+dt_features = fit(ZScoreTransform, train; dims=1)
+StatsBase.transform!(dt_features, train)
+StatsBase.transform!(dt_features, test)
+
+# Standardize the targets.
+dt_targets = fit(ZScoreTransform, train_target)
+StatsBase.transform!(dt_targets, train_target)
+StatsBase.transform!(dt_targets, test_target);
+
+# Bayesian linear regression.
+@macroexpand @model function linear_regression(x, y)
+    # Set variance prior.
+    σ² ~ truncated(Normal(0, 100); lower=0)
+
+    # Set intercept prior.
+    intercept ~ Normal(0, sqrt(3))
+
+    # Set the priors on our coefficients.
+    nfeatures = size(x, 2)
+    coefficients ~ MvNormal(Zeros(nfeatures), 10.0 * I)
+
+    # Calculate all the mu terms.
+    mu = intercept .+ x * coefficients
+    return y ~ MvNormal(mu, σ² * I)
+end
+intercept = rand(Normal(0, sqrt(3)))
+coef = rand(MvNormal(Zeros(10), 10.0 * I))
+intercept .+ train * coef
+[1 2; 3 4; 5 6] * [10, 20]
+train_target
+Plots.plot(truncated(Normal(0, 100); lower=0))
+
+model = linear_regression(train, train_target)
+chain = sample(model, NUTS(), 500)
+u = I * 10
+
+#Import Turing, Distributions and DataFrames
+using Turing, Distributions, DataFrames, Distributed
+
+# Import MCMCChain, Plots, and StatsPlots for visualizations and diagnostics.
+using MCMCChains, Plots, StatsPlots
+
+# Set a seed for reproducibility.
+using Random
+Random.seed!(12);
+
+theta_noalcohol_meds = 1    # no alcohol, took medicine
+theta_noalcohol_meds = 1    # no alcohol, took medicine
+theta_alcohol_meds = 3      # alcohol, took medicine
+theta_noalcohol_nomeds = 6  # no alcohol, no medicine
+theta_alcohol_nomeds = 36   # alcohol, no medicine
+
+# no of samples for each of the above cases
+q = 100
+
+#Generate data from different Poisson distributions
+noalcohol_meds = Poisson(theta_noalcohol_meds)
+alcohol_meds = Poisson(theta_alcohol_meds)
+noalcohol_nomeds = Poisson(theta_noalcohol_nomeds)
+alcohol_nomeds = Poisson(theta_alcohol_nomeds)
+
+nsneeze_data = vcat(
+    rand(noalcohol_meds, q),
+    rand(alcohol_meds, q),
+    rand(noalcohol_nomeds, q),
+    rand(alcohol_nomeds, q),
+)
+alcohol_data = vcat(zeros(q), ones(q), zeros(q), ones(q))
+meds_data = vcat(zeros(q), zeros(q), ones(q), ones(q))
+
+df = DataFrame(;
+    nsneeze=nsneeze_data,
+    alcohol_taken=alcohol_data,
+    nomeds_taken=meds_data,
+    product_alcohol_meds=meds_data .* alcohol_data,
+)
+df[sample(1:nrow(df), 5; replace=false), :]
+
+#Data Plotting
+
+p1 = Plots.histogram(
+    df[(df[:, :alcohol_taken] .== 0) .& (df[:, :nomeds_taken] .== 0), 1];
+    title="no_alcohol+meds",
+)
+p2 = Plots.histogram(
+    (df[(df[:, :alcohol_taken] .== 1) .& (df[:, :nomeds_taken] .== 0), 1]);
+    title="alcohol+meds",
+)
+p3 = Plots.histogram(
+    (df[(df[:, :alcohol_taken] .== 0) .& (df[:, :nomeds_taken] .== 1), 1]);
+    title="no_alcohol+no_meds",
+)
+p4 = Plots.histogram(
+    (df[(df[:, :alcohol_taken] .== 1) .& (df[:, :nomeds_taken] .== 1), 1]);
+    title="alcohol+no_meds",
+)
+Plots.plot(p1, p2, p3, p4; layout=(2, 2), legend=false)
+
+# Convert the DataFrame object to matrices.
+df
+data = Bool.(Matrix(df[:, [:alcohol_taken, :nomeds_taken, :product_alcohol_meds]]))
+data_labels = df[:, :nsneeze]
+data
+
+# Bayesian poisson regression (LR)
+@model function poisson_regression(x, y, n, σ²)
+    b0 ~ Normal(0, σ²)
+    b1 ~ Normal(0, σ²)
+    b2 ~ Normal(0, σ²)
+    b3 ~ Normal(0, σ²)
+    for i in 1:n
+        theta = b0 + b1 * x[i, 1] + b2 * x[i, 2] + b3 * x[i, 3]
+        y[i] ~ Poisson(exp(theta))
+    end
+end;
+
+# Retrieve the number of observations.
+n, _ = size(data)
+
+# Sample using NUTS.
+
+num_chains = 4
+m = poisson_regression(data, data_labels, n, 10)
+chain = sample(m, NUTS(), MCMCThreads(), 2000, num_chains; discard_adapt=false)
+chain
+
+
+# Taking the first chain
+c1 = chain[:, :, 1]
+
+# Calculating the exponentiated means
+b0_exp = exp(mean(c1[:b0]))
+b1_exp = exp(mean(c1[:b1]))
+b2_exp = exp(mean(c1[:b2]))
+b3_exp = exp(mean(c1[:b3]))
+
+print("The exponent of the meaned values of the weights (or coefficients are): \n")
+println("b0: ", b0_exp)
+println("b1: ", b1_exp)
+println("b2: ", b2_exp)
+println("b3: ", b3_exp)
+print("The posterior distributions obtained after sampling can be visualised as :\n")
+
+plot(chain)

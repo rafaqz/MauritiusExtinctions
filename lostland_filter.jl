@@ -113,3 +113,77 @@ function as_dataframe(xl, name::String)
     df.Species .= strip.(isnumeric, df.Species)
     return df
 end
+
+function filter_observations(table, species_lookup)
+    periods = names(table)[2:end-1]
+    times = map(periods) do p
+        s = split(p, '-')
+        Base.parse(Int, s[1]), Base.parse(Int, s[2])
+    end
+    boundsmatrix = reinterpret(reshape, Int, times)
+    timedim = Ti(Sampled(map(first, times);
+        order=ForwardOrdered(),
+        span=Explicit(boundsmatrix),
+        sampling=Intervals(Start())),
+    )
+    species = Dict{Symbol,Any}()
+    for i in 1:size(table, 1)
+        common_name = table[i, 1]
+        haskey(species_lookup, common_name) || continue
+        observations = falses(length(periods))
+        rawdata = table[i, 2:end-1]
+
+        for j in eachindex(observations)
+            rawval = rawdata[j]
+            rawval = rawval isa String ? rawval[1:1] : rawval
+            if haskey(data_key, rawval)
+                category = data_key[rawval]
+            else
+                @warn "unidentified value in table: $rawval, for $common_name. `missing` used instead"
+                continue
+            end
+            present = if ismissing(category)
+                false
+            elseif category == "abundant" 
+                true
+            elseif category == "common" 
+                true
+            elseif category == "rare" 
+                true
+            elseif category == "uncertain" 
+                0
+                # ismissing(lastval) ? 1 : lastval
+                # lastval
+            elseif category == "extinction/absence"
+                false
+            elseif category == "observed"
+                true
+            elseif category == "likely but unconfirmed"
+                1
+            elseif category == "several species unseparated"
+                true
+                # ismissing(lastval) ? 1 : lastval
+            elseif category == "present no record"
+                false
+            elseif category == "not reported"
+                false
+            elseif category == "recorded introduction"
+                true
+            elseif category == "approximate introduction"
+                true
+            elseif category == "captive only"
+                false
+            elseif category == "move out of category" 
+                false
+            elseif category == "move into category"
+                false
+            else
+                @show "Unfound: $category"
+                continue
+            end
+            observations[j] = present
+        end
+        species[species_lookup[common_name]] = DimArray(observations, timedim)
+    end
+    return DataFrame(:period => periods, species...)
+end

@@ -5,15 +5,12 @@ using OrderedCollections
 using Chain
 using Plots, StatsPlots
 using DimensionalData, DimensionalData.LookupArrays
-using IntervalSets
-const GI = GeoInterface
-
 
 includet("tabular_data.jl")
 includet("plots.jl")
 includet("lostland_filter.jl")
 
-years = 1600:2007
+years = 1600:2020
 
 # plants_csv = joinpath(workdir, "tassim_reunion_plant_introductions.csv")
 # run(`libreoffice $plants_csv`)
@@ -46,11 +43,20 @@ lost_land_appendices = (
 # Its not clear how to deal with grouped categories like `rats`
 
 using CSV
-mascarene_species = CSV.File(joinpath(workdir, "Tables/mascarene_species.csv")) |> DataFrame
+mascarene_species = CSV.File(joinpath(workdir, "Tables/mascarine_species.csv")) |> DataFrame
 xlfile = joinpath(datadir, "LostLand/Mauritius_Lost Land of the Dodo_tables_translated symbols.xlsx")
+xl = XLSX.readxlsx(xlfile)
+names_lookup = Dict(mascarene_species.LostLand_name .=> Symbol.(replace.(mascarene_species.GBIFSpecies, Ref(' ' => '_'))))
+findfirst(==("Dugong"), mascarene_species.LostLand_name)
+
+obs = map(lost_land_appendices) do island
+    map(island) do sheetname
+        filter_observations(as_dataframe(xl, sheetname), names_lookup)
+    end
+end;
+
 
 # run(`libreoffice $xlfile`)
-xl = XLSX.readxlsx(xlfile)
 pops = map(lost_land_appendices) do island
     map(island) do sheetname
         @show sheetname

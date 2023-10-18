@@ -116,7 +116,6 @@ island_table |> pager
 using GLM
 model = lm(@formula(cyclone_freq ~ extinctions), island_table)
 
-using ProfileView
 @profview GeometryOps.simplify(full_locality_table.geometry[1:10]; tol=0.001)
 using GLMakie
 figure = Figure()
