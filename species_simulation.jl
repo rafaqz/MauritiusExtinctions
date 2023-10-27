@@ -17,17 +17,20 @@ includet("optimisation.jl")
 include("species_rules.jl")
 include("raster_common.jl")
 
-uncleared_raw = modify(BitArray, Raster("uncleared.nc"))
-x, y = lookup(uncleared_raw, (X, Y))
-uncleared = set(uncleared_raw, 
-    Ti => 1600:2018, 
-    X => LinRange(first(x), last(x), length(x)), 
-    Y => LinRange(first(y), last(y), length(y))
-)
+function gpu_cleanup(A)
+    x, y, ti = lookup(A, (X, Y, Ti))
+    set(A, 
+        Ti => Sampled(first(ti) - 0.5:last(ti) - 0.5; sampling=Intervals(Start())),
+        X => LinRange(first(x), last(x), length(x)), 
+        Y => LinRange(first(y), last(y), length(y)),
+    )
+end
+uncleared = gpu_cleanup(modify(BitArray, Raster("uncleared.nc")))
+# forested = gpu_cleanup(modify(BitArray, Raster("forested.nc")))
 
 pred_df = CSV.read("animals.csv", DataFrame)
 mascarine_species_csv = "/home/raf/PhD/Mascarenes/Tables/mascarine_species.csv"
-@async run(`libreoffice $mascarine_species_csv`)
+# @async run(`libreoffice $mascarine_species_csv`)
 all_species = CSV.read(mascarine_species_csv, DataFrame) |> 
     x -> subset(x, :Species => ByRow(!ismissing))
 island_tables = map((mus=:mus, reu=:reu, rod=:rod)) do key
@@ -53,11 +56,18 @@ end
 island_extinct_names = map(get_species_names, island_extinct)
 include("species_rules.jl")
 aggfactor = 8
-ruleset, inits, outputs, outputs_kw = def_syms(
-    pred_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables
-);
 
-island_extinct_tables.Hunting_preference
+include("species_rules.jl")
+(; ruleset, pred_ruleset, inits, pred_inits, outputs, pred_outputs, outputs_kw) = def_syms(
+    pred_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, uncleared, 
+);
+island = :mus
+@time sim!(pred_outputs.mus, pred_ruleset; proc=SingleCPU());
+
+mk_pred(pred_inits[island], pred_ruleset; outputs_kw[island]...)
+# mk(inits[island], ruleset; outputs_kw[island]...)
+
+island_extinct_tables.mus.Hunting_preference
 
 using ProfileView
 using BenchmarkTools
@@ -88,8 +98,6 @@ end
 pairs(outputs.mus[213])
 outputs.mus[At(1800)] |> pairs
 
-island = :mus
-mk(inits[island], ruleset; outputs_kw[island]...)
 
 @time map(outputs) do output
     sim!(output, ruleset);

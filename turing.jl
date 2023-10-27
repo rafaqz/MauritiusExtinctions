@@ -4,6 +4,19 @@ using AdvancedMH
 using Plots
 using LinearAlgebra
 
+cellsize = 1
+elev_center = 1
+slopefactor = -3.5
+distfactor = 0.05
+function _slope_speed(e, d=10)
+    slope = (e - elev_center) / (cellsize * d)
+    slope = 
+end
+
+Plots.plot(Base.Fix2(_slope_speed, 2), 0:0.1:10)
+
+logit(x) = one(x)/(one(x) + exp(-x))
+
 function predict_extinctions(ruleset, init; tspan, kw...)
     output = TransformedOutput(init; tspan, kw...) do data
         map(>(0), sum(data.species))
@@ -20,23 +33,50 @@ function define_threats(human, cat, rat, habitat)
 end
 
 @model function extinction_model(sim, traits, priors, extinct_dates)
+    ##################################33
+    # Priors
+    
     # Predator/Human level parameters for each trait
-    pred_mass_effects .~ Beta.(priors.mass)
-    pred_groundnesting_effects .~ Normal(0, 5)
-    pred_flight_effects .~ Normal(0, 5)
+    cat_target_mass ~ Normal(priors.mass.target.cat...)
+    rat_target_mass ~ Normal(priors.mass.target.rat...)
+    human_target_mass ~ Normal(priors.mass.target.human...)
+    target_masses = (cat_target_mass, rat_target_mass, human_target_mass)
+
+    cat_target_slope ~ Beta(priors.mass.target.cat...)
+    rat_target_slope ~ Beta(priors.mass.target.rat...)
+    human_target_slope ~ Beta(priors.mass.target.human...)
+    mass_slopes = (cat_target_slope, rat_target_slope, human_target_slope) 
+
+    cat_mass_intensity ~ LogNormal(priors.mass.target.cat...)
+    rat_mass_intensity ~ LogNormal(priors.mass.target.rat...)
+    human_mass_intensity ~ LogNormal(priors.mass.target.human...)
+    max_mass_intensity = (cat_target_slope, rat_target_slope, human_target_slope) 
+
+    pred_groundnesting_effects ~ filldist(LogNormal(0, 2), 3)
+    pred_flight_effects ~ filldist(LogNormal(0, 2), 3)
     # pred_class_effects .~ Normal.(priors.class, 3)
     # Human edibility effect
     edibility_effect ~ Normal(priors.edibility)
-    # Species level parameters
-    spec_mass_effect = map(.*, traits.mass, pred_mass_effects)
-    # Combine binary parameters with values
-    spec_flight_effects = map(.*, traits.flight, pred_flight_effects)
-    spec_groundnesting_effects = map(.*, traits.groundnesting, pred_groundnesting_effects)
-    spec_combined_effects = map(.+, spec_mass_effects, spec_flight_effects, spec_groundnesting_effects)
-    spec_edibility_effects = map(.*, traits.edibility, edibility_effect)
-    human = spec_combined_effects.human .+ edibility_effect
+
     # How much native habitat is favoured
     habitat .~ Beta.(priors.habitat, 1.0)
+
+    ##################################33
+    # Combine binary parameters with values
+    
+    spec_flight_effects = map(.*, traits.flight, pred_flight_effects)
+    spec_groundnesting_effects = map(.*, traits.groundnesting, pred_groundnesting_effects)
+
+    # Species-level parameters
+    spec_combined_effects = map(traits.log_mass, spec_flight_effects, spec_groundnesting_effects) do mass, flight, goundnest
+        map(target_mass, mass_slopes, max_mass_intensity) do target, slop, intensity
+            distance = abs(mass - target)
+            slope^distance * intensity * flight * groundnest
+        end
+    end
+
+    spec_edibility_effects = map(.*, traits.edibility, edibility_effect)
+    human = spec_combined_effects.human .+ edibility_effect
     # Define the threat rule with these values
     threatrule = define_threats(human, spec_combined_effects, habitat)
     # build a new ruleset
@@ -47,6 +87,8 @@ end
     end
     return extinct_dates .~ Normal.(mean_predictions, 10)
 end
+
+Plots.plot(Beta(4, 6))
 
 mus_native = deepcopy(obs.mus.native)
 mus_native_filled = mapcols(deepcopy(mus_native)) do col
@@ -66,7 +108,30 @@ humans = human_pop_timeline.mus[Near(lookup(mus_native.Raphus_cucullatus, Ti))]
 mascarene_species_csv = "/home/raf/PhD/Mascarenes/MauritiusExtinctions/mascarine_species.csv"
 mascarene_species = CSV.read(mascarine_species_csv, DataFrame)
 
+using StatsPlots, Distributions
+using Distributions: Normal
+Plots.plot(Normal(log(100), 10))
 
+priors = ( 
+    mass = (
+        target_mass = (
+           rat = (mean=log(10), var=1),
+           cat = (mean=log(41.19), var=1), # (PEARRE & MAASS, 1998 - mean prey size at ~20° latitude)
+           human = (mean=log(100), var=1), 
+        ),
+        effect = (
+           rat = (mean=10, var=10),
+           cat = (mean=30, var=10), # (PEARRE & MAASS, 1998 - mean prey size at ~20° latitude)
+           human = (mean=30, var=10), 
+        ),
+    )
+)
+
+exp(1)
+vals = rand(LogNormal(10, 1), 100000)
+Plots.histogram(log.(vals))
+        
+using BenchmarkTools
 
 using FillArrays
 using Turing, Distributions
@@ -74,8 +139,6 @@ using MCMCChains, Plots, StatsPlots
 using StatsFuns: logistic
 using MLDataUtils: shuffleobs, stratifiedobs, rescale!
 using Random
-
-
 
 # @views function main()
 θ = [2.0; 3.0]
@@ -132,7 +195,7 @@ function mymodel(x)
     sum(rand(x))
 end
 
-using PDMats
+using PDMats, LinearAlgebra
 @btime f(zs)
 using DimensionalData
 zs = rand((S), (2000))
@@ -143,8 +206,7 @@ function f(zs)
     zs = rand(S, 200)
     Σ = PDMat(Cholesky(LowerTriangular((1.0 + 1/S) * cov(zs))))
     m = vec(mean(zs, dims=1))
-    d = MvNormal(m, Σ)
-    plot(rand(d, 20))
+    MvNormal(m, Σ)
 end
 
 @macroexpand

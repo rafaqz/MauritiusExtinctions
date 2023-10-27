@@ -1,4 +1,7 @@
-name,rmax,max_density,mus_year,mus_lat,mus_lon,reu_year,reu_lat,reu_lon,rod_year,rod_lat,rod_lon,sources
-cat,0.99,0.08,1688,57.7228,-20.3754,1688,55.4485,-20.8785,1743,63.4287,-19.6795,https://esajournals.onlinelibrary.wiley.com/doi/full/10.1002/ecs2.1822
-black_rat,3.5,30,1550,57.7228,-20.3754,1678,55.4485,-20.8785,1650,63.4287,-19.6795,https://esajournals.onlinelibrary.wiley.com/doi/full/10.1002/ecs2.1822
-pig,0.58,0.15,1608,57.7228,-20.3754,1627,55.4485,-20.8785,1792,63.4287,-19.6795,Zivin (2000)
+name,rmax,max_density,mus_year,mus_lat,mus_lon,reu_year,reu_lat,reu_lon,rod_year,rod_lat,rod_lon,sources,notes
+cat,0.99,0.08,1688,57.7228,-20.3754,1688,55.4485,-20.8785,1743,63.4287,-19.6795,https://esajournals.onlinelibrary.wiley.com/doi/full/10.1002/ecs2.1822,
+black_rat,3.5,30.0,1550,57.7228,-20.3754,1678,55.4485,-20.8785,1600,63.4287,-19.6795,https://esajournals.onlinelibrary.wiley.com/doi/full/10.1002/ecs2.1822,"arrival before europeans in mus and rod, so is uncertain"
+norway_rat,2.7,15.0,1733,57.7228,-20.3754,1733,55.4485,-20.8785,1870,63.4287,-19.6795,,rmax and max_density are made up
+mouse,4.7,52.0,1753,57.7228,-20.3754,1733,55.4485,-20.8785,1770,63.4287,-19.6795,,rmax is made up max_density from Le Corre (2015)
+pig,0.58,0.3,1608,57.7228,-20.3754,1627,55.4485,-20.8785,1792,63.4287,-19.6795,Zivin (2000) Lewis (2017),~30/km2 maximum is common in forsests on tropical islands
+snake,2.0,20.0,1873,58.7228,-19.3754,1837,56.4485,-19.8785,3000,64.4287,-18.6795,,rmax and max_density are made up
