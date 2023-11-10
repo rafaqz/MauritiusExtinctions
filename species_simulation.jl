@@ -12,7 +12,6 @@ using GLMakie
 using NCDatasets
 using Geomorphometry
 
-includet("/home/raf/.julia/dev/LandscapeChange/src/makie.jl")
 includet("optimisation.jl")
 include("species_rules.jl")
 include("raster_common.jl")
@@ -61,13 +60,65 @@ include("species_rules.jl")
     pred_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, uncleared, 
 );
 island = :mus
+@time sim!(outputs.mus, ruleset; proc=SingleCPU());
 @time sim!(pred_outputs.mus, pred_ruleset; proc=SingleCPU());
-vecmax(a, x) = max.(a, x)
-popmaxs = min.(60, mapreduce(s -> reduce(vecmax, s.pred_pops), vecmax, pred_outputs.mus))
-mk_pred(pred_inits[island], pred_ruleset, ag_masks.mus; popmaxs, outputs_kw[island]...)
-# mk(inits[island], ruleset; outputs_kw[island]...)
+# vecmax(a, x) = max.(a, x)
+# popmaxs = min.(60, mapreduce(s -> reduce(vecmax, s.pred_pops), vecmax, pred_outputs.mus))
+
+using Stencils, StaticArrays, BenchmarkTools
+rand(typeof(w)) .* rand(typeof(w))
+Moore{2,2}(rand(24))
+Moore(; radius=2)
+A = StencilArray(rand(10, 10), Moore(2));
+m = stencil(A, (2, 2))
+mk_pred(pred_inits[island], pred_ruleset, ag_masks.mus; outputs_kw[island]...)
+mk(inits[island], ruleset; outputs_kw[island]...)
+
+# Random Spread
+# approches zero as N approaches Inf
+# but allows small populations to still spread because
+# α increases with small N, so specific cells are more likely
+# to be 1 or above
+w = Window{2}(rand(5, 5))
+N = 10
+M = 3
+α = (M / N)
+A = rand(typeof(w)) .^ α 
+scalars = (A .* (length(A) / sum(A)))
+           .- 1) ./ N .+ 1
+maximum(scalars)
+
+length(pred_kernels[1].kernel)
+x = zeros(7, 7)
+kernel1 = DispersalKernel(
+    stencil=moore,
+    formulation=ExponentialKernel(100.0)
+)
+kernel2 = DispersalKernel(
+    stencil=moore,
+    formulation=ExponentialKernel(1.0)
+)
+kernel1
+kernel1.kernel
+kernel2.kernel
+foreach(DynamicGrids.indices(kernel, (4, 4)), kernel.kernel) do i, k
+    x[i...] = k
+end
+p = Makie.heatmap(x)
+Colorbar(p.figure[1, 2], p.plot)
+
 
 island_extinct_tables.mus.Hunting_preference
+
+function getf()
+    a = 1
+    x -> begin
+        a = 2
+        a * x
+    end
+end
+f = getf()
+f.a
 
 using ProfileView
 using BenchmarkTools
@@ -98,7 +149,6 @@ end
 pairs(outputs.mus[213])
 outputs.mus[At(1800)] |> pairs
 
-
 @time map(outputs) do output
     sim!(output, ruleset);
 end
@@ -123,4 +173,3 @@ end
 # catch err
     # code_typed(err; interactive=true)
 # end
-#

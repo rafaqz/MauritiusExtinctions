@@ -52,7 +52,7 @@ DynamicGrids.modifyrule(rule::InteractiveGrowth, data) = Dispersal.precalc_nstep
             N * exp(rt)
         end
     end
-    if any(isnan, newpops) 
+    if any(isnan, newpops)
         @show populations growth_rates scaling final_carrycap newpops
         error()
     end
@@ -80,7 +80,8 @@ end
 function def_syms(
     pred_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, uncleared
 )
-    window = Window{3}()
+    aggscale = aggfactor^2
+    moore = Moore{3}()
     ns_extinct = map(nrow, island_extinct_tables)
     extinct_keys = map(island_extinct_tables) do extinct_table
         Tuple(Symbol.(replace.(extinct_table.Species, Ref(' ' => '_'))))
@@ -100,18 +101,18 @@ function def_syms(
 
     # Parameters
     carrycap = NV(
-        cat =        0.01,
+        cat =        0.02,
         black_rat =  30.0,
         norway_rat = 15.0,
         mouse =      52.0,
         pig =        0.3,
         snake =      20.0,
-    )
+    ) .* aggscale
     interactions = NV(
         cat =        NV(cat= 0.0, black_rat= 0.5, norway_rat= 0.2, mouse= 0.6, pig=0.0, snake= 0.0),
         black_rat =  NV(cat=-0.2, black_rat= 0.0, norway_rat=-0.3, mouse=-0.1, pig=0.0, snake= 0.01),
         norway_rat = NV(cat=-0.1, black_rat=-0.2, norway_rat= 0.0, mouse=-0.1, pig=0.0, snake= 0.01),
-        mouse =      NV(cat=-0.2, black_rat=-0.3, norway_rat=-0.3, mouse= 0.0, pig=0.0, snake=-0.1),
+        mouse =      NV(cat=-0.2, black_rat=-0.1, norway_rat=-0.1, mouse= 0.0, pig=0.0, snake=-0.1),
         pig =        NV(cat= 0.0, black_rat= 0.0, norway_rat= 0.0, mouse= 0.0, pig=0.0, snake= 0.0),
         snake =      NV(cat=-0.1, black_rat= 0.2, norway_rat= 0.1, mouse= 0.3, pig=0.0, snake= 0.0),
     )
@@ -132,6 +133,14 @@ function def_syms(
         pig =         0.5,
         snake =       0.3,
     ))
+    spread_rate = NV(
+        cat =         10.0,
+        black_rat =   1.0,
+        norway_rat =  1.0,
+        mouse =       0.5,
+        pig =         10.0,
+        snake =       1.0,
+    )
 
     # Example data
     human_intensity = 0.0
@@ -167,20 +176,20 @@ function def_syms(
     end
 
     kernel = DispersalKernel(
-        stencil=window,
+        stencil=moore,
         formulation=ExponentialKernel()
     )
     stencil_masks = map(ag_masks) do mask
         StencilArray(mask, kernel; padding=Halo{:out}())
     end
     spreadability = map(ag_roughness, ag_slope, ag_masks) do r, s, m
-        # A = (1 .- s) .*  m
+        # A = (1 .- s) .* m
         A = (1 .- sqrt.(s)) .*  m
-        StencilArray(A, window; padding=Halo{:out}())
+        StencilArray(A, moore; padding=Halo{:out}())
     end
     stencil_dems = map(dems) do dem
         A = Rasters.aggregate(Rasters.Center(), replace_missing(dem, 0), aggfactor)
-        StencilArray(A, window; padding=Halo{:out}())
+        StencilArray(A, moore; padding=Halo{:out}())
     end
 
     pred_keys = Tuple(Symbol.(pred_df.name))
@@ -199,7 +208,7 @@ function def_syms(
         lats = pred_df[!, "$(key)_lat"]
         inits = map(pred_indices, one_individual) do i, oi
             x = zeros(length(pred_keys))
-            x[i] = oi * 10 # Lets just say ten of everything where introduced...
+            x[i] = oi * 50 # Lets just say ten of everything where introduced...
             PredNV(x)
         end
         map(years, lons, lats, inits) do year, lat, lon, init
@@ -229,14 +238,14 @@ function def_syms(
     end
     # Dummy values. This will be calculated by the optimiser
     pred_suscepts = map(ns_extinct, ExtinctNVs) do n_extinct, ExtinctNV
-        cat_sus = ExtinctNV(LinRange(0.0, 0.03, n_extinct))
-        black_rat_sus = ExtinctNV(LinRange(0.0, 0.02, n_extinct))
-        norway_rat_sus = ExtinctNV(LinRange(0.0, 0.02, n_extinct))
-        mouse_sus = ExtinctNV(LinRange(0.0, 0.01, n_extinct))
-        pig_sus = ExtinctNV(LinRange(0.0, 0.01, n_extinct))
-        snake_sus = ExtinctNV(LinRange(0.0, 0.01, n_extinct))
+        cat_sus = ExtinctNV(LinRange(0.0, 0.02, n_extinct))
+        black_rat_sus = ExtinctNV(LinRange(0.0, 0.01, n_extinct))
+        norway_rat_sus = ExtinctNV(LinRange(0.0, 0.01, n_extinct))
+        mouse_sus = ExtinctNV(LinRange(0.0, 0.001, n_extinct))
+        pig_sus = ExtinctNV(LinRange(0.0, 0.005, n_extinct))
+        snake_sus = ExtinctNV(LinRange(0.0, 0.005, n_extinct))
         pred_suscept = map(cat_sus, black_rat_sus, norway_rat_sus, mouse_sus, pig_sus, snake_sus) do c, br, nr, m, p, s
-            PredNV((c, br, nr, m, p, s))
+            PredNV((c, br, nr, m, p, s)) ./ aggscale
         end
     end
 
@@ -297,28 +306,44 @@ function def_syms(
 
     clearing = let
         Cell{:endemic_presences}() do data, presences, I
-            uncleared = get(data, Aux{:uncleared}(), I)
-            map(presences) do present
-                present & uncleared
-            end
+            uc = get(data, Aux{:uncleared}(), I)
+            presences .& uc
         end
     end
 
-    pred_spread = let aggfactor=aggfactor, one_individual=one_individual
-        SetNeighbors{:pred_pops}(kernel) do data, hood, N, I
-            any(isnan, N) && error("pred_spread N is: $N")
-            N == zero(N) && return nothing
-            spr_nbrs = DG.neighbors(DG.aux(data)[:spreadability], I)
+    pred_kernels = map(spread_rate) do s
+        DispersalKernel(
+            stencil=moore,
+            # formulation=ExponentialKernel(Param(s, bounds=(0.000000000001, 100.0)))
+            formulation=ExponentialKernel(s),
+        )
+    end
+    pred_spread = let aggfactor=aggfactor, pred_kernels=pred_kernels
+        SetNeighbors{:pred_pops}(pred_kernels[1]) do data, hood, Ns, I
+            any(isnan, Ns) && error("pred_spread N is: $Ns")
+            Ns == zero(Ns) && return nothing
             dem = DG.aux(data)[:dem]
+            spr = DG.mask(data)#[:spreadability]
+            spr_nbrs = DG.neighbors(spr, I)
             elev_nbrs = DG.neighbors(dem, I)
             elev_center = dem[I...]
 
             # spreadability = DG.neighbors(DG.mask(data), I)
-            sum = zero(N) # TODO needs cell size here
+            sum = zero(Ns) # TODO needs cell size here
             cellsize = (30 * aggfactor)
-            any(isnan, spr_nbrs) && return zero(N)
+            any(isnan, spr_nbrs) && return zero(Ns)
 
-            for (i, k, sp, e, d) in zip(DG.indices(hood, I), DG.kernel(hood), spr_nbrs, elev_nbrs, DG.distances(hood))
+            start = rand(0:length(hood)-1)
+            for ix in eachindex(hood)
+                i = start + ix
+                if i > length(hood)
+                    i = i - length(hood)
+                end
+                Ih = DG.indices(hood, I)[i]
+                ks = getindex.(DynamicGrids.kernel.(pred_kernels), i)
+                d = DG.distances(hood)[i]
+                sp = spr_nbrs[i]
+                e = elev_nbrs[i]
                 # any(isnan, N) && error("N is NaN")
                 # isnan(k) && error("k is NaN")
                 # isnan(sp) && error("sp is NaN")
@@ -330,18 +355,22 @@ function def_syms(
                 slope_factor = 1.0000000001 - min(abs(e - elev_center) / cellsize, 1) # TODO needs cell size here
                 # @show N  k  sp slope_factor one_individual
                 # propagules = N .* k .* sp .* slope_factor .+ ((rand(typeof(N)) .- 0.5) .* one_individual)
-                propagules = N * sp * slope_factor .* ((rand(typeof(N)) .- 0.5) .* one_individual) .* 0.02
-                if any(isnan, propagules) 
-                    @show N sp slope_factor
-                    error()
+                # propagules = Ns * sp * slope_factor .* kr .* rand(typeof(Ns))
+                propagules = trunc.(Ns * sp * slope_factor .* rand(typeof(Ns)) .^ 3 .* ks .* 40)
+                any(isnan, propagules) && error("NaNs found Ns: $Ns sp: $sp slope_factor: $slope_factor ks: $ks")
+                sum1 = sum + propagules
+                # If we run out of propagules
+                if any(sum1 .> Ns)
+                    propagules = min.(sum1, Ns) .- sum
+                    sum = sum + propagules
+                else
+                    sum = sum1
                 end
-                @inbounds add!(data[:pred_pops], propagules, i...)
-                sum += propagules
+                @inbounds add!(data[:pred_pops], propagules, Ih...)
             end
-            any(sum .> data[:pred_pops][I...]) && error("$sum $pred_pops")
+            any(isnan, data[:pred_pops][I...]) && error("nan in output")
 
             @inbounds sub!(data[:pred_pops], sum, I...)
-            any(isnan, data[:pred_pops][I...]) && error("nan in output")
             return nothing
         end
     end # let
@@ -388,8 +417,8 @@ function def_syms(
 
     pred_ruleset = Ruleset(
         introduction_rule,
-        pred_spread, 
-        pred_growth; 
+        pred_spread,
+        pred_growth;
         boundary=Ignore()
     )
 
@@ -440,14 +469,14 @@ function mk(init, ruleset; kw...)
         store=false,
         ruleset,
         sim_kw=(; printframe=true),
-    ) do fig, time, frame
+    ) do fig, frame, time
         pred_keys = propertynames(frame[].pred_pops[1])
         ncols = length(pred_keys)
         extinct_keys = propertynames(frame[].endemic_presences[1])
         n_extinct = length(extinct_keys)
         sg = SliderGrid(fig[3,1:2],
             map(1:ncols) do i
-                (startvalue=i, range=1:n_extinct, format=i ->string(extinct_keys[i]))
+                (startvalue=i, range=1:n_extinct, format=i -> string(extinct_keys[i]))
             end...
         )
         pred_axes = map(1:ncols) do i
@@ -476,10 +505,10 @@ function mk(init, ruleset; kw...)
                 notify(extinct)
             end
         end
-        foreach(pred_axes, predators, [:magma, :viridis, :cividis], pred_keys) do ax, pred, colormap, k
-            Makie.image!(ax, pred; colorrange=(0.0, 1.0), colormap, interpolate=false)
+        foreach(pred_axes, predators, pred_keys) do ax, pred, k
+            Makie.image!(ax, pred; colormap=:magma, interpolate=false)
         end
-        foreach(extinct_axes, extincts, [:blues, :reds, :greens], sg.labels) do ax, extinct, colormap, label
+        foreach(extinct_axes, extincts, Iterators.Cycle([:blues, :reds, :greens]), sg.labels) do ax, extinct, colormap, label
             Makie.image!(ax, extinct; colorrange=(0.0, 1.0), colormap, interpolate=false)
         end
         return nothing
@@ -493,8 +522,7 @@ function mk_pred(init, ruleset, mask; kw...)
         store=false,
         ruleset,
         sim_kw=(; printframe=true),
-        popmaxs
-    ) do fig, time, frame
+    ) do fig, frame, time
         # nanmask = map(x -> x ? 1.0f0 : NaN32, mask)
         pred_keys = propertynames(frame[].pred_pops[1])
         ncols = length(pred_keys)
@@ -512,8 +540,8 @@ function mk_pred(init, ruleset, mask; kw...)
                 notify(pred)
             end
         end
-        foreach(pred_axes, predators, pred_keys, popmaxs) do ax, pred, k, pm
-            Makie.image!(ax, pred; interpolate=false, colorrange=(0.0, pm))
+        foreach(pred_axes, predators, pred_keys) do ax, pred, k
+            Makie.image!(ax, pred; colormap=:viridis, interpolate=false)
         end
         return nothing
     end
