@@ -54,17 +54,17 @@ island_extinct = map(island_tables, island_names) do table, name
     subset(table, Symbol(name, "_extinct") => ByRow(!ismissing))
 end
 island_extinct_names = map(get_species_names, island_extinct)
-include("species_rules.jl")
-aggfactor = 8
+aggfactor = 6
 
 include("species_rules.jl")
-(; ruleset, pred_ruleset, inits, pred_inits, outputs, pred_outputs, outputs_kw) = def_syms(
+(; ruleset, pred_ruleset, inits, pred_inits, outputs, pred_outputs, outputs_kw, ag_masks) = def_syms(
     pred_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, uncleared, 
 );
 island = :mus
 @time sim!(pred_outputs.mus, pred_ruleset; proc=SingleCPU());
-
-mk_pred(pred_inits[island], pred_ruleset; outputs_kw[island]...)
+vecmax(a, x) = max.(a, x)
+popmaxs = min.(60, mapreduce(s -> reduce(vecmax, s.pred_pops), vecmax, pred_outputs.mus))
+mk_pred(pred_inits[island], pred_ruleset, ag_masks.mus; popmaxs, outputs_kw[island]...)
 # mk(inits[island], ruleset; outputs_kw[island]...)
 
 island_extinct_tables.mus.Hunting_preference

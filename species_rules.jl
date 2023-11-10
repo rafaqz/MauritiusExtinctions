@@ -38,29 +38,41 @@ DynamicGrids.modifyrule(rule::InteractiveGrowth, data) = Dispersal.precalc_nstep
         param => get(data, val, I)
     end
 
-    final_carrycap = scale_carrycap(populations, rule.carrycap, rule.interactions, local_suitabilities)
+    scaling = scale_carrycap(populations, rule.carrycap, rule.interactions, local_suitabilities)
+    final_carrycap = rule.carrycap .* scaling
 
-    map(populations, growth_rates, final_carrycap) do N, rt, k
+    newpops = map(populations, growth_rates, final_carrycap) do N, rt, k
         if rt > zero(rt)
-            (N * k) / (N + (k - N) * exp(-rt))
+            if k == zero(k)
+                zero(N)
+            else
+                (N * k) / (N + (k - N) * exp(-rt))
+            end
         else
             N * exp(rt)
         end
     end
+    if any(isnan, newpops) 
+        @show populations growth_rates scaling final_carrycap newpops
+        error()
+    end
+    return max.(zero(eltype(populations)), newpops)
 end
 
 function scale_carrycap(populations, carrycaps, interactions, suitabilities)
     interaction_factor = sum.(map(i -> i .* populations ./ carrycaps, interactions))
+    # @show interaction_factor carrycaps populations
 
     suitability_factors = map(suitabilities) do (weight, local_intensity)
         weight .* local_intensity
     end
+    # @show suitability_factors
 
     # Simple additive model
     carrycap_adjustment = 1 .+ interaction_factor .+ reduce(.+, suitability_factors)
 
     # Limit minimum adjustment to 0.0
-    return carrycaps .* max.(0.0, carrycap_adjustment)
+    return max.(0.0, carrycap_adjustment)
 end
 
 
@@ -68,7 +80,7 @@ end
 function def_syms(
     pred_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, uncleared
 )
-    window = Window{2}()
+    window = Window{3}()
     ns_extinct = map(nrow, island_extinct_tables)
     extinct_keys = map(island_extinct_tables) do extinct_table
         Tuple(Symbol.(replace.(extinct_table.Species, Ref(' ' => '_'))))
@@ -97,11 +109,11 @@ function def_syms(
     )
     interactions = NV(
         cat =        NV(cat= 0.0, black_rat= 0.5, norway_rat= 0.2, mouse= 0.6, pig=0.0, snake= 0.0),
-        black_rat =  NV(cat=-0.4, black_rat= 0.0, norway_rat=-0.4, mouse=-0.3, pig=0.0, snake=-0.3),
-        norway_rat = NV(cat=-0.1, black_rat=-0.4, norway_rat= 0.0, mouse=-0.2, pig=0.0, snake=-0.2),
-        mouse =      NV(cat=-0.5, black_rat=-0.3, norway_rat=-0.4, mouse= 0.0, pig=0.0, snake=-0.3),
+        black_rat =  NV(cat=-0.2, black_rat= 0.0, norway_rat=-0.3, mouse=-0.1, pig=0.0, snake= 0.01),
+        norway_rat = NV(cat=-0.1, black_rat=-0.2, norway_rat= 0.0, mouse=-0.1, pig=0.0, snake= 0.01),
+        mouse =      NV(cat=-0.2, black_rat=-0.3, norway_rat=-0.3, mouse= 0.0, pig=0.0, snake=-0.1),
         pig =        NV(cat= 0.0, black_rat= 0.0, norway_rat= 0.0, mouse= 0.0, pig=0.0, snake= 0.0),
-        snake =      NV(cat= 0.0, black_rat= 0.2, norway_rat= 0.1, mouse= 0.3, pig=0.0, snake= 0.0),
+        snake =      NV(cat=-0.1, black_rat= 0.2, norway_rat= 0.1, mouse= 0.3, pig=0.0, snake= 0.0),
     )
     # 0 is no interaction, less than one negative interaction, more than one positive
     human_dependency = NV(
@@ -112,14 +124,14 @@ function def_syms(
         pig =        -0.9,
         snake =      -0.9,
     )
-    forest_preference = NV(
-        cat =        -0.1,
-        black_rat =   0.2,
+    forest_preference = Param.(NV(
+        cat =        -0.2,
+        black_rat =   0.4,
         norway_rat = -0.2,
-        mouse =       3.0,
+        mouse =      -0.2,
         pig =         0.5,
-        snake =      -0.9,
-    )
+        snake =       0.3,
+    ))
 
     # Example data
     human_intensity = 0.0
@@ -178,7 +190,7 @@ function def_syms(
     island_names = NamedTuple{keys(masks)}(keys(masks))
 
     one_individual = map(pred_indices) do _
-        0.0001 * aggfactor
+        1.0
     end
 
     introductions = map(island_names) do key
@@ -244,10 +256,11 @@ function def_syms(
         intros = DG.aux(data)[:introductions]
         foreach(intros) do intro
             if intro.year == current_year
+                @show intro.year current_year
                 p = intro.geometry
-                @show p
                 I = DimensionalData.dims2indices(D, (X(Contains(p.X)), Y(Contains(p.Y))))
                 pred_pops[I...] = pred_pops[I...] .+ intro.init
+                @show pred_pops[I...]
             end
         end
     end
@@ -293,6 +306,7 @@ function def_syms(
 
     pred_spread = let aggfactor=aggfactor, one_individual=one_individual
         SetNeighbors{:pred_pops}(kernel) do data, hood, N, I
+            any(isnan, N) && error("pred_spread N is: $N")
             N == zero(N) && return nothing
             spr_nbrs = DG.neighbors(DG.aux(data)[:spreadability], I)
             dem = DG.aux(data)[:dem]
@@ -302,22 +316,32 @@ function def_syms(
             # spreadability = DG.neighbors(DG.mask(data), I)
             sum = zero(N) # TODO needs cell size here
             cellsize = (30 * aggfactor)
+            any(isnan, spr_nbrs) && return zero(N)
+
             for (i, k, sp, e, d) in zip(DG.indices(hood, I), DG.kernel(hood), spr_nbrs, elev_nbrs, DG.distances(hood))
                 # any(isnan, N) && error("N is NaN")
                 # isnan(k) && error("k is NaN")
                 # isnan(sp) && error("sp is NaN")
-                slope = (e - elev_center) / (cellsize * d)
+                # slope = (e - elev_center) / (cellsize * d)
                 # Imhof Tobler equation
                 # speed = (6ℯ.^(slopefactor .* (slope .+ distfactor)))
 
-                slope_factor = 1 - min(slope, 1) # TODO needs cell size here
+                # slope_factor = 1 - min(slope, 1) # TODO needs cell size here
+                slope_factor = 1.0000000001 - min(abs(e - elev_center) / cellsize, 1) # TODO needs cell size here
                 # @show N  k  sp slope_factor one_individual
-                propagules = N .* k .* sp .* slope_factor .+ ((rand(typeof(N)) .- 0.5) .* 100.0 .* one_individual)
-                # any(isnan, propagules) && error()
+                # propagules = N .* k .* sp .* slope_factor .+ ((rand(typeof(N)) .- 0.5) .* one_individual)
+                propagules = N * sp * slope_factor .* ((rand(typeof(N)) .- 0.5) .* one_individual) .* 0.02
+                if any(isnan, propagules) 
+                    @show N sp slope_factor
+                    error()
+                end
                 @inbounds add!(data[:pred_pops], propagules, i...)
                 sum += propagules
             end
+            any(sum .> data[:pred_pops][I...]) && error("$sum $pred_pops")
+
             @inbounds sub!(data[:pred_pops], sum, I...)
+            any(isnan, data[:pred_pops][I...]) && error("nan in output")
             return nothing
         end
     end # let
@@ -350,7 +374,7 @@ function def_syms(
 
     tspans = map(introductions) do intros
         # t1 = minimum(x -> x.year, intros) - 2
-        1600:2018
+        1549:2018
     end
     inits = map(pred_pops, endemic_presences) do pred_pops, endemic_presences
         (; pred_pops, endemic_presences)
@@ -406,7 +430,7 @@ function def_syms(
     #     ExtinctNV(map(first, getproperty(island_extinct_tables, island).extinct))
     # end
 
-    return (; ruleset, pred_ruleset, inits, pred_inits, outputs, pred_outputs, outputs_kw)#, last_obs
+    return (; ruleset, pred_ruleset, inits, pred_inits, outputs, pred_outputs, outputs_kw, ag_masks)#, last_obs
 end
 
 function mk(init, ruleset; kw...)
@@ -462,14 +486,16 @@ function mk(init, ruleset; kw...)
     end
 end
 
-function mk_pred(init, ruleset; kw...)
+function mk_pred(init, ruleset, mask; kw...)
     MakieOutput(init;
         kw...,
         fps=100,
         store=false,
         ruleset,
         sim_kw=(; printframe=true),
+        popmaxs
     ) do fig, time, frame
+        # nanmask = map(x -> x ? 1.0f0 : NaN32, mask)
         pred_keys = propertynames(frame[].pred_pops[1])
         ncols = length(pred_keys)
         pred_axes = map(1:ncols) do i
@@ -477,17 +503,17 @@ function mk_pred(init, ruleset; kw...)
         end
         linkaxes!(pred_axes...)
         predators = map(1:ncols) do i
-            Observable(Array(getindex.(frame[].pred_pops, i)))
+            Observable(Array(Float32.(getindex.(frame[].pred_pops, i))))
         end
 
         on(frame) do f
-            foreach(predators, 1:ncols) do  pred, i
+            foreach(predators, 1:ncols) do pred, i
                 pred[] .= getindex.(f.pred_pops, i)
                 notify(pred)
             end
         end
-        foreach(pred_axes, predators, pred_keys) do ax, pred, k
-            Makie.image!(ax, pred; colorrange=(0.0, 1.0), interpolate=false)
+        foreach(pred_axes, predators, pred_keys, popmaxs) do ax, pred, k, pm
+            Makie.image!(ax, pred; interpolate=false, colorrange=(0.0, pm))
         end
         return nothing
     end
