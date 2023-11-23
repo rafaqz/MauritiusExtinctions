@@ -62,6 +62,8 @@ include("species_rules.jl")
 island = :mus
 @time sim!(outputs.mus, ruleset; proc=SingleCPU());
 @time sim!(pred_outputs.mus, pred_ruleset; proc=SingleCPU());
+
+mk(inits[island], ruleset; outputs_kw[island]...)
 # vecmax(a, x) = max.(a, x)
 # popmaxs = min.(60, mapreduce(s -> reduce(vecmax, s.pred_pops), vecmax, pred_outputs.mus))
 

@@ -3,6 +3,20 @@ using StaticArrays
 using Rasters
 using ThreadsX
 const DG = DynamicGrids
+const DD = DimensionalData
+
+# extend(A; to) = _extend(A, to)
+# _extend(A, to::Dimension...) = extend(A, (dims...,))
+# function _extend(A, to::Tuple)
+#     newdims = DD.set(DD.dims(A), map(=>, DD.dims(A, dims), dims)...)
+#     newA = similar(A, newdims...)
+#     selectors = map(dims) do d
+#         rebuild(d, ..(DD.bounds(d)))
+#     end
+#     newA[selectors...] .= A
+#     return newA
+# end
+
 
 # Priors
 # Cats prefere prey under 250g (Parsons 2018)
@@ -161,7 +175,10 @@ function def_syms(
     ag_slope = map(slope_stacks) do s
         Rasters.aggregate(maximum, replace_missing(s.slope, 0), aggfactor)
     end
-    ag_uncleared = modify(BitArray, Rasters.aggregate(Center(), uncleared, (X(aggfactor), Y(aggfactor))))
+    ag_uncleared1 = DimensionalData.modify(BitArray, Rasters.aggregate(Center(), uncleared, (X(aggfactor), Y(aggfactor))))
+    # Extend a century earlier
+    ag_uncleared = Rasters.extend(ag_uncleared1; to=(Ti(1500:1:2020),))
+    broadcast_dims!(identity, view(ag_uncleared, Ti=1500..1600), view(ag_uncleared1, Ti=At(1600)))
 
     ag_roughness = map(dems) do dem
         # Clip roughness at a maximum of 500
@@ -326,7 +343,7 @@ function def_syms(
             spr = DG.mask(data)#[:spreadability]
             spr_nbrs = DG.neighbors(spr, I)
             elev_nbrs = DG.neighbors(dem, I)
-            elev_center = dem[I...]
+            @inbounds elev_center = dem[I...]
 
             # spreadability = DG.neighbors(DG.mask(data), I)
             sum = zero(Ns) # TODO needs cell size here
@@ -334,7 +351,7 @@ function def_syms(
             any(isnan, spr_nbrs) && return zero(Ns)
 
             start = rand(0:length(hood)-1)
-            for ix in eachindex(hood)
+            @inbounds for ix in eachindex(hood)
                 i = start + ix
                 if i > length(hood)
                     i = i - length(hood)
@@ -366,10 +383,9 @@ function def_syms(
                 else
                     sum = sum1
                 end
-                @inbounds add!(data[:pred_pops], propagules, Ih...)
+                add!(data[:pred_pops], propagules, Ih...)
             end
-            any(isnan, data[:pred_pops][I...]) && error("nan in output")
-
+            @inbounds any(isnan, data[:pred_pops][I...]) && error("nan in output")
             @inbounds sub!(data[:pred_pops], sum, I...)
             return nothing
         end
@@ -412,14 +428,14 @@ function def_syms(
         introduction_rule,
         pred_spread, pred_growth,
         endemic_recouperation, risks, clearing;
-        boundary=Ignore()
+        boundary=Use()
     )
 
     pred_ruleset = Ruleset(
         introduction_rule,
         pred_spread,
         pred_growth;
-        boundary=Ignore()
+        boundary=Use()
     )
 
     outputs_kw = map(island_names, ns_extinct, tspans) do island, n_extinct, tspan

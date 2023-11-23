@@ -7,17 +7,17 @@ using GLMakie
 using Statistics, StatsBase, GLM
 using ThreadsX
 using ModelParameters
+using DimensionalData, GLMakie
+using NCDatasets, Rasters
 
 # From woods and forests in Mauritius, p 40:40
 # 1880: 70,000 acres out of 300,000 remain
 # 35,000 were native (but "dilatipated and ruined?")
 # Also mentions that invasives replace natives
-includet("raster_common.jl")
-includet("roads.jl")
 include("travel_cost.jl")
 include("tabular_data.jl")
-include("/home/raf/.julia/dev/LandscapeChange/src/makie.jl")
-includet("map_file_list_2.jl")
+include("landcover_logic.jl")
+include("map_file_list_2.jl")
 
 states = NamedVector(lc_categories)
 
@@ -36,40 +36,28 @@ logic = NV(
 
 slices = make_raster_slices(masks, lc_categories; category_names);
 nv_rast = Rasters.combine(namedvector_raster.(slices.mus.timeline))
-compiled = compile_timeline(logic, nv_rast; fill=true, continuity=true, transition=true)
+striped_raw = stripe_raster(nv_rast, states)
+# Rasters.rplot(striped_raw[Ti=1750..2050]; colorrange=(1, 6))
+compiled = compile_timeline(logic, nv_rast; assume_continuity=true)
 history = compiled.timeline
-striped_history = stripe_raster(history, states)
-# compiled = compile_timeline(logic, nv_ser; fill=true, continuity=false, transition=false)
-# compiled = compile_timeline(logic, nv_ser; fill=true, continuity=false, transition=false)
-# simplified = compile_timeline(logic, nv_ser; fill=true, continuity=true, transition=false)
-# trans = compile_timeline(logic, nv_ser; fill=true, continuity=false, transition=true)
-# striped_compiled = stripe_raster(compiled.timeline, states)
-# striped_simplified = stripe_raster(simplified.timeline, states)
-# striped_complete = stripe_raster(complete.timeline, states)
-# striped_trans = stripe_raster(trans.timeline, states)
-# striped_error = stripe_raster(complete.error, states)
-# striped_dest = stripe_raster(nv_rast_dest, states)
+striped_compiled = stripe_raster(compiled.timeline, states)
+# Rasters.rplot(striped_compiled[Ti=1750..2050]; colorrange=(1, 6))
 
-# diff = map((x, y) -> (x .& .!(y)), simplified.timeline, compiled.timeline)
-# striped_diff = stripe_raster(diff, states)
-# rnge = Ti(5:size(striped, Ti))
-# colorrange = (1, 6)
-# fig = Figure()
-# empty!(fig); Rasters.rplot(fig[1, 1], striped[rnge]; colorrange)
-# empty!(fig); Rasters.rplot(fig[1, 1], striped_compiled[rnge]; colorrange)
-# empty!(fig); Rasters.rplot(fig[1, 1], striped_simplified[rnge]; colorrange)
-# empty!(fig); Rasters.rplot(fig[1, 1], striped_trans[rnge]; colorrange)
-# empty!(fig); Rasters.rplot(fig[1, 1], striped_dest[rnge]; colorrange)
-# empty!(fig); Rasters.rplot(fig[1, 1], 
-#     Rasters.set(striped_complete[rnge], X => X(axes(striped, 1)), Y => Y(axes(striped, Y))); 
-#     colorrange
-# )
-# empty!(fig); Rasters.rplot(fig[1, 1], striped_error[rnge]; colorrange)
+# pixel_timeline1 = compiled.timeline[Y=Near(-20.363), X=Near(57.5015)]
+# pixel_timeline = compiled.timeline[Y=Near(-20.363), X=Near(57.5015)]
+# indirect=indirect_logic(logic) 
+# reversed=reverse_transitions(logic) 
+# reversed_indirect=reverse_transitions(indirect)
+# remove_intermediate_uncertainty!(pixel_timeline, logic, reversed, indirect, reversed_indirect)
+# remove_intermediate_uncertainty!(view(pixel_timeline, reverse(eachindex(pixel_timeline))), reversed, logic, reversed_indirect, indirect)
+# pixel_timeline == pixel_timeline1
+# pixel_timeline
 
 # a = NV(native=true, cleared=false, abandoned=false, urban=true, forestry=false, water=false)
 # b = NV(native=false, cleared=true, abandoned=false, urban=false, forestry=false, water=false)
 # _merge_all_possible(a, b, logic) |> pairs
 # _merge_all_possible(b, a, logic) |> pairs
+logic
 
 cat_counts = let states=states
     map(slice(history[Ti=1600..2017], Ti)) do slice
@@ -128,7 +116,6 @@ lc_predictions = map((cleared, urban) -> (; cleared, urban), cleared_pred, urban
 #     water
 # )
 b = (; bounds=(1.0, 2.0))
-
 landscape_events = (
     mus = [
         (year=1638, n=50, geometry=(X=57.7228, Y=-20.3754)), # "First Dutch settlement"
@@ -146,7 +133,7 @@ landscape_events = (
     ]
 )
 
-Rasters.rplot(ustrip.(last(travel_times.mus)))
+# Rasters.rplot(ustrip.(last(travel_times.mus)))
 human_suitability = map(travel_times, slope_stacks, dems) do tt, ss, dem
     slope_suitability = (1 .- ss.slope) # Steep bad, flat good
     slices = map(tt) do travel_time
@@ -155,16 +142,15 @@ human_suitability = map(travel_times, slope_stacks, dems) do tt, ss, dem
     end
     Rasters.combine(slices, Ti)
 end
-# Plots.plot(travel_times.rod)
+# travel_times.mus ./ u"hr" |> Rasters.rplot
+# extrema.(collect(skipmissing.(travel_times.mus)))
+# (1 .- slope_stacks.mus.slope) |> Rasters.rplot
+# Rasters.aggregate(sum, human_suitability.mus, 50; skipmissingval=true) |> Rasters.rplot
 
 distance_to_water = map(island_keys) do k
     fix_order(Raster(joinpath(distancedir, string(k), "to_water.tif")))
 end
-distance_to_roads = map(island_keys) do k
-    fix_order(Raster(joinpath(distancedir, string(k), "to_road.tif")))
-end
-# plot(suitability.mus; clims=(0, 1), legend=false)
-# plot(suitability.reu; clims=(0, 1), legend=false)
+
 suitability = map(human_suitability, distance_to_water) do hs, dtw
     # dtw = 1 ./ (1 .+ sqrt.(replace_missing(dtw, Inf)))
     native = fill!(similar(hs), 1.0)
@@ -176,6 +162,7 @@ suitability = map(human_suitability, distance_to_water) do hs, dtw
         NamedVector(native=n, cleared=c, abandoned=a, urban=u, forestry=n, water=n)
     end
 end
+
 # Plots.plot(distance_to_water.rod)
 # Plots.plot(distance_to_water.reu)
 # Plots.plot(human_suitability.mus[Ti=6])
@@ -184,75 +171,66 @@ end
 # pop_density.reu |> Plots.plot
 
 # Check that suitability makes sense
-#
-suit = human_suitability.rod
-pop = pop_density.rod
-pop_models = map(human_suitability, pop_density) do suit, pop
-    ag_pop_density = Rasters.aggregate(sum, pop, 20; skipmissingval=true)
-    ag_pop_density = replace(ag_pop_density, NaN=>0.0)
-    resample_suit = mask!(resample(suit[Ti=1]; to=ag_pop_density); with=ag_pop_density)
-    mask!(ag_pop_density; with=resample_suit)
-    df = RasterStack((pop=replace_missing(ag_pop_density), suit=replace_missing(resample_suit)))
-    model = lm(@formula(pop ~ suit), df)
-end
-map(r2, pop_models)
-# Plots.plot(dems.mus)
-# Rasters.aggregate(sum, pop_density.reu, 50; skipmissingval=true) |> Plots.plot
+# suit = human_suitability.rod
+# pop = pop_density.rod
 
+# pop_models = map(human_suitability, pop_density) do suit, pop
+#     ag_pop_density = Rasters.aggregate(sum, pop, 20; skipmissingval=true)
+#     ag_pop_density = replace(ag_pop_density, NaN=>0.0)
+#     resample_suit = mask!(resample(suit[Ti=1]; to=ag_pop_density); with=ag_pop_density)
+#     mask!(ag_pop_density; with=resample_suit)
+#     df = RasterStack((pop=replace_missing(ag_pop_density), suit=replace_missing(resample_suit)))
+#     model = lm(@formula(pop ~ suit), df)
+# end
+# map(r2, pop_models)
+# Plots.plot(dems.mus)
+# Rasters.aggregate(sum, pop_density.reu, 50; skipmissingval=true) |> Makie.plot
+# Rasters.aggregate(sum, human_suitability.reu, 50; skipmissingval=true) |> rplot
+
+pn(x, d) = Distributions.pdf(x, d) ./ Distributions.pdf(x, 0)
 
 # The amount of influence neighbors have
-b = (; bounds=(1.00, 5.0))
-transitions = (
-    native = (
-        native=0.0,#Exponential(P(1.7; b..., label="native from native")),
-        cleared=0.0,#Exponential(P(1.0; b...)),
-        abandoned=0.0,
-        urban=0.0,
-        forestry=0.0,#Exponential(P(1.0; b...)),
-        water=0.0,
-    ),
-    cleared = (
-        native=0.0,
-        cleared=
-        Exponential(P(1.7; b..., label="cleared from cleared")),
-        abandoned=0.0,#Exponential(P(1.0; b...)),
-        urban=0.0, #Exponential(P(1.0; b..., label="cleared from urban")),
-        forestry=0.0,#Exponential(P(1.0; b...)),
-        water=0.0,
-    ),
-    abandoned = (
-        native=0.0,
-        cleared=0.0,#Exponential(P(1.0; b...)),
-        abandoned=Exponential(P(1.7; b..., label="abandoned from abandoned")),
-        urban=Exponential(P(1.7; b..., label="urban from abandoned")),
-        forestry=0.0,#Exponential(P(1.0; b...)),
-        water=0.0,
-    ),
-    urban = (
-        native=0.0,
-        cleared=Exponential(P(1.7; b..., label="urban from cleared")),
-        abandoned=0.0,#Exponential(P(1.0; b...)),
-        urban=Exponential(P(1.7; b..., label="urban from urban")),
-        forestry=0.0,#Exponential(P(1.0; b...)),
-        water=0.0,
-    ),
-    forestry = (
-        native=0.0,
-        cleared=0.0,
-        abandoned=0.0,
-        urban=0.0,
-        forestry=Exponential(P(1.7; b..., label="forestry from forestry")),
-        water=0.0,
-    ),
-    water = (
-        native=0.0,
-        cleared=0.0,
-        abandoned=0.0,
-        urban=0.0,
-        forestry=0.0,
-        water=0.0,
-    ),
-)
+b = (; bounds=(-2.0, 2.0))
+transitions = let empty = (native=0.0, cleared=0.0, abandoned=0.0, urban=0.0, forestry=0.0, water=0.0,),
+                  k = Exponential(P(2.0; bounds=(0.00001, 5.0), label="kernel")),
+                  cn = P(0.05; b..., label="cleared from native"),
+                  cc = P(0.4; b..., label="cleared from cleared"),
+                  ca = P(0.2; b..., label="cleared from abandoned"),
+                  aa = P(0.4; b..., label="abandoned from abandoned"),
+                  uc = P(0.2; b..., label="urban from cleared"),
+                  uu = P(0.4; b..., label="urban from urban")
+    # ff = Exponential(P(1.7; b..., label="forestry from forestry"))
+    (
+        native = empty,
+        cleared = (
+            native=d -> cn * pn(k, d), 
+            cleared=d -> cc * pn(k, d), 
+            abandoned=d -> ca * pn(k, d), 
+            urban=0.0,
+            forestry=0.0, 
+            water=0.0,
+        ),
+        abandoned = (
+            native=0.0,
+            cleared=0.0,
+            abandoned=d -> aa * pn(k, d),
+            urban=0.0,
+            forestry=0.0,
+            water=0.0,
+        ),
+        urban = (
+            native=0.0, 
+            cleared=d -> uc * pn(k, d), 
+            abandoned=0.0, 
+            urban=d -> uu * pn(k, d), 
+            forestry=0.0, 
+            water=0.0,
+        ),
+        forestry = empty,
+        water = empty,
+    )
+end
+map(==(keys(first(transitions))) ∘ keys, transitions)
 
 # The logic of sequential category change - can a transition happen at all
 # Human Population and species introduction events
@@ -294,13 +272,12 @@ end
 #     forestry=P(1.0; b...),
 # )
 pressure = let preds=lc_predictions, ngridcells=size(sum(masks.mus))
-    leverage=P(1.0; bounds=(0.0, 10.0))
-    smoothing=P(1.0; bounds=(1.0, 5.0))
+    leverage=P(1.0; bounds=(1.0, 10.0))
     # cleared=P(1.5; b...),
     # urban=P(1.4; b...)
-    abandoned = 1e-2
-    forestry = 1.0
-    native = -Inf # Never regrows
+    abandoned = 0.0
+    forestry = Inf
+    native = 0.0 # Never regrows
     water = Inf # Put it in as soon as its on the next map
     (data, rule) -> begin
         predicted = preds[At(currenttime(data))]
@@ -310,22 +287,15 @@ pressure = let preds=lc_predictions, ngridcells=size(sum(masks.mus))
         allowed_urban = ThreadsX.count(x -> x.urban, hist; init=0)
         ncleared = ThreadsX.sum(==(rule.states.cleared), parent(stategrid); init=0)
         nurban = ThreadsX.sum(==(rule.states.urban), parent(stategrid); init=0)
-        urban = calc_pressure(leverage, smoothing, nurban, predicted.urban, allowed_urban)
-        cleared = calc_pressure(leverage, smoothing, ncleared, predicted.cleared, allowed_cleared)
-        @show urban cleared allowed_urban allowed_cleared
+        urban = LandscapeChange.calc_pressure(leverage, nurban, predicted.urban, allowed_urban)
+        cleared = LandscapeChange.calc_pressure(leverage, ncleared, predicted.cleared, allowed_cleared)
+        # @show cleared urban ncleared nurban ncleared allowed_urban allowed_cleared
         NamedVector(; native, cleared, abandoned, urban, forestry, water)
     end
 end
-
-using DimensionalData, GLMakie
-function calc_pressure(leverage, smoothing, n, p, a)
-    leverage * (p - n) / max(a, oneunit(a))
-    # leverage * (p / n)
-    # max(1.0, p) / max(n,  max(1.0, p) / smoothing)
-end
-A = map(xy -> calc_pressure(1, 0.1, xy..., 10000), DimPoints((n=0:100, p=0:100)))
-Makie.heatmap(A)
-v = 1.0 + (-log(rand()^1.0))
+# A = map(xy -> calc_pressure(1, 0.1, xy..., 10000), DimPoints((n=0:100, p=0:100)))
+# Makie.heatmap(A)
+# v = 1.0 + (-log(rand()^1.0))
 
 n, c, a, u, f, w = states
 precursors = (
@@ -344,18 +314,16 @@ staterule = BottomUp{:landcover}(;
     transitions,
     logic=(; direct=logic, indirect=indirect_logic(logic)),
     pressure,
-    suitability=Aux{:suitability}(),
+    suitability=map(_ -> 1, states), #Aux{:suitability}(),
     history=Aux{:history}(),
     fixed=false,
-    perturbation=P(0.1; bounds=(0.0, 1.0), label="perturbation"),
+    perturbation=P(0.1; bounds=(0.0, 10.0), label="perturbation"),
 )
 init_state = (; 
     landcover=Rasters.mask!(fill(1, dims(masks.mus); missingval=0), with=masks.mus)
 )
 
-# Rasters.rplot(init_state.landcover; colorrange=(1, 6))
-# Rasters.rplot(striped_history; colorrange=(1, 6))
-aux = map(fix_order, (; suitability=suitability.mus, history))
+aux = map(fix_order, (; history, suitability=suitability.mus))
 tspan = 1600:2018
 array_output = ArrayOutput(init_state;
     aux,
@@ -367,12 +335,6 @@ array_output = ArrayOutput(init_state;
 )
 ruleset = Ruleset(staterule, eventrule; proc=CPUGPU());
 simdata = DynamicGrids.SimData(array_output, ruleset);
-@time sim!(array_output, ruleset; simdata, proc=CPUGPU(), printframe=true); 
-predicted_lc = Rasters.combine(RasterSeries(array_output, dims(array_output)))
-uncleared = rebuild(predicted_lc.landcover .== states.native; missingval=false, refdims=())
-using NCDatasets, Rasters
-# write("uncleared.nc", UInt8.(uncleared); force=true)
-uncleared = Bool.(Raster("uncleared.nc"))
 
 output = MakieOutput(init_state;
     aux, tspan,
@@ -383,17 +345,17 @@ output = MakieOutput(init_state;
     padval=0,
     ruleset,
     sim_kw=(; printframe=true),
-) do fig, time, frame
+) do fig, frame, time
     axis1 = Axis(fig[1, 1])
     axis2 = Axis(fig[1, 2])
     linkaxes!(axis1, axis2)
     landcover = Observable(frame[].landcover)
-    known_slices = Observable(view(striped_history, Ti(1)))
+    known_slices = Observable(view(striped_compiled, Ti(1)))
     on(frame) do f
         landcover[] = f.landcover
         t = tspan[time[]]::Int
-        if hasselection(striped_history, Ti(At(t)))
-            known_slices[] = view(striped_history, Ti(At(t)))
+        if hasselection(striped_compiled, Ti(At(t)))
+            known_slices[] = view(striped_compiled, Ti(At(t)))
             notify(known_slices)
         end
         notify(landcover)
@@ -405,3 +367,20 @@ output = MakieOutput(init_state;
     Colorbar(fig[1, 3], hm; ticks)
     return nothing
 end
+
+using ProfileView
+@profview 
+sim!(array_output, ruleset; simdata, proc=CPUGPU(), printframe=true, tspan=1600:1:1610); 
+predicted_lc = Rasters.combine(RasterSeries(array_output, dims(array_output)))
+never_cleared = rebuild(predicted_lc.landcover .== states.native; missingval=false, refdims=())
+urban = rebuild(predicted_lc.landcover .== states.urban; missingval=false,     refdims=())
+cleared = rebuild(predicted_lc.landcover .== states.cleared; missingval=fal    se, refdims=())
+write("never_cleared.nc", UInt8.(never_cleared); force=true)                   
+write("cleared.nc", UInt8.(cleared); force=true)                               
+write("urban.nc", UInt8.(urban); force=true)                                   
+never_cleared = Bool.(Raster("never_cleared.nc"))                              
+cleared = Bool.(Raster("cleared.nc"))                                          
+forestry = Bool.(Raster("forestry.nc"))                                        
+urban = Bool.(Raster("urban.nc"))
+
+display(output)

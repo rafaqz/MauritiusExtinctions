@@ -1,11 +1,10 @@
-
-includet("raster_common.jl")
+include("raster_common.jl")
 
 # This is not one file, but a series of "mus_roads_19XX"
 roads_paths = (;
     mus = joinpath(datadir, "Generated/Roads/mus/mus_roads.tif"),
     reu = joinpath(datadir, "Generated/Roads/reu/reu_roads.tif"),
-    rod = joinpath(datadir, "Generated/Roads/reu/rod_roads.tif"),
+    rod = joinpath(datadir, "Generated/Roads/rod/rod_roads.tif"),
 )
 
 # Empty roads for rodrigues
@@ -13,7 +12,7 @@ roads_paths = (;
 # write(roads_paths.rod, rodroads)
 
 road_series = map(roads_paths, dems[keys(roads_paths)]) do path, dem
-    series = map(A -> Bool.(A), RasterSeries(path, Ti))
+    series = map(A -> Bool.(A), RasterSeries(path, Ti(Int; span=Irregular(1500, 2020), sampling=Intervals(End()))))
     mask(series; with=dem, missingval=missing)
 end
 
@@ -111,65 +110,62 @@ end
 # end
 
 
-using MakieDraw
-using Test
-using GLMakie
-using GeometryBasics
-using GeoInterface
-using CSV, DataFrames
-using MapRasterization
-using GeoJSON
-using Colors
+# using MakieDraw
+# using Test
+# using GeometryBasics
+# using GeoInterface
+# using CSV, DataFrames
+# using MapRasterization
+# using GeoJSON
+# using Colors
 
-includet("raster_common.jl")
-includet("map_file_list.jl")
+# mus_roads_path = joinpath(datadir, "Generated/Roads/mus/mus_roads.tif")
+# reu_roads_path = joinpath(datadir, "Generated/Roads/reu/reu_roads.tif")
 
-mus_roads_path = joinpath(datadir, "Generated/Roads/mus/mus_roads.tif")
-reu_roads_path = joinpath(datadir, "Generated/Roads/reu/reu_roads.tif")
+# files = define_map_files()
 
-files = define_map_files()
-
-img_path = files.mus.atlas_dutch_period.filename
-img_path = files.mus.atlas_18C_land_use.filename
+# img_path = files.mus.atlas_dutch_period.filename
+# img_path = files.mus.atlas_18C_land_use.filename
 # img_path = files.mus.atlas_19C_land_use.filename
 # img_path = files.mus.atlas_1992_land_use.filename
-csv_path = splitext(img_path)[1] * ".csv"
-points = isfile(csv_path) ? open_warp_points(img_path) : nothing
-img = load_image(img_path)
-warper = MapRasterization.Warper(; template=dems.mus, point_table=points)
-rs = MapRasterization.warp(warper, img; missingval=0)
-rs = map(identity, rs)
+# csv_path = splitext(img_path)[1] * ".csv"
+# points = isfile(csv_path) ? open_warp_points(img_path) : nothing
+# img = load_image(img_path)
+# warper = MapRasterization.Warper(; template=dems.mus, point_table=points)
+# rs = MapRasterization.warp(warper, img; missingval=0)
+# rs = map(identity, rs)
 
-roadsdir = joinpath(datadir, "Generated/Roads")
-roads_dutch_path = joinpath(roadsdir, "roads_dutch.json")
-roads_1763_path = joinpath(roadsdir, "roads_1763.json")
-roads_added_by_1810_path = joinpath(roadsdir, "roads_added_by_1810.json")
-roads_1810_path = joinpath(roadsdir, "roads_1810.json")
-roads_1854_path = joinpath(roadsdir, "roads_1854.json")
-roads_added_by_1905_path = joinpath(roadsdir, "roads_1905.json")
+# roadsdir = joinpath(datadir, "Generated/Roads")
+# roads_dutch_path = joinpath(roadsdir, "roads_dutch.json")
+# roads_1763_path = joinpath(roadsdir, "roads_1763.json")
+# roads_added_by_1810_path = joinpath(roadsdir, "roads_added_by_1810.json")
+# roads_1810_path = joinpath(roadsdir, "roads_1810.json")
+# roads_1854_path = joinpath(roadsdir, "roads_1854.json")
+# roads_added_by_1905_path = joinpath(roadsdir, "roads_1905.json")
 
-roads_dutch = GeoJSON.read(read(roads_dutch_path))
-roads_1763 = GeoJSON.read(read(roads_1763_path))
-roads_added_by_1810 = GeoJSON.read(read(roads_added_by_1810_path))
-roads_1810 = GeoInterface.FeatureCollection(
-    vcat(collect(GeoInterface.getfeature(roads_1763)), collect(GeoInterface.getfeature(roads_added_by_1810)))
-)
-roads_1854 = GeoJSON.read(read(roads_1854_path))
-roads_added_by_1905 = GeoJSON.read(read(roads_added_by_1905_path))
-roads_1905 = GeoInterface.FeatureCollection(
-    vcat(collect(GeoInterface.getfeature(roads_1854)), collect(GeoInterface.getfeature(roads_added_by_1905)))
-)
+# roads_dutch = GeoJSON.read(read(roads_dutch_path))
+# roads_1763 = GeoJSON.read(read(roads_1763_path))
+# roads_added_by_1810 = GeoJSON.read(read(roads_added_by_1810_path))
+# roads_1810 = GeoInterface.FeatureCollection(
+#     vcat(collect(GeoInterface.getfeature(roads_1763)), collect(GeoInterface.getfeature(roads_added_by_1810)))
+# )
+# roads_1854 = GeoJSON.read(read(roads_1854_path))
+# roads_added_by_1905 = GeoJSON.read(read(roads_added_by_1905_path))
+# roads_1905 = GeoInterface.FeatureCollection(
+#     vcat(collect(GeoInterface.getfeature(roads_1854)), collect(GeoInterface.getfeature(roads_added_by_1905)))
+# )
 
-const GI = GeoInterface
-rod_json = joinpath(datadir, "Roads/rod_ways.geojson")
-rod_json = joinpath(datadir, "Roads/mus_ways.geojson")
-mus_roads = GI.convert.(Ref(GeometryBasics), filter(GI.geometry.(GeoJSON.read(read(rod_json)))) do x
-    GI.trait(x) isa LineStringTrait
-end)
-rod_roads = GI.convert.(Ref(GeometryBasics), filter(GI.geometry.(GeoJSON.read(read(rod_json)))) do x
-    GI.trait(x) isa LineStringTrait
-end)
-Makie.plot(rod_roads)
+# using GeoJSON
+# const GI = GeoInterface
+# rod_json = joinpath(datadir, "Roads/rod_ways.geojson")
+# rod_json = joinpath(datadir, "Roads/mus_ways.geojson")
+# mus_roads = GI.convert.(Ref(GeometryBasics), filter(GI.geometry.(GeoJSON.read(read(rod_json)))) do x
+#     GI.trait(x) isa LineStringTrait
+# end)
+# rod_roads = GI.convert.(Ref(GeometryBasics), filter(GI.geometry.(GeoJSON.read(read(rod_json)))) do x
+#     GI.trait(x) isa LineStringTrait
+# end)
+# Makie.plot(rod_roads)
 
 
 # GeoJSON.write(roads_1763_path, roads_1763)

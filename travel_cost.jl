@@ -1,9 +1,7 @@
-includet("roads.jl")
-includet("cost_distance.jl")
-# includet("map_file_list.jl")
-includet("ports.jl")
-includet("slope.jl")
-includet("raster_common.jl")
+include("roads.jl")
+include("cost_distance.jl")
+include("ports.jl")
+include("slope.jl")
 
 # slices = make_raster_slices(masks, lc_categories)
 
@@ -55,7 +53,7 @@ end
 
 @time travel_times = map(travel_origins, elevation, resistance) do o, e, r_series
     map(r_series) do r
-        cost_distance(o, e, r; cellsize=step(lookup(dems.mus, X)) * 111.0u"km")
+        replace_missing(rebuild(cost_distance(o, e, r; cellsize=step(lookup(dems.mus, X)) * 111.0u"km"); missingval=Inf * u"hr"))
     end
 end
 # Plots.plot(travel_times.mus)
