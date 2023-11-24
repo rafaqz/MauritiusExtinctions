@@ -193,12 +193,12 @@ pn(x, d) = Distributions.pdf(x, d) ./ Distributions.pdf(x, 0)
 b = (; bounds=(-2.0, 2.0))
 transitions = let empty = (native=0.0, cleared=0.0, abandoned=0.0, urban=0.0, forestry=0.0, water=0.0,),
                   k = Exponential(P(2.0; bounds=(0.00001, 5.0), label="kernel")),
-                  cn = P(0.05; b..., label="cleared from native"),
-                  cc = P(0.4; b..., label="cleared from cleared"),
+                  cn = P(0.1; b..., label="cleared from native"),
+                  cc = P(1.0; b..., label="cleared from cleared"),
                   ca = P(0.2; b..., label="cleared from abandoned"),
-                  aa = P(0.4; b..., label="abandoned from abandoned"),
+                  aa = P(0.8; b..., label="abandoned from abandoned"),
                   uc = P(0.2; b..., label="urban from cleared"),
-                  uu = P(0.4; b..., label="urban from urban")
+                  uu = P(1.0; b..., label="urban from urban")
     # ff = Exponential(P(1.7; b..., label="forestry from forestry"))
     (
         native = empty,
@@ -272,7 +272,7 @@ end
 #     forestry=P(1.0; b...),
 # )
 pressure = let preds=lc_predictions, ngridcells=size(sum(masks.mus))
-    leverage=P(1.0; bounds=(1.0, 10.0))
+    leverage=P(3.0; bounds=(1.0, 10.0))
     # cleared=P(1.5; b...),
     # urban=P(1.4; b...)
     abandoned = 0.0
@@ -317,7 +317,7 @@ staterule = BottomUp{:landcover}(;
     suitability=map(_ -> 1, states), #Aux{:suitability}(),
     history=Aux{:history}(),
     fixed=false,
-    perturbation=P(0.1; bounds=(0.0, 10.0), label="perturbation"),
+    perturbation=P(2.0; bounds=(0.0, 10.0), label="perturbation"),
 )
 init_state = (; 
     landcover=Rasters.mask!(fill(1, dims(masks.mus); missingval=0), with=masks.mus)
@@ -368,19 +368,23 @@ output = MakieOutput(init_state;
     return nothing
 end
 
+display(output)
+
 using ProfileView
 @profview 
-sim!(array_output, ruleset; simdata, proc=CPUGPU(), printframe=true, tspan=1600:1:1610); 
+sim!(array_output, ruleset; simdata, proc=CPUGPU(), printframe=true);
 predicted_lc = Rasters.combine(RasterSeries(array_output, dims(array_output)))
 never_cleared = rebuild(predicted_lc.landcover .== states.native; missingval=false, refdims=())
-urban = rebuild(predicted_lc.landcover .== states.urban; missingval=false,     refdims=())
-cleared = rebuild(predicted_lc.landcover .== states.cleared; missingval=fal    se, refdims=())
-write("never_cleared.nc", UInt8.(never_cleared); force=true)                   
-write("cleared.nc", UInt8.(cleared); force=true)                               
-write("urban.nc", UInt8.(urban); force=true)                                   
-never_cleared = Bool.(Raster("never_cleared.nc"))                              
-cleared = Bool.(Raster("cleared.nc"))                                          
-forestry = Bool.(Raster("forestry.nc"))                                        
-urban = Bool.(Raster("urban.nc"))
+urban = rebuild(predicted_lc.landcover .== states.urban; missingval=false, refdims=())
+cleared = rebuild(predicted_lc.landcover .== states.cleared; missingval=false, refdims=())
+forestry = rebuild(predicted_lc.landcover .== states.forestry; missingval=false, refdims=())
+abandoned = rebuild(predicted_lc.landcover .== states.abandoned; missingval=false, refdims=())
+forested = never_cleared .| forestry .| abandoned
+lc_predictions = RasterStack((; never_cleared, cleared, abandoned, urban, forestry, forested))
 
-display(output)
+lc_predictions_path = "$outputdir/lc_predictions.nc"
+write(lc_predictions_path, Rasters.modify(A -> UInt8.(A), lc_predictions))
+
+lc_predictions = rebuild(Rasters.modify(BitArray, RasterStack(lc_predictions_path)); missingval=false)
+# netcdf has the annoying center locus for time
+lc_predictions = Rasters.set(lc_predictions, Ti => Int.(maybeshiftlocus(Start(), dims(lc_predictions, Ti), )))

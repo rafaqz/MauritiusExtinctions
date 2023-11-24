@@ -56,8 +56,9 @@ island_extinct_names = map(get_species_names, island_extinct)
 aggfactor = 6
 
 include("species_rules.jl")
+aux = lc_predictions[(:never_cleared, :forested, :urban)]
 (; ruleset, pred_ruleset, inits, pred_inits, outputs, pred_outputs, outputs_kw, ag_masks) = def_syms(
-    pred_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, uncleared, 
+    pred_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, aux
 );
 island = :mus
 @time sim!(outputs.mus, ruleset; proc=SingleCPU());

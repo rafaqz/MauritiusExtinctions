@@ -92,7 +92,7 @@ end
 
 
 function def_syms(
-    pred_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, uncleared
+    pred_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, aux
 )
     aggscale = aggfactor^2
     moore = Moore{3}()
@@ -167,7 +167,7 @@ function def_syms(
     # scale_carrycap(populations, carrycap, interactions, suitabilities)
 
     # TODO :use forest density here
-    suitabilities = (forest_preference => Aux{:uncleared}(),)
+    suitabilities = (forest_preference => Aux{:never_cleared}(),)
 
     ag_masks = map(masks) do mask
         Rasters.aggregate(Rasters.Center(), mask, aggfactor)
@@ -175,10 +175,13 @@ function def_syms(
     ag_slope = map(slope_stacks) do s
         Rasters.aggregate(maximum, replace_missing(s.slope, 0), aggfactor)
     end
-    ag_uncleared1 = DimensionalData.modify(BitArray, Rasters.aggregate(Center(), uncleared, (X(aggfactor), Y(aggfactor))))
-    # Extend a century earlier
-    ag_uncleared = Rasters.extend(ag_uncleared1; to=(Ti(1500:1:2020),))
-    broadcast_dims!(identity, view(ag_uncleared, Ti=1500..1600), view(ag_uncleared1, Ti=At(1600)))
+    A = first(aux)
+    map(aux) do A
+        ag_A1 = DimensionalData.modify(BitArray, Rasters.aggregate(Center(), A, (X(aggfactor), Y(aggfactor))))
+        # Extend a century earlier
+        ag_A = Rasters.extend(maybeshiftlocus(ag_A1; to=(Ti(1500:1:2020),))
+        broadcast_dims!(identity, view(ag_A, Ti=1500..1600), view(ag_A1, Ti=At(1600)))
+    end
 
     ag_roughness = map(dems) do dem
         # Clip roughness at a maximum of 500
@@ -309,7 +312,7 @@ function def_syms(
 
     habitat = let
         Cell{:presences}() do data, presences, I
-            hp = get(data, Aux{:uncleared}(), I)
+            hp = get(data, Aux{:never_cleared}(), I)
             habitat_requirement = DG.aux(data).habitat_requirement
             map(presences, habitat_requirement) do present, hs
                 if present
@@ -323,7 +326,7 @@ function def_syms(
 
     clearing = let
         Cell{:endemic_presences}() do data, presences, I
-            uc = get(data, Aux{:uncleared}(), I)
+            uc = get(data, Aux{:never_cleared}(), I)
             presences .& uc
         end
     end
@@ -446,7 +449,9 @@ function def_syms(
             recouperation_rate=getproperty(recouperation_rates, island),
             habitat_requirement=getproperty(habitat_requirements, island),
             dem=getproperty(stencil_dems, island),
-            uncleared=ag_uncleared,
+            never_cleared=ag_never_cleared,
+            forested=ag_forested,
+            urban=ag_urban,
         )
         (; aux, mask=getproperty(stencil_masks, island), tspan, n_extinct)
     end
