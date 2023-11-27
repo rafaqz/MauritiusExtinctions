@@ -18,13 +18,13 @@ include("raster_common.jl")
 
 function gpu_cleanup(A)
     x, y, ti = lookup(A, (X, Y, Ti))
-    set(A, 
+    Rasters.set(A, 
         Ti => Sampled(first(ti) - 0.5:last(ti) - 0.5; sampling=Intervals(Start())),
         X => LinRange(first(x), last(x), length(x)), 
         Y => LinRange(first(y), last(y), length(y)),
     )
 end
-uncleared = gpu_cleanup(modify(BitArray, Raster("uncleared.nc")))
+uncleared = gpu_cleanup(Rasters.modify(BitArray, Raster("uncleared.nc")))
 # forested = gpu_cleanup(modify(BitArray, Raster("forested.nc")))
 
 pred_df = CSV.read("animals.csv", DataFrame)
@@ -61,7 +61,7 @@ aux = lc_predictions[(:never_cleared, :forested, :urban)]
     pred_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, aux
 );
 island = :mus
-@time sim!(outputs.mus, ruleset; proc=SingleCPU());
+@time sim!(outputs.mus, ruleset; proc=SingleCPU(), );
 @time sim!(pred_outputs.mus, pred_ruleset; proc=SingleCPU());
 
 mk(inits[island], ruleset; outputs_kw[island]...)

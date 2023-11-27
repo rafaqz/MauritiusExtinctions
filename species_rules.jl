@@ -67,7 +67,6 @@ DynamicGrids.modifyrule(rule::InteractiveGrowth, data) = Dispersal.precalc_nstep
         end
     end
     if any(isnan, newpops)
-        @show populations growth_rates scaling final_carrycap newpops
         error()
     end
     return max.(zero(eltype(populations)), newpops)
@@ -88,8 +87,6 @@ function scale_carrycap(populations, carrycaps, interactions, suitabilities)
     # Limit minimum adjustment to 0.0
     return max.(0.0, carrycap_adjustment)
 end
-
-
 
 function def_syms(
     pred_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, aux
@@ -176,11 +173,12 @@ function def_syms(
         Rasters.aggregate(maximum, replace_missing(s.slope, 0), aggfactor)
     end
     A = first(aux)
-    map(aux) do A
+    ag_aux = map(aux) do A
         ag_A1 = DimensionalData.modify(BitArray, Rasters.aggregate(Center(), A, (X(aggfactor), Y(aggfactor))))
         # Extend a century earlier
-        ag_A = Rasters.extend(maybeshiftlocus(ag_A1; to=(Ti(1500:1:2020),))
+        ag_A = Rasters.extend(ag_A1; to=(Ti(1500:1:2020),))
         broadcast_dims!(identity, view(ag_A, Ti=1500..1600), view(ag_A1, Ti=At(1600)))
+        return ag_A
     end
 
     ag_roughness = map(dems) do dem
@@ -285,11 +283,9 @@ function def_syms(
         intros = DG.aux(data)[:introductions]
         foreach(intros) do intro
             if intro.year == current_year
-                @show intro.year current_year
                 p = intro.geometry
                 I = DimensionalData.dims2indices(D, (X(Contains(p.X)), Y(Contains(p.Y))))
                 pred_pops[I...] = pred_pops[I...] .+ intro.init
-                @show pred_pops[I...]
             end
         end
     end
@@ -449,9 +445,7 @@ function def_syms(
             recouperation_rate=getproperty(recouperation_rates, island),
             habitat_requirement=getproperty(habitat_requirements, island),
             dem=getproperty(stencil_dems, island),
-            never_cleared=ag_never_cleared,
-            forested=ag_forested,
-            urban=ag_urban,
+            ag_aux...
         )
         (; aux, mask=getproperty(stencil_masks, island), tspan, n_extinct)
     end
