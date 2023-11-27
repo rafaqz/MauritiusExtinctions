@@ -23,36 +23,43 @@ const DD = DimensionalData
 
 const NV = NamedVector
 
-struct InteractiveGrowth{R,W,GR,CC,I,Su,TS,St} <: Dispersal.GrowthRule{R,W}
+struct InteractiveGrowth{R,W,GR,CC,CS,I<:NamedTuple,TS,St} <: Dispersal.GrowthRule{R,W}
     rate::GR
     carrycap::CC
-    interactions::I
-    suitabilities::Su
+    carrycap_scaling::CS
+    inputs::I
     timestep::TS
     nsteps::St
 end
 function InteractiveGrowth{R,W}(;
     rate,
     carrycap,
-    interactions,
-    suitabilities,
+    carrycap_scaling,
+    inputs=(;),
     timestep,
     nsteps_type=Float64,
 ) where {R,W}
     InteractiveGrowth{R,W}(
-        rate, carrycap, interactions, suitabilities, timestep, zero(nsteps_type)
+        rate, carrycap, carrycap_scaling, inputs, timestep, zero(nsteps_type)
     )
 end
 
 DynamicGrids.modifyrule(rule::InteractiveGrowth, data) = Dispersal.precalc_nsteps(rule, data)
 
-@inline function DynamicGrids.applyrule(data, rule::InteractiveGrowth, populations, I)
+@inline function DynamicGrids.applyrule(data, rule::InteractiveGrowth, populations::NamedTuple{Keys}, I) where Keys
     growth_rates = get(data, rule.rate, I...) .* rule.nsteps
-    local_suitabilities = map(rule.suitabilities) do (param, val)
+    local_inputs = map(rule.inputs) do (param, val)
         param => get(data, val, I)
     end
+    relative_pop = NamedTuple(populations ./ rule.carrycap))
+    # combine populations
+    params = merge(relative_pop, local_inputs)
+    
+    scaling = map(rule.carrycap_scaling[Keys]) do f
+        f(params)
+    end |> NamedVector{Keys}
 
-    scaling = scale_carrycap(populations, rule.carrycap, rule.interactions, local_suitabilities)
+    # scaling = scale_carrycap(populations, rule.carrycap, rule.interactions, local_suitabilities)
     final_carrycap = rule.carrycap .* scaling
 
     newpops = map(populations, growth_rates, final_carrycap) do N, rt, k
@@ -119,31 +126,40 @@ function def_syms(
         pig =        0.3,
         snake =      20.0,
     ) .* aggscale
-    interactions = NV(
-        cat =        NV(cat= 0.0, black_rat= 0.5, norway_rat= 0.2, mouse= 0.6, pig=0.0, snake= 0.0),
-        black_rat =  NV(cat=-0.2, black_rat= 0.0, norway_rat=-0.3, mouse=-0.1, pig=0.0, snake= 0.01),
-        norway_rat = NV(cat=-0.1, black_rat=-0.2, norway_rat= 0.0, mouse=-0.1, pig=0.0, snake= 0.01),
-        mouse =      NV(cat=-0.2, black_rat=-0.1, norway_rat=-0.1, mouse= 0.0, pig=0.0, snake=-0.1),
-        pig =        NV(cat= 0.0, black_rat= 0.0, norway_rat= 0.0, mouse= 0.0, pig=0.0, snake= 0.0),
-        snake =      NV(cat=-0.1, black_rat= 0.2, norway_rat= 0.1, mouse= 0.3, pig=0.0, snake= 0.0),
+    # interactions = NV(
+    #     cat =        NV(cat= 0.0, black_rat= 0.5, norway_rat= 0.2, mouse= 0.6, pig=0.0, snake= 0.0),
+    #     black_rat =  NV(cat=-0.2, black_rat= 0.0, norway_rat=-0.3, mouse=-0.1, pig=0.0, snake= 0.01),
+    #     norway_rat = NV(cat=-0.1, black_rat=-0.2, norway_rat= 0.0, mouse=-0.1, pig=0.0, snake= 0.01),
+    #     mouse =      NV(cat=-0.2, black_rat=-0.1, norway_rat=-0.1, mouse= 0.0, pig=0.0, snake=-0.1),
+    #     pig =        NV(cat= 0.0, black_rat= 0.0, norway_rat= 0.0, mouse= 0.0, pig=0.0, snake= 0.0),
+    #     snake =      NV(cat=-0.1, black_rat= 0.2, norway_rat= 0.1, mouse= 0.3, pig=0.0, snake= 0.0),
+    # )
+    # # 0 is no interaction, less than one negative interaction, more than one positive
+    # human_dependency = NV(
+    #     cat =        10.0,
+    #     black_rat =   2.0,
+    #     norway_rat =  5.0,
+    #     mouse =       3.0,
+    #     pig =        -0.9,
+    #     snake =      -0.1,
+    # )
+    # forest_preference = Param.(NV(
+    #     cat =        -0.2,
+    #     black_rat =   0.4,
+    #     norway_rat = -0.2,
+    #     mouse =      -0.2,
+    #     pig =         0.5,
+    #     snake =       0.3,
+    # ))
+    pred_funcs = (
+        cat =        p -> 0.5p.black_rat + 0.2p.norway_rat + 0.6p.mouse + -0.2p.forest .+ 10p.human
+        black_rat  = p -> -0.2p.cat + 0.2p.norway_rat + 0.6p.mouse + 0.4p.forest .+ 2p.human
+        norway_rat = p -> -0.1p.cat + -0.2p.black_rat + -0.1p.mouse + -0.2p.forest .+ 5p.human
+        mouse =      p -> -0.2p.cat + 0.5p.black_rat + 0.2p.norway_rat + -0.2p.forest .+ 3p.human
+        pig =        p -> -0.9p.human + 0.5p.forest
+        snake =      p -> -0.1p.cat + 0.2p.black_rat + 0.1p.norway_rat + 0.3p.mouse + -0.1p.human + 0.3p.forest
     )
-    # 0 is no interaction, less than one negative interaction, more than one positive
-    human_dependency = NV(
-        cat =        10.0,
-        black_rat =   2.0,
-        norway_rat =  5.0,
-        mouse =       3.0,
-        pig =        -0.9,
-        snake =      -0.9,
-    )
-    forest_preference = Param.(NV(
-        cat =        -0.2,
-        black_rat =   0.4,
-        norway_rat = -0.2,
-        mouse =      -0.2,
-        pig =         0.5,
-        snake =       0.3,
-    ))
+
     spread_rate = NV(
         cat =         10.0,
         black_rat =   1.0,
