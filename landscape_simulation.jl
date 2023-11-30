@@ -376,7 +376,7 @@ lc_predictions = map(NamedTuple(states)) do state
 end |> RasterStack
 
 lc_predictions_path = "$outputdir/lc_predictions.nc"
-# write(lc_predictions_path, Rasters.modify(A -> UInt8.(A), lc_predictions))
+write(lc_predictions_path, Rasters.modify(A -> UInt8.(A), lc_predictions))
 lc_predictions = rebuild(Rasters.modify(BitArray, RasterStack(lc_predictions_path)); missingval=false)
 # netcdf has the annoying center locus for time
 lc_predictions = Rasters.set(lc_predictions, Ti => Int.(maybeshiftlocus(Start(), dims(lc_predictions, Ti), )))
