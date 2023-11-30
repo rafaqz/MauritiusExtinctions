@@ -368,23 +368,15 @@ output = MakieOutput(init_state;
     return nothing
 end
 
-display(output)
-
-using ProfileView
-@profview 
 sim!(array_output, ruleset; simdata, proc=CPUGPU(), printframe=true);
+
 predicted_lc = Rasters.combine(RasterSeries(array_output, dims(array_output)))
-never_cleared = rebuild(predicted_lc.landcover .== states.native; missingval=false, refdims=())
-urban = rebuild(predicted_lc.landcover .== states.urban; missingval=false, refdims=())
-cleared = rebuild(predicted_lc.landcover .== states.cleared; missingval=false, refdims=())
-forestry = rebuild(predicted_lc.landcover .== states.forestry; missingval=false, refdims=())
-abandoned = rebuild(predicted_lc.landcover .== states.abandoned; missingval=false, refdims=())
-forested = never_cleared .| forestry .| abandoned
-lc_predictions = RasterStack((; never_cleared, cleared, abandoned, urban, forestry, forested))
+lc_predictions = map(NamedTuple(states)) do state
+    rebuild(predicted_lc.landcover .== state; missingval=false, refdims=())
+end |> RasterStack
 
 lc_predictions_path = "$outputdir/lc_predictions.nc"
-write(lc_predictions_path, Rasters.modify(A -> UInt8.(A), lc_predictions))
-
+# write(lc_predictions_path, Rasters.modify(A -> UInt8.(A), lc_predictions))
 lc_predictions = rebuild(Rasters.modify(BitArray, RasterStack(lc_predictions_path)); missingval=false)
 # netcdf has the annoying center locus for time
 lc_predictions = Rasters.set(lc_predictions, Ti => Int.(maybeshiftlocus(Start(), dims(lc_predictions, Ti), )))

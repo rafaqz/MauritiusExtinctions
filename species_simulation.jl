@@ -28,6 +28,7 @@ uncleared = gpu_cleanup(Rasters.modify(BitArray, Raster("uncleared.nc")))
 # forested = gpu_cleanup(modify(BitArray, Raster("forested.nc")))
 
 pred_df = CSV.read("animals.csv", DataFrame)
+introductions_df = CSV.read("introductions.csv", DataFrame)
 mascarine_species_csv = "/home/raf/PhD/Mascarenes/Tables/mascarine_species.csv"
 # @async run(`libreoffice $mascarine_species_csv`)
 all_species = CSV.read(mascarine_species_csv, DataFrame) |> 
@@ -55,18 +56,32 @@ end
 island_extinct_names = map(get_species_names, island_extinct)
 aggfactor = 6
 
+lc_predictions_path = "$outputdir/lc_predictions.nc"
+# netcdf has the annoying center locus for time
+lc_predictions = RasterStack(lc_predictions_path) |>
+    x -> rebuild(Rasters.modify(BitArray, x); missingval=false) |>
+    x -> Rasters.set(x, Ti => Int.(maybeshiftlocus(Start(), dims(x, Ti), )))
+aux = lc_predictions
 include("species_rules.jl")
-aux = lc_predictions[(:never_cleared, :forested, :urban)]
-(; ruleset, pred_ruleset, inits, pred_inits, outputs, pred_outputs, outputs_kw, ag_masks) = def_syms(
-    pred_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, aux
+(; ruleset, pred_ruleset, inits, pred_inits, outputs, pred_outputs, outputs_kw, ag_masks, carrycap) = def_syms(
+    pred_df, introductions_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, aux
 );
+# Rasters.rplot(aux[Ti=270])
 island = :mus
-@time sim!(outputs.mus, ruleset; proc=SingleCPU(), );
+@time sim!(outputs.mus, ruleset; proc=SingleCPU());
 @time sim!(pred_outputs.mus, pred_ruleset; proc=SingleCPU());
+max_pops = map(outputs.mus) do frame
+    map(keys(first(frame.pred_pops))) do key
+        maximum(x -> getproperty(x, key), frame.pred_pops)
+    end
+end |> maximum
 
-mk(inits[island], ruleset; outputs_kw[island]...)
+mkoutput = mk(inits[island], ruleset; carrycaps=max_pops, outputs_kw[island]...)
+Rasters.rplot(getproperty.(mkoutput[end].pred_pops, :mouse))
+maximum(getproperty.(mkoutput[end].pred_pops, :mouse))
 # vecmax(a, x) = max.(a, x)
 # popmaxs = min.(60, mapreduce(s -> reduce(vecmax, s.pred_pops), vecmax, pred_outputs.mus))
+masks.mus
 
 using Stencils, StaticArrays, BenchmarkTools
 rand(typeof(w)) .* rand(typeof(w))
