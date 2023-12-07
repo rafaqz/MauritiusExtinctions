@@ -21,37 +21,3 @@ function plot_lc_makie(lc_raster::Raster)
     return fig
 end
 
-function rasterize_lc(template, shape_file, crs_file; res=nothing, categories)
-    lc_shape = Shapefile.Table(shape_file)
-    lc_crs = WellKnownText(readlines(crs_file)[1])
-    lc_df = DataFrame(lc_shape)
-    lc_raster = Raster(similar(template, Int32); missingval=typemin(Int32))
-    lc_raster .= typemin(Int32)
-    if !isnothing(res)
-        lc_raster = read(resample(lc_raster, res; crs=lc_crs))
-    end
-    display(dims(lc_raster))
-    # Order of rasterization matters?... (probably should calculate areas?)
-    fillvals = [
-        categories.No_Data,
-        categories.Water,
-        categories.Herbaceaous_vegetation,
-        categories.Shrub_vegetation,
-        categories.Barren_land,
-        categories.Other_cropland,
-        categories.Sugarcane,
-        categories.Pasture,
-        categories.Forest,
-        categories.Mangrove,
-        categories.Continuous_urban,
-        categories.Discontinuous_urban,
-    ]
-    for fillval in fillvals
-        rows = filter(x -> x.ocsol_num == fillval, lc_df)
-        if length(rows.geometry) > 0
-            fillname = first(eachrow(rows)).ocsol_name
-            rasterize!(lc_raster, rows.geometry; fill=fillval)
-        end
-    end
-    return lc_raster
-end

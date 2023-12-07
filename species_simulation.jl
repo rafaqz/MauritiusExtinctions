@@ -54,7 +54,7 @@ island_extinct = map(island_tables, island_names) do table, name
     subset(table, Symbol(name, "_extinct") => ByRow(!ismissing))
 end
 island_extinct_names = map(get_species_names, island_extinct)
-aggfactor = 6
+aggfactor = 8
 
 lc_predictions_path = "$outputdir/lc_predictions.nc"
 # netcdf has the annoying center locus for time
@@ -68,8 +68,8 @@ include("species_rules.jl")
 );
 # Rasters.rplot(aux[Ti=270])
 island = :mus
-@time sim!(outputs.mus, ruleset; proc=SingleCPU());
-@time sim!(pred_outputs.mus, pred_ruleset; proc=SingleCPU());
+@time sim!(outputs.mus, ruleset; proc=ThreadedCPU());
+# @time sim!(pred_outputs.mus, pred_ruleset; proc=SingleCPU());
 max_pops = map(outputs.mus) do frame
     map(keys(first(frame.pred_pops))) do key
         maximum(x -> getproperty(x, key), frame.pred_pops)
@@ -77,6 +77,7 @@ max_pops = map(outputs.mus) do frame
 end |> maximum
 
 mkoutput = mk(inits[island], ruleset; carrycaps=max_pops, outputs_kw[island]...)
+display(mkoutput)
 Rasters.rplot(getproperty.(mkoutput[end].pred_pops, :mouse))
 maximum(getproperty.(mkoutput[end].pred_pops, :mouse))
 # vecmax(a, x) = max.(a, x)

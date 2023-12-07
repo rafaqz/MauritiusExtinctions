@@ -9,6 +9,8 @@ using ThreadsX
 using ModelParameters
 using DimensionalData, GLMakie
 using NCDatasets, Rasters
+using GLMakie
+using Rasters.LookupArrays
 
 # From woods and forests in Mauritius, p 40:40
 # 1880: 70,000 acres out of 300,000 remain
@@ -17,7 +19,7 @@ using NCDatasets, Rasters
 include("travel_cost.jl")
 include("tabular_data.jl")
 include("landcover_logic.jl")
-include("map_file_list_2.jl")
+include("map_file_functions.jl")
 
 states = NamedVector(lc_categories)
 
@@ -34,14 +36,26 @@ logic = NV(
     water     = NV(native=true,  cleared=true,  abandoned=true,  urban=true,  forestry=false,  water=true),
 )
 
-slices = make_raster_slices(masks, lc_categories; category_names);
-nv_rast = Rasters.combine(namedvector_raster.(slices.mus.timeline))
-striped_raw = stripe_raster(nv_rast, states)
-# Rasters.rplot(striped_raw[Ti=1750..2050]; colorrange=(1, 6))
-compiled = compile_timeline(logic, nv_rast; assume_continuity=true)
-history = compiled.timeline
-striped_compiled = stripe_raster(compiled.timeline, states)
-# Rasters.rplot(striped_compiled[Ti=1750..2050]; colorrange=(1, 6))
+include("map_file_list_2.jl")
+slices = make_raster_slices(masks, lc_categories; category_names)
+nv_rasts = map(slices) do island
+    Rasters.combine(namedvector_raster.(island.timeline))
+end
+striped_raw = map(nv_rasts) do nv_rast
+    stripe_raster(nv_rast, states)
+end
+compiled = map(nv_rasts) do nv_rast
+    compile_timeline(logic, nv_rast; assume_continuity=true)
+end
+striped_compiled = map(compiled) do island
+    stripe_raster(island.timeline, states)
+end
+Rasters.rplot(striped_compiled.reu; colorrange=(1, 6))
+Rasters.rplot(striped_compiled.reu; colorrange=(1, 6))
+Rasters.rplot(striped_compiled.reu; colorrange=(1, 6))
+
+Rasters.rplot(striped_compiled.mus; colorrange=(1, 6))
+Rasters.rplot(striped_compiled.rod; colorrange=(1, 6))
 
 # pixel_timeline1 = compiled.timeline[Y=Near(-20.363), X=Near(57.5015)]
 # pixel_timeline = compiled.timeline[Y=Near(-20.363), X=Near(57.5015)]
@@ -57,44 +71,51 @@ striped_compiled = stripe_raster(compiled.timeline, states)
 # b = NV(native=false, cleared=true, abandoned=false, urban=false, forestry=false, water=false)
 # _merge_all_possible(a, b, logic) |> pairs
 # _merge_all_possible(b, a, logic) |> pairs
-logic
 
 cat_counts = let states=states
-    map(slice(history[Ti=1600..2017], Ti)) do slice
-        total_counts = zeros(Int, size(first(slice)))
-        known_counts = zeros(Int, size(first(slice)))
-        for categories in slice
-            total_counts .+= categories
-            if count(categories) == 1
-                known_counts .+= categories
+    map(human_pop_timeline, compiled) do human_pop, history
+        map(slice(history.timeline[Ti=1600..2017], Ti)) do slice
+            total_counts = zeros(Int, size(first(slice)))
+            known_counts = zeros(Int, size(first(slice)))
+            for categories in slice
+                total_counts .+= categories
+                if count(categories) == 1
+                    known_counts .+= categories
+                end
             end
-        end
-        vals = ntuple(length(states)) do i
-            known = known_counts[i]
-            total = total_counts[i]
-            year = first(refdims(slice, Ti))
-            pop = human_pop_timeline.mus[Near(year)]
-            (; total, known, ratio=known/total, meancount=(known + total) / 2, year, pop)
+            vals = ntuple(length(states)) do i
+                known = known_counts[i]
+                total = total_counts[i]
+                year = first(refdims(slice, Ti))
+                pop = human_pop[Near(year)]
+                (; total, known, ratio=known/total, meancount=(known + total) / 2, year, pop)
+            end 
+            NamedVector{keys(states)}(vals)
         end 
-        NamedVector{keys(states)}(vals)
-    end 
+    end
 end
 
-high_certainty = map(category_names) do k
-    vals = map(cat_counts) do val
-        val[k]
+high_certainty = map(cat_counts) do cc
+    map(category_names) do k
+        vals = map(cc) do val
+            val[k]
+        end
+        filter(v -> v.ratio > 0.7, vals)
     end
-    filter(v -> v.ratio > 0.7, vals)
 end
+high_certainty.reu.cleared
+
 
 # Cleared land is used for urbanisation by 1992, so don't use it in the model
-cleared_model = lm(@formula(meancount ~ pop^2 + pop), DataFrame(high_certainty.cleared))
-urban_model = lm(@formula(meancount ~ pop^2), DataFrame(high_certainty.urban))
-ti = dims(human_pop_timeline.mus, Ti)
-pops = map(pop -> (; pop), human_pop_timeline.mus)
-cleared_pred = DimArray(predict(cleared_model, parent(pops)), ti)
-urban_pred = DimArray(predict(urban_model, parent(pops)), ti)
-lc_predictions = map((cleared, urban) -> (; cleared, urban), cleared_pred, urban_pred)
+lc_predictions = map(high_certainty[(:mus, :reu)]) do hc 
+    cleared_model = lm(@formula(meancount ~ pop^2 + pop), DataFrame(hc.cleared))
+    urban_model = lm(@formula(meancount ~ pop^2), DataFrame(hc.urban))
+    ti = dims(human_pop_timeline.mus, Ti)
+    pops = map(pop -> (; pop), human_pop_timeline.mus)
+    cleared_pred = DimArray(predict(cleared_model, parent(pops)), ti)
+    urban_pred = DimArray(predict(urban_model, parent(pops)), ti)
+    map((cleared, urban) -> (; cleared, urban), cleared_pred, urban_pred)
+end
 # Plots.plot(first.(pops))
 # Plots.plot(cleared_pred)
 # Plots.scatter!(getproperty.(high_certainty.cleared, :known))
@@ -375,8 +396,36 @@ lc_predictions = map(NamedTuple(states)) do state
     rebuild(predicted_lc.landcover .== state; missingval=false, refdims=())
 end |> RasterStack
 
+include("raster_common.jl")
 lc_predictions_path = "$outputdir/lc_predictions.nc"
-write(lc_predictions_path, Rasters.modify(A -> UInt8.(A), lc_predictions))
+# write(lc_predictions_path, Rasters.modify(A -> UInt8.(A), lc_predictions))
 lc_predictions = rebuild(Rasters.modify(BitArray, RasterStack(lc_predictions_path)); missingval=false)
 # netcdf has the annoying center locus for time
 lc_predictions = Rasters.set(lc_predictions, Ti => Int.(maybeshiftlocus(Start(), dims(lc_predictions, Ti), )))
+
+mus_veg_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page33_mauritius_vegetation_colored.tif"
+mus_veg = Raster(mus_veg_path)
+# Makie.plot(mus_veg)
+
+veg_change = rebuild(UInt8.(broadcast_dims(*, lc_predictions.native, mus_veg)); missingval=0)
+Rasters.rplot(veg_change[Ti=Near(2000)])
+Rasters.rplot(veg_change)
+
+habitat_names = ["semi-dry_evergreen_forest", "open_dry_palm-rich_woodland", "wet_forest", "pandanus_swamp", "mossy_rainforest", "mangrove", "wetland vegetation"]
+length(habitat_names)
+habitat_sums = cat(map(1:7) do habitat
+    dropdims(sum(==(habitat), veg_change; dims=(X, Y)); dims=(X, Y))
+end...; dims=Dim{:habitat}(habitat_names))
+init_total = sum(habitat_sums) do x
+    x[1]
+end
+cum = cumsum(habitat_sums; dims=2)
+x = lookup(habitat_sums, Ti)
+fig = Figure()
+ax = Axis(fig[1, 1])
+for i in 7:-1:1
+    y = parent(cum[habitat=i])
+    Makie.lines!(x, y; color=:black)
+    band!(x, fill(0, length(x)), y; label = "Label")
+end
+fig[1, 2] = Legend(fig, ax, habitat_names)

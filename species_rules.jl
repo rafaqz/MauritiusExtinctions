@@ -23,30 +23,16 @@ const DD = DimensionalData
 
 const NV = NamedVector
 
-struct InteractiveGrowth{R,W,GR,CC,CS,I<:NamedTuple,TS,St} <: Dispersal.GrowthRule{R,W}
-    rate::GR
+struct InteractiveCarryCap{R,W,CC,CS,I<:NamedTuple} <: Dispersal.GrowthRule{R,W}
     carrycap::CC
     carrycap_scaling::CS
     inputs::I
-    timestep::TS
-    nsteps::St
 end
-function InteractiveGrowth{R,W}(;
-    rate,
-    carrycap,
-    carrycap_scaling,
-    inputs=(;),
-    timestep,
-    nsteps_type=Float64,
-) where {R,W}
-    InteractiveGrowth{R,W}(
-        rate, carrycap, carrycap_scaling, inputs, timestep, zero(nsteps_type)
-    )
+function InteractiveCarryCap{R,W}(; carrycap, carrycap_scaling, inputs=(;),) where {R,W}
+    InteractiveCarryCap{R,W}(carrycap, carrycap_scaling, inputs)
 end
 
-DynamicGrids.modifyrule(rule::InteractiveGrowth, data) = Dispersal.precalc_nsteps(rule, data)
-
-@inline function DynamicGrids.applyrule(data, rule::InteractiveGrowth, populations::NamedVector{Keys}, I) where Keys
+@inline function DynamicGrids.applyrule(data, rule::InteractiveCarryCap, carrycap::NamedVector{Keys}, I) where Keys
     growth_rates = get(data, rule.rate, I...) .* rule.nsteps
     local_inputs = map(rule.inputs) do val
         get(data, val, I)
@@ -59,25 +45,27 @@ DynamicGrids.modifyrule(rule::InteractiveGrowth, data) = Dispersal.precalc_nstep
         oneunit(eltype(populations)) + f(params)
     end |> NamedVector
 
-    # scaling = scale_carrycap(populations, rule.carrycap, rule.interactions, local_suitabilities)
-    final_carrycap = max.(zero(eltype(rule.carrycap)), rule.carrycap .* scaling)
-
-    newpops = map(populations, growth_rates, final_carrycap) do N, rt, cc
-        if rt > zero(rt)
-            if cc <= zero(cc)
-                zero(N)
-            else
-                (N * cc) / (N + (cc - N) * exp(-rt))
-            end
-        else
-            N * exp(rt)
-        end
-    end
-    any(isnan, newpops) && error("NaN population found")
-    out = max.(zero(eltype(populations)), newpops)
-    # any(map(>, out, final_carrycap)) && @show out rule.carrycap final_carrycap
-    return out
+    return max.(zero(eltype(rule.carrycap)), rule.carrycap .* scaling)
 end
+
+    # # scaling = scale_carrycap(populations, rule.carrycap, rule.interactions, local_suitabilities)
+
+    # newpops = map(populations, growth_rates, final_carrycap) do N, rt, cc
+    #     if rt > zero(rt)
+    #         if cc <= zero(cc)
+    #             zero(N)
+    #         else
+    #             (N * cc) / (N + (cc - N) * exp(-rt))
+    #         end
+    #     else
+    #         N * exp(rt)
+    #     end
+    # end
+    # any(isnan, newpops) && error("NaN population found")
+    # out = max.(zero(eltype(populations)), newpops)
+    # # any(map(>, out, final_carrycap)) && @show out rule.carrycap final_carrycap
+    # return out
+# end
 
 function def_syms(
     pred_df, introductions_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, aux
@@ -113,11 +101,11 @@ function def_syms(
 
     pred_funcs = (;
         cat =        p -> 1.0p.black_rat + 0.2p.norway_rat + 1.0p.mouse + 10p.urban + 2p.cleared,
-        black_rat  = p -> -0.2p.cat + -0.1p.norway_rat + -0.1p.mouse + 0.5p.native + 0.3p.abandoned + 1p.urban,
-        norway_rat = p -> -0.1p.cat + -0.1p.black_rat + -0.1p.mouse + 1.5p.urban,
-        mouse =      p -> -0.3p.cat + -0.2p.black_rat + -0.2p.norway_rat + 1p.urban,
-        pig =        p -> 0.5p.native + 0.4p.abandoned - 1p.urban,
-        snake =      p -> -0.2p.cat + 0.2p.black_rat + 0.3p.mouse + -0.5p.urban + 0.3p.native,
+        black_rat  = p -> -0.2p.cat - 0.1p.norway_rat - 0.1p.mouse + 0.5p.native + 0.3p.abandoned + 1p.urban,
+        norway_rat = p -> -0.1p.cat - 0.1p.black_rat - 0.1p.mouse + 1.5p.urban,
+        mouse =      p -> -0.3p.cat - 0.2p.black_rat - 0.2p.norway_rat + 0.8p.cleared + 1.5p.urban,
+        pig =        p -> 0.5p.native + 0.4p.abandoned - 1p.urban - 0.3p.cleared,
+        snake =      p -> -0.2p.cat + 0.2p.black_rat + 0.3p.mouse - 0.5p.urban + 0.3p.native,
     )
 
     pred_inputs = NamedTuple{keys(aux)}(map(Aux, keys(aux)))
@@ -205,7 +193,6 @@ function def_syms(
             (; year=r.year, geometry=(X=r.lon, Y=r.lat), init)
         end
     end
-    @show introductions
 
     pred_rmax = PredNV(pred_df.rmax)
     pred_max_density = PredNV(pred_df.max_density)
@@ -213,11 +200,15 @@ function def_syms(
         map(_ -> map(_ -> 0.0, pred_rmax), m)
     end
 
-    pred_growth = InteractiveGrowth{:pred_pops}(;
-        rate=pred_rmax,
+    pred_carrycap = InteractiveCarryCap{:carrycap}(;
         carrycap,
         carrycap_scaling=pred_funcs,
         inputs=pred_inputs,
+    )
+
+    pred_growth = LogisticGrowth{:pred_pops}(;
+        rate=pred_rmax,
+        carrycap=Grid{:carrycap}(),
         timestep=1,
     )
 
@@ -396,19 +387,19 @@ function def_syms(
         1549:2018
     end
     inits = map(pred_pops, endemic_presences) do pred_pops, endemic_presences
-        (; pred_pops, endemic_presences)
+        cary_caps = pred_pops .* 0
+        (; pred_pops, carry_caps, endemic_presences)
     end
     ruleset = Ruleset(
         introduction_rule,
-        pred_spread, pred_growth,
+        pred_carrycap, pred_spread, pred_growth,
         endemic_recouperation, risks, clearing;
         boundary=Use()
     )
 
     pred_ruleset = Ruleset(
         introduction_rule,
-        pred_spread,
-        pred_growth;
+        pred_carrycap, pred_spread, pred_growth;
         boundary=Use()
     )
 
@@ -464,16 +455,15 @@ function mk(init, ruleset; carrycaps, kw...)
         ncols = length(pred_keys)
         extinct_keys = propertynames(frame[].endemic_presences[1])
         n_extinct = length(extinct_keys)
-        sg = SliderGrid(fig[3,1:2],
-            map(1:ncols) do i
-                (startvalue=i, range=1:n_extinct, format=i -> string(extinct_keys[i]))
-            end...
-        )
+        extinct_strings = collect(string.(extinct_keys))
+        menus = map(1:6) do i
+            Menu(fig[3, i]; default=extinct_strings[i], options=extinct_strings)
+        end
         pred_axes = map(1:ncols) do i
             Axis(fig[1, i]; title=string(pred_keys[i]))
         end
-        extinct_axes = map(1:ncols, sg.labels) do i, l
-            ax = Axis(fig[2, i]; title=l.text)
+        extinct_axes = map(1:ncols, menus) do i, m
+            ax = Axis(fig[2, i]; title=m.selection)
         end
         linkaxes!(pred_axes..., extinct_axes...)
         predators = map(1:ncols) do i
@@ -489,16 +479,17 @@ function mk(init, ruleset; carrycaps, kw...)
                 notify(pred)
             end
         end
-        foreach(extincts, sg.sliders) do extinct, slider
-            onany(frame, slider.value) do f, s
-                extinct[] .= getindex.(f.endemic_presences, s)
+        foreach(extincts, menus) do extinct, menu
+            onany(frame, menu.selection) do f, selection
+                i = findfirst(==(selection), extinct_strings)
+                extinct[] .= getindex.(f.endemic_presences, i)
                 notify(extinct)
             end
         end
         foreach(pred_axes, predators, pred_keys, carrycaps) do ax, pred, k, cc
             Makie.image!(ax, pred; colorrange=(0.0, cc), colormap=:magma, interpolate=false)
         end
-        foreach(extinct_axes, extincts, Iterators.Cycle([:blues, :reds, :greens]), sg.labels) do ax, extinct, colormap, label
+        foreach(extinct_axes, extincts, Iterators.Cycle([:blues, :reds, :greens])) do ax, extinct, colormap
             Makie.image!(ax, extinct; colorrange=(0.0, 1.0), colormap, interpolate=false)
         end
         return nothing

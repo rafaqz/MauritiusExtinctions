@@ -1,6 +1,24 @@
-using JSON3, MapRasterization, GeoInterface, Rasters, FileIO, ImageIO, DataFrames, CSV, GeoJSON, Colors
-using DimensionalData.LookupArrays
-using InvertedIndices, Setfield
+const HOMII = [
+    "Continuous_urban",
+    "Discontinuous_urban",
+    "Forest",
+    "Shrub_vegetation",
+    "Herbaceaous_vegetation",
+    "Mangrove",
+    "Barren_Land",
+    "Water",
+    "Sugarcane",
+    "Pasture",
+    "",
+    "Other_cropland"
+] => (;
+    native=2017 => ["Forest", "Shrub_vegetation"],
+    cleared=2017 => ["Sugarcane", "Pasture", "Other_cropland"],
+    abandoned=2017 => ["Barren_Land", "Pasture", "Shrub_vegetation", "Forest", "Herbaceaous_vegetation"],
+    urban=2017 => ["Continuous_urban", "Discontinuous_urban"],
+    forestry=2017 => "Forest",
+    water=2017 => "Water",
+)
 
 function define_map_files(; path = "/home/raf/PhD/Mascarenes")
     @show path
@@ -57,7 +75,7 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes")
             native=[
                 1810 => ["not_cleared_1968", "cleared_1854", "cleared_1854_abdn_1905", "cleared_1854_abdn_1968", "cleared_1905", "cleared_1968", "cleared_1968_abdn_1968"],
                 1854 => ["not_cleared_1968", "cleared_1905", "cleared_1968", "cleared_1968_abdn_1968"],
-                1905 => ["not_cleared_1968", "cleared_1968", "cleared_1968_abdn_1968"], 
+                1905 => ["not_cleared_1968", "cleared_1968", "cleared_1968_abdn_1968"],
                 # 1968 => "not_cleared_1968",
             ],
             cleared=[
@@ -166,7 +184,7 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes")
         #     ]
         # ),
         wlf = "$path/Data/Generated/Landcover/mus_wlf_shape.tif" =>
-            ["cleared", "other"] => (; 
+            ["cleared", "other"] => (;
                 native=2002 => "other",
                 cleared=2002 => "cleared",
                 abandoned=2002 => "other",
@@ -174,29 +192,7 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes")
                 forestry=2002 => "other",
                 water=2002 => "other",
             ),
-        homiisland = "$path/Data/Generated/Landcover/mus_landcover_2.tif" =>
-            [
-                "Continuous_urban",
-                "Discontinuous_urban",
-                "Forest",
-                "Shrub_vegetation",
-                "Herbaceaous_vegetation",
-                "Mangrove",
-                "Barren_Land",
-                "Water",
-                "Sugarcane",
-                "Pasture",
-                "",
-                "Other_cropland",
-            ] =>
-            (;
-                native=2017 => ["Forest", "Shrub_vegetation"],
-                cleared=2017 => ["Sugarcane", "Pasture", "Other_cropland", "Herbaceaous_vegetation"],
-                abandoned=2017 => ["Barren_Land", "Pasture", "Shrub_vegetation", "Forest"],
-                urban=2017 => ["Continuous_urban", "Discontinuous_urban", "Herbaceaous_vegetation"],
-                forestry=2017 => "Forest",
-                water=2017 => "Water",
-            ),
+        homiisland = "$path/Data/Generated/Landcover/mus_landcover.tif" => HOMII,
         # mascarine_birds_1 = "/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds.tif" =>
             # ["Forestry"] => (; forestry=1984 => "Forestry",),
         # ),
@@ -256,6 +252,22 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes")
         # atlas_1960_population = "$path/Data/Selected/Reunion/Undigitised/atlas_1960_population.jpg" => (;)),
         # "atlas_1960_agriculture" => "$path/Data/Selected/Reunion/Undigitised/atlas_agriculture_1960.jpg" => (;)),
         # atlas_population_1967 = "$path/Data/Selected/Reunion/Undigitised/atlas_population_1967.jpg" => (;)),
+        atlas_early_settlement = "$path/Data/Selected/Reunion/Undigitised/atlas_early_settlement_cropped.jpg" => (;
+            native=[1715 => ["forest", "concede_1665-1715", "conceded_1715-1765"], 1765 => ["forest", "concede_1665-1715", "conceded_1715-1765"]],
+            cleared=[1715 => "concede_1665-1715", 1765 => ["concede_1665-1715", "conceded_1715-1765"]],
+        ),
+        atlas_1780_agriculture = "$path/Data/Selected/Reunion/Undigitised/atlas_1780_agriculture.jpg" => (;
+            native = [
+                1600 => :mask,
+                1780 => "native"
+            ],
+            cleared = 1780 => (!, "native"),
+        ),
+        atlas_1815_agriculture = "$path/Data/Selected/Reunion/Undigitised/atlas_1815_agriculture.jpg" => (;
+            native = 1815 => "forest",
+            cleared = 1815 => ["geranium", "vanilla", "cane"],
+            abandonned = 1815 => ["wasteland", "forest"]
+        ),
         atlas_1960_agriculture = "$path/Data/Selected/Reunion/Undigitised/atlas_agriculture_1960_2.jpg" => (;
             native=1960 => ["forest", "shrubland", "rock", "savannah", "geranium_discontinuous"],
             cleared=1960 => ["cane", "geranium_continuous", "tea", "geranium_discontinuous"],
@@ -264,263 +276,14 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes")
             abandoned=1960 => ["forest", "shrubland", "rock", "savannah"],
             water=nothing,
         ),
-        atlas_1815_agriculture = "$path/Data/Selected/Reunion/Undigitised/atlas_1815_agriculture.jpg" => (;
-            native = 1815 => "forest",
-            cleared = 1815 => ["geranium", "vanilla", "cane"],
-            abandonned = 1815 => ["wasteland", "forest"]
+        # homiisland = "$path/Data/Generated/Landcover/reu_landcover.tif" => HOMII,
+        # natpark = "$path/Data/Generated/NationalParks/reu.tiff" => ["national park"] => (;
+        #     native=2021 => "national park"
+        # )
+        native = "$path/Data/Generated/reu_native.tif" => ["native_remnant"] => (;
+            native=2021 => "native_remnant"
         ),
-        atlas_1780_agriculture = "$path/Data/Selected/Reunion/Undigitised/atlas_1780_agriculture.jpg" => (;
-            native = 1780 => "native",
-            cleared = 1780 => (!, "native"),
-        ),
-        # atlas_early_settlement = " => (;
-        #     concessions=(conceded_1715_1765="conceded_1715-1765", conceded_1665_1715="concede_1665-1715"),
-        # ),
+    ), rod=(;
+        homiisland = "$path/Data/Generated/Landcover/rod_landcover.tif" => HOMII,
     ))
 end
-
-lc = Raster("/home/raf/PhD/Mascarenes/Data/Generated/Landcover/mus_landcover.tif")
-Rasters.rplot(lc)
-
-_joinpath(path::String, filename) = joinpath(path, filename)
-_joinpath(path::String, filename) = joinpath(path, filename)
-
-function get_times(categories)
-    times = Set{Int}()
-    for cat in categories
-        if cat isa Pair{Int}
-            push!(times, cat[1])
-        elseif cat isa Vector
-            foreach(cat) do (time, val)
-                push!(times, time)
-            end
-        end
-    end
-    return sort!(collect(times))
-end
-
-function as_namedtuples(categories::NamedTuple, category_names, times)
-    filled_times = map(times) do time
-        map(category_names) do k
-            haskey(categories, k) || return nothing
-            category = categories[k]
-            if category isa Pair
-                if last(category) isa Symbol
-                    return nothing
-                elseif first(category) == time
-                    return last(category)
-                else
-                    return nothing
-                end
-            elseif isnothing(category)
-                return nothing
-            else
-                i = findfirst(c -> first(c) == time, category)
-                if isnothing(i)
-                    return nothing
-                else
-                    return last(category[i])
-                end
-            end
-        end
-    end
-end
-
-function make_raster_slices(masks, categories;
-    path="/home/raf/PhD/Mascarenes",
-    files = define_map_files(; path),
-    category_names=nothing,
-)
-    println("Generating raster slices...")
-    # Copy duplicated file wrap points
-    fn = joinpath(path, "Data/Selected/Mauritius/Undigitised/atlas_19C_land_use")
-    cp(fn * ".csv", fn * "_2.csv"; force=true)
-
-    # Load all rasters and make masks layers for all land-cover classes.
-    # We get the numbers form the saved ".json" file for the project.
-    rasters = map(files, masks[keys(files)]) do island_files, mask
-        files = map(island_files) do (image_path, categories)
-            raster_path = splitext(image_path)[1] * ".tif"
-            raw = mask .* fix_order(Raster(raster_path))
-            if categories isa Pair # Manually pass in the names
-                original_names = categories[1]
-                categories = categories[2]
-            else
-                json_path = splitext(image_path)[1] * ".json"
-                data = JSON3.read(read(json_path), MapRasterization.MapSelection)
-                original_names = data.settings.category_name
-            end
-            times = get_times(categories)
-            string_timeline = as_namedtuples(categories, category_names, times)
-            # Gapfill NamedTuples with nothing
-            grouped = map(string_timeline) do categories
-                _category_raster(raw, original_names, categories, mask)
-            end
-            (; raw, grouped, times, string_timeline, original_names)
-        end
-        alltimes = sort!(union(map(f -> f.times, files)...))
-        @show alltimes
-        timeline_dict = Dict{Int,Any}()
-        for file in files
-            for time in alltimes
-                i = findfirst(==(time), file.times)
-                if !isnothing(i)
-                    if haskey(timeline_dict, time)
-                        timeline_dict[time] = map(.|, timeline_dict[time], file.grouped[i])
-                    else
-                        timeline_dict[time] = file.grouped[i]
-                    end
-                end
-            end
-        end
-        timeline_pairs = sort!(collect(pairs(timeline_dict)); by=first)
-        stacks = map(identity, RasterStack.(last.(timeline_pairs)))
-        if eltype(stacks) == Any
-            return nothing
-        else
-            years = first.(timeline_pairs)
-            time = Ti(years; sampling=Intervals(End()), span=Irregular(1500, last(years)))
-            timeline = RasterSeries(stacks, time)
-            return (; files, timeline)
-        end
-    end
-end
-
-function _category_raster(raster::Raster, layer_names::Vector, layers::NamedTuple, mask)
-    layers = map(layers) do layer
-        _category_raster(raster, layer_names, layer, mask)
-    end
-end
-function _category_raster(raster::Raster, layer_names::Vector, layer_components::Vector, mask)::Raster{Bool}
-    layers = map(l -> _category_raster(raster, layer_names, l, mask), layer_components)
-    out = rebuild(Bool.(broadcast(|, layers...)); missingval=false) .& mask
-    @assert missingval(out) == false
-    return out
-end
-function _category_raster(raster::Raster, layer_names::Vector, xs::Tuple{<:Function,Vararg}, mask)::Raster{Bool}
-    f, args... = xs
-    vals = map(args) do layer
-        _category_raster(raster, layer_names, layer, mask)
-    end
-    return map(f, vals...) .& mask
-end
-function _category_raster(raster::Raster, layer_names::Vector, category::Symbol, mask)::Raster{Bool}
-    if category === :mask
-        return mask
-    else
-        error(":$category directive not understood")
-    end
-end
-function _category_raster(raster::Raster, layer_names::Vector, category::Nothing, mask)::Raster{Bool}
-    return map(_ -> false, raster)
-end
-function _category_raster(raster::Raster, layer_names::Vector, category::String, mask)::Raster{Bool}
-    I = findall(==(category), map(String, layer_names))
-    if length(I) == 0
-        error("could not find $category in $(layer_names)")
-    end
-    # Get all values matching the first category as a mask
-    out = rebuild(Bool.(raster .== first(I)); missingval=false)
-    # Add pixels for any subsequent categories
-    foreach(I[2:end]) do i
-        out .|= raster .== first(i)
-    end
-    @assert eltype(out) == Bool
-    @assert missingval(out) == false
-    return out .& mask
-end
-function _category_raster(raster::Raster, layer_names::Vector, x, mask)
-    error("slice must be a NamedTuple, String or Vector{String}, got $x")
-end
-
-function open_output(T, filename::String)
-    json_path = splitext(filename)[1] * ".json"
-    return isfile(json_path) ? JSON3.read(read(json_path), T) : nothing
-end
-
-open_warp_points(x::NamedTuple) = open_warp_points(x.filename)
-function open_warp_points(filename::String)
-    csv_path = splitext(filename)[1] * ".csv"
-    return isfile(csv_path) ? CSV.read(csv_path, DataFrame) : nothing
-end
-
-function warp_to_raster(img_path::String, template::Raster;
-    object_type=MapRasterization.MapSelection, edit=false, save=true, kw...
-)
-    img = load_image(img_path)
-    csv_path = splitext(img_path)[1] * ".csv"
-    points = isfile(csv_path) ? open_warp_points(img_path) : nothing
-    if edit || !isfile(csv_path)
-        warp_points = if isnothing(points)
-            MapRasterization.click_warp(img;
-                template=reverse(template; dims=Y()), kw...
-            )
-        else
-            :x_known in names(points) && rename!(points, [:x_known => :x_a, :y_known => :y_a, :x_unknown => :x_b, :y_unknown => :y_b])
-            # if :x_a in names(points)
-                MapRasterization.click_warp(img;
-                    template=reverse(template; dims=Y()), points, kw...
-                )
-            # else
-                # MapRasterization.click_warp(Float64.(Gray.(img));
-                    # template=reverse(template; dims=Y()), missingval=missingval(template),
-                # )
-            # end
-        end
-        if save
-            df = DataFrame(warp_points)
-            CSV.write(csv_path, df)
-        end
-    end
-    if save && isfile(splitext(img_path)[1] * ".json")
-        df = CSV.read(csv_path, DataFrame)
-        output = open_output(object_type, img_path)
-        poly = 1
-        if object_type <: MapRasterization.MapSelection
-            out = Int.(reshape(output.output, size(img)))
-            warper = MapRasterization.Warper(df, template, poly)
-            rs = MapRasterization.warp(warper, out; missingval=0)
-            raster_path = splitext(img_path)[1] * ".tif"
-            # write(raster_path, rs)
-            rs = mask(Raster(raster_path); with=template)
-            write(raster_path, rs)
-            return rs
-        elseif object_type <: MapRasterization.CategoryShapes
-            warper = MapRasterization.Warper(df, template, poly)
-            warped_geoms = map(output.shapes) do sh
-                geoms = Polygon.(sh)
-                warped = MapRasterization.warp(warper, geoms)
-                map(warped) do g
-                    collect(GeoInterface.getpoint(g))
-                end
-            end
-            warped = MapRasterization.CategoryShapes{Polygon}(warped_geoms, output.category_names)
-            # GeoJSON.write(splitext(img_path)[1] * "_warped.geojson", warped)
-            return warped
-        end
-    end
-end
-
-function choose_categories(img_path::String;
-    save=true, restart=false,
-    output=restart ? nothing : open_output(MapRasterization.MapSelection, img_path),
-)
-    img = load_image(img_path)
-    if isnothing(output)
-        cs = MapRasterization.CategorySelector(img)
-    else
-        cs = MapRasterization.CategorySelector(img, output)
-    end
-    # if save
-    #     output = MapRasterization.MapSelection(cs)
-    #     json_path = splitext(img_path)[1] * ".json"
-    #     if isfile(json_path)
-    #         backup_path = splitext(img_path)[1] * "_backup.json"
-    #         cp(json_path, backup_path; force=true)
-    #     end
-    #     write(json_path, JSON3.write(output))
-    # end
-    return cs
-end
-
-load_image(img_path::String) = RGB{Float64}.(load(img_path) |> rotr90)

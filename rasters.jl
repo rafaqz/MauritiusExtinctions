@@ -151,32 +151,6 @@ end
 #     end |> xs -> RasterStack((missingmask(first(xs)), xs...); keys=(:by_1600, keys(phases)...))
 # end
 
-# Landcover
-lc_dir = joinpath(datadir, "Landcover/")
-lc_names = (
-  :No_Data,
-  :Continuous_urban,
-  :Discontinuous_urban,
-  :Forest,
-  :Shrub_vegetation,
-  :Herbaceaous_vegetation,
-  :Mangrove,
-  :Barren_land,
-  :Water,
-  :Sugarcane,
-  :Pasture,
-  :UnusedIndex,
-  :Other_cropland,
-)
-lc_2017_category_groups = (
-    forest_or_abandoned = (:Forest, :Mangrove, :Shrub_vegetation, :Barren_land),
-    urban = (:Continuous_urban, :Discontinuous_urban),
-    cleared = (:Sugarcane, :Other_cropland, :Pasture),
-    uncertain = (:Herbaceaous_vegetation,),
-)
-
-lc_2017_categories = NamedTuple{lc_names}((Int32.(0:12)...,))
-
 # Read from tif
 lc_2017_rasterized = map(island_keys) do island
     path = joinpath(lc_dir, "$(island)_landcover.tif")
@@ -184,7 +158,7 @@ lc_2017_rasterized = map(island_keys) do island
     # Get rid of Water and NoData
     replace_missing(replace_missing(rast, lc_2017_categories.Water), lc_2017_categories.No_Data)
 end
-plot(lc_2017_rasterized.mus)
+Rasters.rplot(lc_2017_rasterized.mus)
 
 # Masks for each land cover
 lc_2017_masks = map(lc_2017_rasterized) do rast

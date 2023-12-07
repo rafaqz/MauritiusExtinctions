@@ -81,3 +81,29 @@ pop_density = map(fix_order, (
     rod=mus_rod_pop_density[Extents.extent(dems.rod)],
 ))
 
+
+# Homiisland Landcover
+lc_dir = joinpath(datadir, "Landcover/")
+lc_names = (
+  :No_Data,
+  :Continuous_urban,
+  :Discontinuous_urban,
+  :Forest,
+  :Shrub_vegetation,
+  :Herbaceaous_vegetation,
+  :Mangrove,
+  :Barren_land,
+  :Water,
+  :Sugarcane,
+  :Pasture,
+  :UnusedIndex,
+  :Other_cropland,
+)
+lc_2017_category_groups = (
+    forest_or_abandoned = (:Forest, :Mangrove, :Shrub_vegetation, :Barren_land),
+    urban = (:Continuous_urban, :Discontinuous_urban),
+    cleared = (:Sugarcane, :Other_cropland, :Pasture),
+    uncertain = (:Herbaceaous_vegetation,),
+)
+
+lc_2017_categories = NamedTuple{lc_names}((Int32.(0:12)...,))
