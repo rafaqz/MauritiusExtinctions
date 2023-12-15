@@ -3,7 +3,7 @@
 using Rasters
 using Rasters.LookupArrays
 using Rasters: set, Between, trim, Band
-using RasterUtils
+# using RasterUtils
 using Shapefile
 using DataFrames
 using Images
@@ -204,4 +204,3 @@ end
 # map(1:6)
 
 rem = load("$datadir/LostLand/Maps/page159_mauritius_remnants.png") |> rotr90
-RasterUtils.selectcolors(rem)

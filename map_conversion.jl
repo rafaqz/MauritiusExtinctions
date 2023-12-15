@@ -11,14 +11,15 @@ import GeoInterface as GI
 using MapRasterization
 using GLMakie
 GLMakie.activate!()
-includet("common.jl")
-includet("map_file_list.jl")
-includet("raster_common.jl")
-includet("water.jl")
+include("common.jl")
+include("map_file_list_2.jl")
+include("map_file_functions.jl")
+include("raster_common.jl")
+include("water.jl")
 
 swap_ext(path, newext) = string(splitext(path)[1], newext)
 
-for pdf in readdir("/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds"; join=true)
+for pdf in readdir("/home/raf/PhD/Mascarenes/maps/Rodrigues/cb"; join=true)
     name, ext = splitext(pdf)
     ext == ".pdf" || continue
     png = name * ".png" 
@@ -29,26 +30,52 @@ img_path = "/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds/3
 img_path = "/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds/9.png-1.png"
 img_path = "/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds/48.png-1.png"
 img_path = "/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds/49_2.png-1.png"
-cs = choose_categories(img_path)
-rast = polywarp(img_path, dems.mus)
-Rasters.rplot(rast)
 
-output = MapRasterization.MapSelection(cs)
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/aec13048-fig-0001-m.jpg"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/aec13048-fig-0003-m.jpg"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/atlas_ownership.jpg"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/atlas_agriculture_1960_2.jpg"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/Gade_1985_landcover.png"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/Gade_1985_landcover_2.png"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/Gade_1985_landcover_3.png"
+img_path = "$path/Data/Selected/Reunion/Undigitised/atlas_early_settlement_cropped.jpg"
+img_path = "$path/Data/Selected/Reunion/Undigitised/atlas_1815_agriculture.jpg" 
+img_path = "$path/Data/Selected/Reunion/Undigitised/atlas_1780_agriculture.jpg" 
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/cb5989en.png-06.png"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/cb5989en.png-06_2.png"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/cb5989en.png-06_colored.png"
+
+img = load_image(img_path)
+cs = MapRasterization.CategorySelector(img)
 json_path = splitext(img_path)[1] * ".json"
+output = JSON3.read(read(json_path), MapRasterization.MapSelection)
+cs = MapRasterization.CategorySelector(img, output)
+display(cs)
+output = MapRasterization.MapSelection(cs)
 if isfile(json_path)
     backup_path = splitext(img_path)[1] * "_backup.json"
     cp(json_path, backup_path; force=true)
 end
 write(json_path, JSON3.write(output))
 
+
+# rast = polywarp(img_path, dems.mus)
+# Rasters.rplot(rast)
+
 img = load_image(img_path)
 warp_path = splitext(img_path)[1] * ".csv"
-point_table = CSV.read(warp_path, DataFrame)
+point_table = isfile(warp_path) ? CSV.read(warp_path, DataFrame) : nothing
 warpselector = MapRasterization.WarpSelector(img; 
-    template=dems.mus, guide=(borders.mus, mus_roads),
-    point_table, 
+    template=dems.rod, guide=(borders.rod, waterways_rivers), point_table, 
 )
 CSV.write(warp_path, warpselector.warper.point_table[])
+
+rs = warp_to_raster(img_path, dems.rod)
+Makie.plot(rs)
+
+polygons = MapRasterization.warp(warpselector, img; )
+CSV.write(warp_path, warpselector.warper.point_table[])
+output = JSON3.read(read(json_path), MapRasterization.MapSelection)
 
 template = dems.mus
 function polywarp(img_path, template)

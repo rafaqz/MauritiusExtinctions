@@ -224,9 +224,6 @@ Makie.scatter!(tyler.axis, points)#; markersize=1)
 Makie.text!(tyler.axis, points; text=df.species, color=:white) 
 p.axis.aspect = AxisAspect(1)
 
-using Leaflet, Blink
-using GeoInterface, GeoJSON
-provider = Leaflet.Google()
 # gbif_layer = Leaflet.Layer(GeoInterface.convert.(Val(:GeoJSON), tuple_points); color=:red)
 # quality_layers = map((x, c) -> Leaflet.Layer(GeoInterface.convert.(Val(:GeoJSON), x); color=c), veg_quality_1999, (:blue, :green, :yellow))
 # ecotypes_layers = map((l, color) -> Leaflet.Layer(GeoInterface.convert.(Val{:GeoJSON}(), l.geometry); color), ecotype_groups[(:native, :invasive)], (native=:orange, invasive=:red))

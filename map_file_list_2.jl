@@ -13,15 +13,20 @@ const HOMII = [
     "Other_cropland"
 ] => (;
     native=2017 => ["Forest", "Shrub_vegetation"],
-    cleared=2017 => ["Sugarcane", "Pasture", "Other_cropland"],
+    cleared=2017 => ["Barren_Land", "Sugarcane", "Pasture", "Shrub_vegetation", "Herbaceaous_vegetation", "Other_cropland"],
     abandoned=2017 => ["Barren_Land", "Pasture", "Shrub_vegetation", "Forest", "Herbaceaous_vegetation"],
     urban=2017 => ["Continuous_urban", "Discontinuous_urban"],
     forestry=2017 => "Forest",
     water=2017 => "Water",
 )
 
+function _get_categories(image_path)
+    json_path = splitext(image_path)[1] * ".json"
+    data = JSON3.read(read(json_path), MapRasterization.MapSelection)
+    original_names = data.settings.category_name
+end
+
 function define_map_files(; path = "/home/raf/PhD/Mascarenes")
-    @show path
     # Here we define:
     # - all of the files we use
     # - what the land-cover categories are called for the file
@@ -31,7 +36,7 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes")
     # The function will later be broadcasted over masks of the separate layers to combine them
     # Mostly is `|` which is "or" so we make a mask of values that are true in one or the other file
     file_details = (mus=(;
-        atlas_dutch_period = "$path/Data/Selected/Mauritius/Undigitised/atlas_dutch_period.jpg" => (;
+        atlas_dutch_period = "$path/Data/Selected/Mauritius/Undigitised/atlas_dutch_period.jpg" => _get_categories => (;
             native=[
                 1600 => :mask,
                 1709 => ["ebony_harvest", "undisturbed"],
@@ -42,7 +47,7 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes")
             cleared=1709 => "cleared",
             abandoned=1710 => "cleared",
         ),
-        atlas_18C_land_use = "$path/Data/Selected/Mauritius/Undigitised/atlas_18C_land_use.jpg" => (;
+        atlas_18C_land_use = "$path/Data/Selected/Mauritius/Undigitised/atlas_18C_land_use.jpg" => _get_categories => (;
             native=[
                 1763 => ["not_cleared_1810", "cleared_1772", "cleared_1810"],
                 1772 => ["not_cleared_1810", "cleared_1810"],
@@ -64,14 +69,14 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes")
                 1810 => "abandoned_1810",
             ],
         ),
-        fraser_1835_from_gleadow = "$path/Data/Selected/Mauritius/Undigitised/1835_fraser_from_gleadow.jpg" => (;
+        fraser_1835_from_gleadow = "$path/Data/Selected/Mauritius/Undigitised/1835_fraser_from_gleadow.jpg" => _get_categories => (;
             cleared=1835 => "sea", # sea and cleared are swapped
             urban=1835 => "sea", # we don't know what part of the cleared area was urban
             abandoned=1835 => "sea", # or abandoned
             native=1835 => "forest",
             # water=1835 => "forest",
         ),
-        atlas_19C_land_use = "$path/Data/Selected/Mauritius/Undigitised/atlas_19C_land_use.jpg" => (;
+        atlas_19C_land_use = "$path/Data/Selected/Mauritius/Undigitised/atlas_19C_land_use.jpg" => _get_categories => (;
             native=[
                 1810 => ["not_cleared_1968", "cleared_1854", "cleared_1854_abdn_1905", "cleared_1854_abdn_1968", "cleared_1905", "cleared_1968", "cleared_1968_abdn_1968"],
                 1854 => ["not_cleared_1968", "cleared_1905", "cleared_1968", "cleared_1968_abdn_1968"],
@@ -110,7 +115,7 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes")
                 # 1968 => "lakes",
             ],
         ),
-        landcover_1965 = "$path/Data/Selected/Mauritius/Undigitised/mus_landuse_1965_100_hi_c.pdf" => (;
+        landcover_1965 = "$path/Data/Selected/Mauritius/Undigitised/mus_landuse_1965_100_hi_c.pdf" => _get_categories => (;
             native=1965 => ["Forest_natural", "Swamps", "Rock", "Scrub", "Savannah"],
             cleared=1965 => ["Sugar", "Vegetables", "Tea"],
             abandoned=1965 => ["Rock", "Scrub", "Savannah"],
@@ -122,8 +127,7 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes")
             ],
         ),
         # atlas_1992_vegetation = "$path/Data/Selected/Mauritius/Undigitised/atlas_1992_vegetation.jpg" => (;),
-        atlas_1992_agriculture = "$path/Data/Selected/Mauritius/Undigitised/atlas_1992_agriculture.jpg" =>
-        (;
+        atlas_1992_agriculture = "$path/Data/Selected/Mauritius/Undigitised/atlas_1992_agriculture.jpg" => _get_categories => (;
             native=1992 => "forest",
             cleared=1992 => [
                 "cane", "forage", "tea", "market_gardens", "cane_or_market_gardens",
@@ -140,7 +144,7 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes")
         ),
         # We need a second round with this file as the categories overlap
         # This will overwrite anything incorrect in the first file for the specified year
-        atlas_19C_land_use_2 = "$path/Data/Selected/Mauritius/Undigitised/atlas_19C_land_use_2.jpg" => (;
+        atlas_19C_land_use_2 = "$path/Data/Selected/Mauritius/Undigitised/atlas_19C_land_use_2.jpg" => _get_categories => (;
             abandoned=[
                 1905 => "abdn_1854-1905_cleared_1905-1968",
             ],
@@ -183,8 +187,7 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes")
         #         1992 => "lakes",
         #     ]
         # ),
-        wlf = "$path/Data/Generated/Landcover/mus_wlf_shape.tif" =>
-            ["cleared", "other"] => (;
+        wlf = "$path/Data/Generated/Landcover/mus_wlf_shape.tif" => ["cleared", "other"] => (;
                 native=2002 => "other",
                 cleared=2002 => "cleared",
                 abandoned=2002 => "other",
@@ -196,12 +199,7 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes")
         # mascarine_birds_1 = "/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds.tif" =>
             # ["Forestry"] => (; forestry=1984 => "Forestry",),
         # ),
-        forest = "$path/Data/Selected/Mauritius/forest.tif" =>
-            [
-                "low",
-                "medium",
-                "high",
-            ] => (;
+        forest = "$path/Data/Selected/Mauritius/forest.tif" => ["low", "medium", "high"] => (;
                 native=[
                     2020 => ["low", "medium", "high"],
                 ],
@@ -209,27 +207,23 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes")
                 abandoned=2020 => (&, :mask, (!, ["low", "medium", "high"])),
                 urban=2020 => (&, :mask, (!, ["low", "medium", "high"])),
             ),
-        forestry_1975 = "$path/maps/Mauritius/Studies_of_Mascarine_birds/31.png-1.png" =>
-            (;
+        forestry_1975 = "$path/maps/Mauritius/Studies_of_Mascarine_birds/31.png-1.png" => _get_categories => (;
                 cleared=1975 => "cleared_1975",
                 forestry=1975 => "cleared_1975",
             ),
-        vegetation_1975 = "$path/maps/Mauritius/Studies_of_Mascarine_birds/9.png-1.png" =>
-            (;
+        vegetation_1975 = "$path/maps/Mauritius/Studies_of_Mascarine_birds/9.png-1.png" => _get_categories => (;
                 native=1975 => ["surviving_native", "mixed_native_and_plantation"],
                 cleared=1975 => "cleared_1975",
                 abandoned=1975 => "exotic_scrub",
                 forestry=1975 => ["forest_plantation", "mixed_native_and_plantation"]
             ),
-        forestry_1980 = "$path/maps/Mauritius/Studies_of_Mascarine_birds/49_2.png-1.png" =>
-            (;
+        forestry_1980 = "$path/maps/Mauritius/Studies_of_Mascarine_birds/49_2.png-1.png" => _get_categories => (;
                 native=[
                     1947 => ["native_1947_or_1980", "native_1980"],
                     1980 => ["native_1980"],
                 ],
             ),
-        forestry_1984 = "$path/maps/Mauritius/Studies_of_Mascarine_birds/48.png-1.png" =>
-            (;
+        forestry_1984 = "$path/maps/Mauritius/Studies_of_Mascarine_birds/48.png-1.png" => _get_categories => (;
                 cleared=1984 => "cleared_1973-1984",
                 forestry=1984 => "cleared_1973-1984",
             ),
@@ -252,38 +246,63 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes")
         # atlas_1960_population = "$path/Data/Selected/Reunion/Undigitised/atlas_1960_population.jpg" => (;)),
         # "atlas_1960_agriculture" => "$path/Data/Selected/Reunion/Undigitised/atlas_agriculture_1960.jpg" => (;)),
         # atlas_population_1967 = "$path/Data/Selected/Reunion/Undigitised/atlas_population_1967.jpg" => (;)),
-        atlas_early_settlement = "$path/Data/Selected/Reunion/Undigitised/atlas_early_settlement_cropped.jpg" => (;
+        atlas_early_settlement = "$path/Data/Selected/Reunion/Undigitised/atlas_early_settlement_cropped.jpg" => _get_categories => (;
             native=[1715 => ["forest", "concede_1665-1715", "conceded_1715-1765"], 1765 => ["forest", "concede_1665-1715", "conceded_1715-1765"]],
             cleared=[1715 => "concede_1665-1715", 1765 => ["concede_1665-1715", "conceded_1715-1765"]],
         ),
-        atlas_1780_agriculture = "$path/Data/Selected/Reunion/Undigitised/atlas_1780_agriculture.jpg" => (;
+        atlas_1780_agriculture = "$path/Data/Selected/Reunion/Undigitised/atlas_1780_agriculture.jpg" => _get_categories => (;
             native = [
                 1600 => :mask,
-                1780 => "native"
+                1780 => ["native", "rock"]
             ],
-            cleared = 1780 => (!, "native"),
+            cleared = 1780 => (!, ["native", "rock"]),
         ),
-        atlas_1815_agriculture = "$path/Data/Selected/Reunion/Undigitised/atlas_1815_agriculture.jpg" => (;
+        atlas_1815_agriculture = "$path/Data/Selected/Reunion/Undigitised/atlas_1815_agriculture.jpg" => _get_categories => (;
             native = 1815 => "forest",
             cleared = 1815 => ["geranium", "vanilla", "cane"],
-            abandonned = 1815 => ["wasteland", "forest"]
+            abandonned = 1815 => ["wasteland", "forest"],
         ),
-        atlas_1960_agriculture = "$path/Data/Selected/Reunion/Undigitised/atlas_agriculture_1960_2.jpg" => (;
+        atlas_1960_agriculture = "$path/Data/Selected/Reunion/Undigitised/atlas_agriculture_1960_2.jpg" => _get_categories => (;
             native=1960 => ["forest", "shrubland", "rock", "savannah", "geranium_discontinuous"],
             cleared=1960 => ["cane", "geranium_continuous", "tea", "geranium_discontinuous"],
-            forestry=1960 => ["casuarina", "acacia", "cryptomeria", "labourdonassia"],
-            urban=1960 => "urban",
             abandoned=1960 => ["forest", "shrubland", "rock", "savannah"],
+            urban=1960 => "urban",
+            forestry=1960 => ["casuarina", "acacia", "cryptomeria", "labourdonassia"],
             water=nothing,
         ),
+        # atlas_1960_land_owndership = "$path/Data/Selected/Reunion/Undigitised/atlas_ownership.jpg" => (;
+        #     native=1960 => "National_forest_office",
+        #     forestry=1960 => "National_forest_office",
+        #     urban=1960 => "Habitat",
+        # ),
         # homiisland = "$path/Data/Generated/Landcover/reu_landcover.tif" => HOMII,
         # natpark = "$path/Data/Generated/NationalParks/reu.tiff" => ["national park"] => (;
         #     native=2021 => "national park"
         # )
+        quantifying_invasion_landcover = "$path/Data/Selected/Reunion/Undigitised/aec13048-fig-0001-m.jpg" => _get_categories => (;
+            native=2019 => "Extant_native_vegetation",
+            abandoned=2019 => "Disturbed_secondary_vegetation",
+            cleared=2019 => "Agricultural_areas",
+            urban=2019 => "Artificial_areas",
+        ),
         native = "$path/Data/Generated/reu_native.tif" => ["native_remnant"] => (;
             native=2021 => "native_remnant"
         ),
     ), rod=(;
+        gade_1 = "$path/Data/Selected/Rodrigues/Gade_1985_landcover.png" => ["native_remnant"] => (;
+            native = [1700 => :mask, 1985 => :force => "native_remnant"],
+        ),
+        gade_2 = "$path/Data/Selected/Rodrigues/Gade_1985_landcover_2.png" => _get_categories => (;
+            abandoned=1985 => ["reforested", "fallow_or_settled"],
+            cleared=1985 => ["cultivated", "grazing", "fallow_or_settled"],
+            urban=1985 => "fallow_or_settled", # Unclear how large the "fallow" part is
+        ),
         homiisland = "$path/Data/Generated/Landcover/rod_landcover.tif" => HOMII,
+        rural_development_planning = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/cb5989en.png-06_colored.png" => _get_categories => (;
+            native=2021 => ["nature_reserve", "forest"],
+            abandoned=2021 => ["silvo_pasture", "nature_reserve", "forest", "riparian_vegetation"], 
+            cleared=2021 => ["silvo_pasture", "pasture", "agriculture", "agricultural_residential"],
+            urban=[2016 => "urban_residential", 2021 => "urban_residential"], # force urban into homiisland
+        ),
     ))
 end

@@ -1,7 +1,7 @@
 println("Reading waterways json...")
 includet("nearest.jl")
 
-waterways_path = joinpath(datadir, "water.geojson")
+waterways_path = joinpath(datadir, "Water_Areas/water.geojson")
 waterways_fc = GeoJSON.read(read(waterways_path))
 using GeoInterface
 println("Converting json to GeometryBasics...")

@@ -18,7 +18,6 @@ using Rasters.LookupArrays
 # Also mentions that invasives replace natives
 include("travel_cost.jl")
 include("tabular_data.jl")
-include("landcover_logic.jl")
 include("map_file_functions.jl")
 
 states = NamedVector(lc_categories)
@@ -37,7 +36,7 @@ logic = NV(
 )
 
 include("map_file_list_2.jl")
-slices = make_raster_slices(masks, lc_categories; category_names)
+slices = compile_timeline(masks, lc_categories; category_names, files=define_map_files())[(:rod,)]
 nv_rasts = map(slices) do island
     Rasters.combine(namedvector_raster.(island.timeline))
 end
@@ -45,17 +44,19 @@ striped_raw = map(nv_rasts) do nv_rast
     stripe_raster(nv_rast, states)
 end
 compiled = map(nv_rasts) do nv_rast
-    compile_timeline(logic, nv_rast; assume_continuity=true)
+    cross_validate_timeline(logic, nv_rast; assume_continuity=true)
 end
 striped_compiled = map(compiled) do island
     stripe_raster(island.timeline, states)
 end
-Rasters.rplot(striped_compiled.reu; colorrange=(1, 6))
-Rasters.rplot(striped_compiled.reu; colorrange=(1, 6))
-Rasters.rplot(striped_compiled.reu; colorrange=(1, 6))
-
+Rasters.rplot(striped_raw.mus; colorrange=(1, 6))
 Rasters.rplot(striped_compiled.mus; colorrange=(1, 6))
+Rasters.rplot(striped_raw.reu; colorrange=(1, 6))
+Rasters.rplot(striped_compiled.reu; colorrange=(1, 6))
+Rasters.rplot(striped_raw.rod; colorrange=(1, 6))
 Rasters.rplot(striped_compiled.rod; colorrange=(1, 6))
+# Rasters.rplot(striped_compiled.reu; colorrange=(1, 6))
+# Rasters.rplot(striped_compiled.rod; colorrange=(1, 6))
 
 # pixel_timeline1 = compiled.timeline[Y=Near(-20.363), X=Near(57.5015)]
 # pixel_timeline = compiled.timeline[Y=Near(-20.363), X=Near(57.5015)]
@@ -100,14 +101,13 @@ high_certainty = map(cat_counts) do cc
         vals = map(cc) do val
             val[k]
         end
-        filter(v -> v.ratio > 0.7, vals)
+        filter(v -> v.ratio > 0.5, vals)
     end
 end
-high_certainty.reu.cleared
-
+high_certainty.mus.urban
 
 # Cleared land is used for urbanisation by 1992, so don't use it in the model
-lc_predictions = map(high_certainty[(:mus, :reu)]) do hc 
+lc_predictions = map(high_certainty[(:mus,)]) do hc 
     cleared_model = lm(@formula(meancount ~ pop^2 + pop), DataFrame(hc.cleared))
     urban_model = lm(@formula(meancount ~ pop^2), DataFrame(hc.urban))
     ti = dims(human_pop_timeline.mus, Ti)
@@ -116,7 +116,6 @@ lc_predictions = map(high_certainty[(:mus, :reu)]) do hc
     urban_pred = DimArray(predict(urban_model, parent(pops)), ti)
     map((cleared, urban) -> (; cleared, urban), cleared_pred, urban_pred)
 end
-# Plots.plot(first.(pops))
 # Plots.plot(cleared_pred)
 # Plots.scatter!(getproperty.(high_certainty.cleared, :known))
 # Plots.scatter!(getproperty.(high_certainty.cleared, :meancount))
@@ -253,6 +252,7 @@ transitions = let empty = (native=0.0, cleared=0.0, abandoned=0.0, urban=0.0, fo
 end
 map(==(keys(first(transitions))) ∘ keys, transitions)
 
+history = compiled.mus.timeline
 # The logic of sequential category change - can a transition happen at all
 # Human Population and species introduction events
 eventrule = let events=landscape_events.mus,
@@ -264,8 +264,11 @@ eventrule = let events=landscape_events.mus,
         if hasselection(history, Ti(At(current_year)))
             foreach(eachindex(l1), l1, view(history, Ti(At(current_year)))) do I, state, hist
                 # Fill water
-                if hist.water && count(hist) == 1
-                    l1[I] = states.water 
+                # if hist.water && count(hist) == 1
+                    # l1[I] = states.water 
+                # end
+                if count(hist) == 1
+                    l1[I] = findfirst(hist)
                 end
             end
         end
@@ -292,7 +295,7 @@ end
 #     urban=P(1.0; b...),
 #     forestry=P(1.0; b...),
 # )
-pressure = let preds=lc_predictions, ngridcells=size(sum(masks.mus))
+pressure = let preds=lc_predictions.mus, ngridcells=size(sum(masks.mus))
     leverage=P(3.0; bounds=(1.0, 10.0))
     # cleared=P(1.5; b...),
     # urban=P(1.4; b...)
@@ -340,11 +343,15 @@ staterule = BottomUp{:landcover}(;
     fixed=false,
     perturbation=P(2.0; bounds=(0.0, 10.0), label="perturbation"),
 )
+
 init_state = (; 
-    landcover=Rasters.mask!(fill(1, dims(masks.mus); missingval=0), with=masks.mus)
+    landcover=Rasters.mask!(fill(1, dims(masks.mus); missingval=0), with=masks.mus),
+    native_fraction=rebuild(fill(1.0, dims(masks.mus)); missingval=nothing)
 )
 
-aux = map(fix_order, (; history, suitability=suitability.mus))
+mus_native_veg_tif_path = "/home/raf/PhD/Mascarenes/Data/Generated/mus_native_veg.tif"
+target_native_fraction = Raster(mus_native_veg_tif_path) ./ 4
+aux = map(fix_order, (; history, suitability=suitability.mus, target_native_fraction))
 tspan = 1600:2018
 array_output = ArrayOutput(init_state;
     aux,
@@ -354,8 +361,31 @@ array_output = ArrayOutput(init_state;
     boundary=Remove(),
     padval=0,
 )
-ruleset = Ruleset(staterule, eventrule; proc=CPUGPU());
+degradationrule = let states=states, 
+                      degradation_curve=Param(1.0; bounds=(0.0, 4.0)), 
+                      degradation_rate=Param(0.01; bounds=(0.0, 0.01))
+    kernl = Kernel(Moore{4}()) do d
+        exp(-d / degradation_curve)# * degredation_rate
+    end
+    Neighbors{Tuple{:native_fraction,:landcover},:native_fraction}(; stencil=kernl) do data, hood, (native_fraction, landcover), I
+        DynamicGrids.ismasked(data, I...) && return oneunit(native_fraction)
+        target_native_fraction = get(data, Aux{:target_native_fraction}(), I)
+        new_native_fraction = if landcover == states.native
+            degradation = zero(first(hood))
+            @simd for i in 1:length(hood)
+                @inbounds degradation += (1 - hood[i]) * kernel(hood)[i] * degradation_rate
+            end
+            max(native_fraction / (1 + degradation), zero(native_fraction))
+        else
+            zero(native_fraction)
+        end
+        # We don't want to overshoot the real native fraction in real final run
+        return max(target_native_fraction, new_native_fraction)
+    end
+end
+ruleset = Ruleset(staterule, eventrule, degradationrule; proc=CPUGPU());
 simdata = DynamicGrids.SimData(array_output, ruleset);
+sim!(array_output, ruleset; simdata, proc=CPUGPU(), printframe=true);
 
 output = MakieOutput(init_state;
     aux, tspan,
@@ -366,30 +396,33 @@ output = MakieOutput(init_state;
     padval=0,
     ruleset,
     sim_kw=(; printframe=true),
-) do fig, frame, time
-    axis1 = Axis(fig[1, 1])
-    axis2 = Axis(fig[1, 2])
+) do (; axis, layout, frame, time)
+    axis1 = axis
+    axis2 = Axis(layout[1, 2])
+    axis3 = Axis(layout[1, 3])
     linkaxes!(axis1, axis2)
     landcover = Observable(frame[].landcover)
-    known_slices = Observable(view(striped_compiled, Ti(1)))
+    native_fraction = Observable(frame[].native_fraction)
+    known_slices = Observable(view(striped_compiled.mus, Ti(1)))
     on(frame) do f
         landcover[] = f.landcover
+        native_fraction[] = f.native_fraction
         t = tspan[time[]]::Int
         if hasselection(striped_compiled, Ti(At(t)))
-            known_slices[] = view(striped_compiled, Ti(At(t)))
+            known_slices[] = view(striped_compiled.mus, Ti(At(t)))
             notify(known_slices)
         end
         notify(landcover)
+        notify(native_fraction)
     end
     colormap = cgrad(:batlow, length(states)+1; categorical=true)
     hm = Makie.image!(axis1, landcover; colorrange=(first(states) -1.5, last(states) + 0.5), colormap, interpolate=false)
-    Makie.image!(axis2, known_slices; colorrange=(first(states) -1.5, last(states) + 0.5), colormap, interpolate=false)
-    ticks = (collect(0:length(states)), vcat(["mask"], collect(string.(propertynames(states)))))
-    Colorbar(fig[1, 3], hm; ticks)
+    nf = Makie.image!(axis2, native_fraction; colorrange=(0, 1), interpolate=false)
+    Makie.image!(axis3, known_slices; colorrange=(first(states) -1.5, last(states) + 0.5), colormap, interpolate=false)
+    # ticks = (collect(0:length(states)), vcat(["mask"], collect(string.(propertynames(states)))))
+    # Colorbar(fig[1, 3], hm; ticks)
     return nothing
 end
-
-sim!(array_output, ruleset; simdata, proc=CPUGPU(), printframe=true);
 
 predicted_lc = Rasters.combine(RasterSeries(array_output, dims(array_output)))
 lc_predictions = map(NamedTuple(states)) do state
@@ -407,10 +440,13 @@ mus_veg_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/pag
 mus_veg = Raster(mus_veg_path)
 # Makie.plot(mus_veg)
 
-veg_change = rebuild(UInt8.(broadcast_dims(*, lc_predictions.native, mus_veg)); missingval=0)
-Rasters.rplot(veg_change[Ti=Near(2000)])
-Rasters.rplot(veg_change)
+using DataFrames
+nf_slices = getproperty.(output, :native_fraction);
+Rasters.combine(RasterSeries(nf_slices, dims(nf_slices)), Ti);
 
+veg_change = rebuild(UInt8.(broadcast_dims(*, lc_predictions.native, , mus_veg)); missingval=0)
+
+Rasters.rplot(veg_change)
 habitat_names = ["semi-dry_evergreen_forest", "open_dry_palm-rich_woodland", "wet_forest", "pandanus_swamp", "mossy_rainforest", "mangrove", "wetland vegetation"]
 length(habitat_names)
 habitat_sums = cat(map(1:7) do habitat
@@ -429,3 +465,4 @@ for i in 7:-1:1
     band!(x, fill(0, length(x)), y; label = "Label")
 end
 fig[1, 2] = Legend(fig, ax, habitat_names)
+
