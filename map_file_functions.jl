@@ -68,6 +68,33 @@ function warp_to_raster(img_path::String, template::Raster;
     end
 end
 
+function warp_to_polygon(img_path, template)
+    json_path = splitext(img_path)[1] * ".json"
+    output = JSON3.read(read(json_path), MapRasterization.MapSelection)
+    warp_path = splitext(img_path)[1] * ".csv"
+    point_table = CSV.read(warp_path, DataFrame)
+    polygon_vecs = map(output.settings.polygons) do ps
+        if !ismissing(ps) && length(ps) > 0
+            Polygon.(broadcast(ps) do poly
+                Point2{Float32}.(poly)
+            end) |> MultiPolygon
+        else
+            MultiPolygon(Polygon{2,Float32}[])
+        end
+    end
+    warper = MapRasterization.Warper(; point_table, template)
+    warped_polygons = MapRasterization.warp(warper, polygon_vecs)
+    raster = rebuild(fill!(similar(template, Int), 0); missingval=0)
+    for (i, p) in enumerate(warped_polygons)
+        if !(ismissing(p) || GeoInterface.npoint(p) == 0)
+            rasterize!(last, raster, p; fill=i)
+        end
+    end
+    raster_path = splitext(img_path)[1] * ".tif"
+    write(raster_path, raster; force=true) 
+    return raster
+end
+
 function choose_categories(img_path::String;
     save=true, restart=false,
     output=restart ? nothing : open_output(MapRasterization.MapSelection, img_path),

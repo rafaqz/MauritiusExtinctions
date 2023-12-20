@@ -29,32 +29,105 @@ const NV = NamedVector
 logic = NV(
     native    = NV(native=true,  cleared=false, abandoned=false, urban=false, forestry=false,  water=false),
     cleared   = NV(native=true,  cleared=true,  abandoned=true,  urban=false, forestry=false,  water=false),
-    abandoned = NV(native=false, cleared=true,  abandoned=true,  urban=false, forestry=false,  water=false),
+    abandoned = NV(native=false, cleared=true,  abandoned=true,  urban=false,  forestry=false,  water=false),
     urban     = NV(native=true,  cleared=true,  abandoned=true,  urban=true,  forestry=false,  water=false),
     forestry  = NV(native=true,  cleared=true,  abandoned=true,  urban=false, forestry=true,   water=false),
     water     = NV(native=true,  cleared=true,  abandoned=true,  urban=true,  forestry=false,  water=true),
 )
 
+timeline = NV{(:native, :cleared, :abandoned, :urban, :forestry, :water)}.[
+    (true, false, false, false, false, false)
+    (false, true, false, false, false, false)
+    (false, false, false, true, false, false)
+    (false, true, true, false, false, false)
+    (false, false, false, true, false, false)
+]
+removed = NV{keys(states)}.([
+    (true, false, false, false, false, false)
+    (false, true, false, false, false, false)
+    (false, true, false, true, false, false)
+    (false, true, false, true, false, false)
+    (false, false, false, true, false, false)
+])
+corrected = NV{keys(states)}.([
+    (true, false, false, false, false, false)
+    (false, true, false, false, false, false)
+    (false, true, false, true, false, false)
+    (false, false, false, true, false, false)
+    (false, false, false, true, false, false)
+])
+
+transitions = logic
+reversed = LandscapeChange.reverse_transitions(transitions) 
+indirect = LandscapeChange.indirect_transitions(transitions)
+reversed_indirect = LandscapeChange.reverse_transitions(indirect) 
+force = NV{k}(map(x -> x in (:native, :urban, :water), propertynames(transitions)))
+rev = reverse(eachindex(timeline))
+
+timeline = vec(nv_rasts.rod[X=Near(63.393), Y=Near(-19.7392)])
+timeline1 = copy(timeline); LandscapeChange._apply_transitions!(timeline1, reversed, reversed_indirect, force)
+
+timeline2 = copy(timeline); LandscapeChange._apply_transitions!(view(timeline2, rev), transitions, indirect, force)
+timeline
+timeline1
+timeline2
+LandscapeChange._remove_intermediate_uncertainty!(timeline1)
+LandscapeChange._remove_intermediate_uncertainty!(timeline2)
+possible = map(.|, timeline1, timeline2)
+t, r = LandscapeChange.cross_validate_timeline!(copy(timeline), transitions; simplify=true, cull=false); t
+t, r = LandscapeChange.cross_validate_timeline!(copy(timeline), transitions; simplify=true, cull=true); t
+
+
+a = NV{propertynames(transitions)}((false, false, true, false, true, false))
+b = NV{propertynames(transitions)}((true, false, true, false, true, false))
+
+LandscapeChange._merge_all(a, b, reversed, reversed_indirect, force)
+
 include("map_file_list_2.jl")
-slices = compile_timeline(masks, lc_categories; category_names, files=define_map_files())[(:rod,)]
+slices = compile_timeline(masks, lc_categories; category_names, files=define_map_files())
+force = NV{propertynames(logic)}(map(x -> x in (:cleared, :urban, :water), propertynames(logic)))
 nv_rasts = map(slices) do island
     Rasters.combine(namedvector_raster.(island.timeline))
 end
-striped_raw = map(nv_rasts) do nv_rast
+striped_raw = map(nv_rasts[(:rod,)]) do nv_rast
     stripe_raster(nv_rast, states)
 end
 compiled = map(nv_rasts) do nv_rast
-    cross_validate_timeline(logic, nv_rast; assume_continuity=true)
+    cross_validate_timeline(logic, nv_rast; simplify=true, cull=true)#, force)
 end
 striped_compiled = map(compiled) do island
     stripe_raster(island.timeline, states)
 end
+striped_error = map(compiled) do island
+    stripe_raster(island.error, states)
+end
+Rasters.rplot(striped_compiled.rod; colorrange=(1, 6))
+
 Rasters.rplot(striped_raw.mus; colorrange=(1, 6))
-Rasters.rplot(striped_compiled.mus; colorrange=(1, 6))
+Rasters.rplot(striped_compiled.mus[Ti=1:16]; colorrange=(1, 6))
 Rasters.rplot(striped_raw.reu; colorrange=(1, 6))
 Rasters.rplot(striped_compiled.reu; colorrange=(1, 6))
 Rasters.rplot(striped_raw.rod; colorrange=(1, 6))
 Rasters.rplot(striped_compiled.rod; colorrange=(1, 6))
+
+b = map(x -> x.cleared, compiled.rod.timeline)
+Rasters.rplot(b)
+
+rs = rebuild(resample(striped_raw.rod[Ti=At(2021)]; crs=EPSG(3857)); missingval=0)
+slope.rod
+
+using Tyler, TileProviders, MapTiles
+ext = Extents.extent(rs)
+
+tyler = Tyler.Map(ext; provider=Google(:satelite))
+Makie.heatmap!(tyler.axis, rebuild(resample(rs; crs=EPSG(3857), size=(1000, 1000)), missingval=0), colormap=(:magma, 0.5), transparency=true, opacity=0.2)
+rs = rebuild(resample(slices.rod.files.gade_1.raw; crs=EPSG(3857), size=(1000, 1000)) .== 1; missingval=0)
+sl = rebuild(resample(replace_missing((slices.rod.files.gade_1.raw .== 1) .* slope_stacks.rod.slope, 0); crs=EPSG(3857), size=(1000, 1000)); missingval=0)
+sl = rebuild(resample(replace_missing(slope_stacks.rod.slope, 0); crs=EPSG(3857), size=(1000, 1000)); missingval=0)
+Makie.heatmap!(tyler.axis, sl)
+Makie.heatmap!(tyler.axis, rs; colormap=(:magma, 0.5), transparency=true, opacity=0.2)
+
+
 # Rasters.rplot(striped_compiled.reu; colorrange=(1, 6))
 # Rasters.rplot(striped_compiled.rod; colorrange=(1, 6))
 

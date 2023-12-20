@@ -134,3 +134,5 @@ Rasters.rplot(natparks_raster)
 
 reu_veg_rast = resample(Raster("/home/raf/PhD/Mascarenes/Data/Dominique/Vegetation_Rasters/present_veg4.tif"); to=dems.reu)
 write("/home/raf/PhD/Mascarenes/Data/Generated/reu_native.tif", reu_veg_rast; force=true)
+reu_all_natives = rebuild(UInt8.((x -> x in 1:20).(reu_veg_rast)); missingval=0x00)
+write("/home/raf/PhD/Mascarenes/Data/Generated/reu_all_natives.tif", reu_all_natives; force=true)

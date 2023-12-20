@@ -26,7 +26,9 @@ function _get_categories(image_path)
     original_names = data.settings.category_name
 end
 
-function define_map_files(; path = "/home/raf/PhD/Mascarenes")
+function define_map_files(; 
+    path = "/home/raf/PhD/Mascarenes"
+)
     # Here we define:
     # - all of the files we use
     # - what the land-cover categories are called for the file
@@ -247,8 +249,11 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes")
         # "atlas_1960_agriculture" => "$path/Data/Selected/Reunion/Undigitised/atlas_agriculture_1960.jpg" => (;)),
         # atlas_population_1967 = "$path/Data/Selected/Reunion/Undigitised/atlas_population_1967.jpg" => (;)),
         atlas_early_settlement = "$path/Data/Selected/Reunion/Undigitised/atlas_early_settlement_cropped.jpg" => _get_categories => (;
-            native=[1715 => ["forest", "concede_1665-1715", "conceded_1715-1765"], 1765 => ["forest", "concede_1665-1715", "conceded_1715-1765"]],
-            cleared=[1715 => "concede_1665-1715", 1765 => ["concede_1665-1715", "conceded_1715-1765"]],
+            native=[1715 => ["forest", "concede_1665-1715", "conceded_1715-1765"], 
+                    1765 => ["forest", "concede_1665-1715", "conceded_1715-1765"]],
+            cleared=[1715 => "concede_1665-1715", 
+                     1765 => ["concede_1665-1715", "conceded_1715-1765"]],
+            abandoned=[1765 => "concede_1665-1715"], # Guess (maybe wrongly) that land was not abanondoned at 50-0 years after concession
         ),
         atlas_1780_agriculture = "$path/Data/Selected/Reunion/Undigitised/atlas_1780_agriculture.jpg" => _get_categories => (;
             native = [
@@ -285,10 +290,19 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes")
             cleared=2019 => "Agricultural_areas",
             urban=2019 => "Artificial_areas",
         ),
-        native = "$path/Data/Generated/reu_native.tif" => ["native_remnant"] => (;
-            native=2021 => "native_remnant"
+        native = "$path/Data/Generated/reu_all_natives.tif" => ["native_remnant"] => (;
+            native=2021 => "native_remnant",
+            cleared=2021 => (!, "native_remnant"),
+            abandoned=2021 => (!, "native_remnant"),
+            urban=2021 => (!, "native_remnant"),
+            forestry=2021 => (!, "native_remnant"),
+            water=2021 => (!, "native_remnant"),
         ),
     ), rod=(;
+        # This was not at all accurate the urban areas may be decorative or suggestive
+        # urban_1885 = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/rodrigues-mauritius-mascarene-islands-mascarenhas-archipelago-1885-GC0ATP.jpg" => _get_categories => (;
+        #     urban=1885 => "urban",
+        # ),
         gade_1 = "$path/Data/Selected/Rodrigues/Gade_1985_landcover.png" => ["native_remnant"] => (;
             native = [1700 => :mask, 1985 => :force => "native_remnant"],
         ),

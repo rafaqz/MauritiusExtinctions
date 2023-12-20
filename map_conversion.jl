@@ -19,12 +19,12 @@ include("water.jl")
 
 swap_ext(path, newext) = string(splitext(path)[1], newext)
 
-for pdf in readdir("/home/raf/PhD/Mascarenes/maps/Rodrigues/cb"; join=true)
-    name, ext = splitext(pdf)
-    ext == ".pdf" || continue
-    png = name * ".png" 
-    run(`pdftoppm $pdf $png -png -r 300`)
-end
+# for pdf in readdir("/home/raf/PhD/Mascarenes/maps/Rodrigues/cb"; join=true)
+#     name, ext = splitext(pdf)
+#     ext == ".pdf" || continue
+#     png = name * ".png" 
+#     run(`pdftoppm $pdf $png -png -r 300`)
+# end
 
 img_path = "/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds/31.png-1.png"
 img_path = "/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds/9.png-1.png"
@@ -37,12 +37,13 @@ img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/atlas_own
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/atlas_agriculture_1960_2.jpg"
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/Gade_1985_landcover.png"
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/Gade_1985_landcover_2.png"
-img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/Gade_1985_landcover_3.png"
 img_path = "$path/Data/Selected/Reunion/Undigitised/atlas_early_settlement_cropped.jpg"
 img_path = "$path/Data/Selected/Reunion/Undigitised/atlas_1815_agriculture.jpg" 
 img_path = "$path/Data/Selected/Reunion/Undigitised/atlas_1780_agriculture.jpg" 
-img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/cb5989en.png-06.png"
-img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/cb5989en.png-06_2.png"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/rodrigues-mauritius-mascarene-islands-mascarenhas-archipelago-1885-GC0ATP.jpg"
+
+# img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/cb5989en.png-06.png"
+# img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/cb5989en.png-06_2.png"
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/cb5989en.png-06_colored.png"
 
 img = load_image(img_path)
@@ -71,6 +72,7 @@ warpselector = MapRasterization.WarpSelector(img;
 CSV.write(warp_path, warpselector.warper.point_table[])
 
 rs = warp_to_raster(img_path, dems.rod)
+rs = warp_to_polygon(img_path, dems.rod)
 Makie.plot(rs)
 
 polygons = MapRasterization.warp(warpselector, img; )
@@ -78,18 +80,6 @@ CSV.write(warp_path, warpselector.warper.point_table[])
 output = JSON3.read(read(json_path), MapRasterization.MapSelection)
 
 template = dems.mus
-function polywarp(img_path, template)
-    cs = choose_categories(img_path);
-    warp_path = splitext(img_path)[1] * ".csv"
-    point_table = CSV.read(warp_path, DataFrame)
-    polygon_vecs = map(MultiPolygon ∘ getindex, cs.obs.polygons)
-    warper = MapRasterization.Warper(; point_table, template)
-    polygons = MapRasterization.warp(warper, polygon_vecs)
-    raster = rasterize(last, polygons; to=template, fill=eachindex(polygons))
-    raster_path = splitext(img_path)[1] * ".tif"
-    write(raster_path, raster; force=true) 
-    return raster
-end
 
 # using JSON3
 # using Images
@@ -100,7 +90,6 @@ end
 # using Dictionaries
 # using GeoDataFrames
 # using DataFrames, CSV, Tables
-aa
 # includet("roads.jl")
 # includet("svgs.jl")
 

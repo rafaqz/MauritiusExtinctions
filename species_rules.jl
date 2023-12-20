@@ -32,20 +32,23 @@ function InteractiveCarryCap{R,W}(; carrycap, carrycap_scaling, inputs=(;),) whe
     InteractiveCarryCap{R,W}(carrycap, carrycap_scaling, inputs)
 end
 
-@inline function DynamicGrids.applyrule(data, rule::InteractiveCarryCap, carrycap::NamedVector{Keys}, I) where Keys
-    growth_rates = get(data, rule.rate, I...) .* rule.nsteps
+@inline function DynamicGrids.applyrule(
+    data, rule::InteractiveCarryCap, 
+    (populations, carrycaps)::NamedTuple{<:Any,<:Tuple{<:NamedVector{Keys},<:NamedVector{Keys}}}, I,
+) where Keys
     local_inputs = map(rule.inputs) do val
         get(data, val, I)
     end
-    relative_pop = NamedTuple(populations ./ rule.carrycap)
+    relative_pop = NamedTuple(populations ./ carrycaps)
     # combine populations
     params = merge(relative_pop, local_inputs)
     
     scaling = map(rule.carrycap_scaling[Keys]) do f
         oneunit(eltype(populations)) + f(params)
     end |> NamedVector
-
-    return max.(zero(eltype(rule.carrycap)), rule.carrycap .* scaling)
+    new_carrycaps = max.(oneunit(eltype(carrycaps)) .* 1e-7, carrycaps .* scaling)
+    any(isnan, new_carrycaps) && error("NaN carrycap found: $new_carrycaps from relative_pop $relative_pop params $params populations $populations, carrycaps $carrycaps and scaling $scaling")
+    return new_carrycaps
 end
 
     # # scaling = scale_carrycap(populations, rule.carrycap, rule.interactions, local_suitabilities)
@@ -97,6 +100,7 @@ function def_syms(
         mouse =      52.0,
         pig =        0.3,
         snake =      20.0,
+        macaque =    1.0,
     ) .* aggscale
 
     pred_funcs = (;
@@ -106,6 +110,7 @@ function def_syms(
         mouse =      p -> -0.3p.cat - 0.2p.black_rat - 0.2p.norway_rat + 0.8p.cleared + 1.5p.urban,
         pig =        p -> 0.5p.native + 0.4p.abandoned - 1p.urban - 0.3p.cleared,
         snake =      p -> -0.2p.cat + 0.2p.black_rat + 0.3p.mouse - 0.5p.urban + 0.3p.native,
+        macaque =    p -> 4p.abandoned + 1.0p.forestry + 0.5p.native,
     )
 
     pred_inputs = NamedTuple{keys(aux)}(map(Aux, keys(aux)))
@@ -118,6 +123,7 @@ function def_syms(
         mouse =       0.5,
         pig =         15.0,
         snake =       1.0,
+        macaque =     5.0,
     )
 
     # How much these species are supported outside of this system
@@ -199,16 +205,19 @@ function def_syms(
     pred_pops = map(ag_masks) do m
         map(_ -> map(_ -> 0.0, pred_rmax), m)
     end
+    pred_carrycaps = map(ag_masks) do m
+        map(_ -> carrycap, m)
+    end
 
-    pred_carrycap = InteractiveCarryCap{:carrycap}(;
+    pred_carrycap_rule = InteractiveCarryCap{Tuple{:pred_pop,:pred_carrycap},:pred_carrycap}(;
         carrycap,
         carrycap_scaling=pred_funcs,
         inputs=pred_inputs,
     )
 
-    pred_growth = LogisticGrowth{:pred_pops}(;
+    pred_growth_rule = LogisticGrowth{:pred_pop}(;
         rate=pred_rmax,
-        carrycap=Grid{:carrycap}(),
+        carrycap=Grid{:pred_carrycap}(),
         timestep=1,
     )
 
@@ -226,8 +235,9 @@ function def_syms(
         mouse_sus = ExtinctNV(LinRange(0.0, 0.001, n_extinct))
         pig_sus = ExtinctNV(LinRange(0.0, 0.005, n_extinct))
         snake_sus = ExtinctNV(LinRange(0.0, 0.005, n_extinct))
-        pred_suscept = map(cat_sus, black_rat_sus, norway_rat_sus, mouse_sus, pig_sus, snake_sus) do c, br, nr, m, p, s
-            PredNV((c, br, nr, m, p, s)) ./ aggscale
+        macaque_sus = ExtinctNV(LinRange(0.0, 0.003, n_extinct))
+        pred_suscept = map(cat_sus, black_rat_sus, norway_rat_sus, mouse_sus, pig_sus, snake_sus, macaque_sus) do c, br, nr, m, p, s, ma
+            PredNV((c, br, nr, m, p, s, ma)) ./ aggscale
         end
     end
 
@@ -241,26 +251,26 @@ function def_syms(
 
     #### Rules ##########################################################333
 
-    introduction_rule = SetGrid{:pred_pops}() do data, pred_pops, t
-        D = dims(DG.init(data).pred_pops)
+    introduction_rule = SetGrid{:pred_pop}() do data, pred_pop, t
+        D = dims(DG.init(data).pred_pop)
         current_year = currenttime(data)
         intros = DG.aux(data)[:introductions]
         foreach(intros) do intro
             if intro.year == current_year
                 p = intro.geometry
                 I = DimensionalData.dims2indices(D, (X(Contains(p.X)), Y(Contains(p.Y))))
-                pred_pops[I...] = pred_pops[I...] .+ intro.init
+                pred_pop[I...] = pred_pop[I...] .+ intro.init
             end
         end
     end
 
-    risks = let stochastic_extirpation=0.001*aggfactor, f=tanh
-        Cell{Tuple{:pred_pops,:endemic_presences},:endemic_presences}() do data, (pred_pops, endemic_presences), I
+    risks_rule = let stochastic_extirpation=0.001*aggfactor, f=tanh
+        Cell{Tuple{:pred_pop,:endemic_presence},:endemic_presence}() do data, (pred_pop, endemic_presence), I
             pred_suscept = DG.aux(data).pred_suscept
-            map(endemic_presences, pred_suscept) do present, ps
+            map(endemic_presence, pred_suscept) do present, ps
                 if present
-                    # rand() < hp * hs & rand() < sum(map(*, ps, pred_pops))
-                    rand() > f(sum(map(*, ps, pred_pops))) && rand() > stochastic_extirpation
+                    # rand() < hp * hs & rand() < sum(map(*, ps, pred_pop))
+                    rand() > f(sum(map(*, ps, pred_pop))) && rand() > stochastic_extirpation
                     # ... etc
                 else
                     false
@@ -284,8 +294,8 @@ function def_syms(
         end
     end
 
-    clearing = let
-        Cell{:endemic_presences}() do data, presences, I
+    clearing_rule = let
+        Cell{:endemic_presence}() do data, presences, I
             uc = get(data, Aux{:native}(), I)
             presences .& uc
         end
@@ -298,9 +308,9 @@ function def_syms(
             formulation=ExponentialKernel(s),
         )
     end
-    pred_spread = let aggfactor=aggfactor, pred_kernels=pred_kernels
-        SetNeighbors{:pred_pops}(pred_kernels[1]) do data, hood, Ns, I
-            any(isnan, Ns) && error("pred_spread N is: $Ns")
+    pred_spread_rule = let aggfactor=aggfactor, pred_kernels=pred_kernels
+        SetNeighbors{:pred_pop}(pred_kernels[1]) do data, hood, Ns, I
+            any(isnan, Ns) && error("pred_pop Ns is: $Ns")
             Ns == zero(Ns) && return nothing
             dem = DG.aux(data)[:dem]
             spr = DG.mask(data)#[:spreadability]
@@ -349,25 +359,25 @@ function def_syms(
                 else
                     sum = sum1
                 end
-                add!(data[:pred_pops], propagules, Ih...)
+                add!(data[:pred_pop], propagules, Ih...)
             end
-            @inbounds any(isnan, data[:pred_pops][I...]) && error("NaN in output")
-            @inbounds sub!(data[:pred_pops], sum, I...)
+            @inbounds any(isnan, data[:pred_pop][I...]) && error("NaN in output")
+            @inbounds sub!(data[:pred_pop], sum, I...)
             return nothing
         end
     end # let
 
     # This is not really allee extinction, just assuring
     # at least one individual exists.
-    # pred_allee = AlleeExtinction{:pred_pops}(;
+    # pred_allee = AlleeExtinction{:pred_pop}(;
     #     minfounders=one_individual,
     # )
 
     recouperation_rates = map(ExtinctNVs) do ExtinctNV
         rand(ExtinctNV) / 10
     end
-    endemic_recouperation = let
-        Neighbors{:endemic_presences}(Moore(2)) do data, hood, prescences, I
+    endemic_recouperation_rule = let
+        Neighbors{:endemic_presence}(Moore(2)) do data, hood, prescences, I
             any(prescences) || return prescences
             recouperation_rate = DG.aux(data).recouperation_rate
             i = 0
@@ -386,20 +396,19 @@ function def_syms(
         # t1 = minimum(x -> x.year, intros) - 2
         1549:2018
     end
-    inits = map(pred_pops, endemic_presences) do pred_pops, endemic_presences
-        cary_caps = pred_pops .* 0
-        (; pred_pops, carry_caps, endemic_presences)
+    inits = map(pred_pops, pred_carrycaps, endemic_presences) do pred_pop, pred_carrycap, endemic_presence
+        (; pred_pop, pred_carrycap, endemic_presence)
     end
     ruleset = Ruleset(
         introduction_rule,
-        pred_carrycap, pred_spread, pred_growth,
-        endemic_recouperation, risks, clearing;
+        pred_carrycap_rule, pred_spread_rule, pred_growth_rule,
+        endemic_recouperation_rule, risks_rule, clearing_rule;
         boundary=Use()
     )
 
     pred_ruleset = Ruleset(
         introduction_rule,
-        pred_carrycap, pred_spread, pred_growth;
+        pred_carrycap_rule, pred_spread_rule, pred_growth_rule;
         boundary=Use()
     )
 
@@ -440,92 +449,10 @@ function def_syms(
     #     ExtinctNV(map(first, getproperty(island_extinct_tables, island).extinct))
     # end
 
-    return (; ruleset, pred_ruleset, inits, pred_inits, outputs, pred_outputs, outputs_kw, ag_masks, carrycap)#, last_obs
-end
-
-function mk(init, ruleset; carrycaps, kw...)
-    MakieOutput(init;
-        kw...,
-        fps=100,
-        store=false,
-        ruleset,
-        sim_kw=(; printframe=true),
-    ) do fig, frame, time
-        pred_keys = propertynames(frame[].pred_pops[1])
-        ncols = length(pred_keys)
-        extinct_keys = propertynames(frame[].endemic_presences[1])
-        n_extinct = length(extinct_keys)
-        extinct_strings = collect(string.(extinct_keys))
-        menus = map(1:6) do i
-            Menu(fig[3, i]; default=extinct_strings[i], options=extinct_strings)
-        end
-        pred_axes = map(1:ncols) do i
-            Axis(fig[1, i]; title=string(pred_keys[i]))
-        end
-        extinct_axes = map(1:ncols, menus) do i, m
-            ax = Axis(fig[2, i]; title=m.selection)
-        end
-        linkaxes!(pred_axes..., extinct_axes...)
-        predators = map(1:ncols) do i
-            Observable(Array((x -> iszero(x) ? NaN : Float64(x)).(getindex.(frame[].pred_pops, i))))
-        end
-        extincts = map(1:ncols) do i
-            Observable(Array(getindex.(frame[].endemic_presences, i)))
-        end
-
-        on(frame) do f
-            foreach(predators, 1:ncols) do  pred, i
-                pred[] .= (x -> iszero(x) ? NaN : Float64(x)).(getindex.(frame[].pred_pops, i))
-                notify(pred)
-            end
-        end
-        foreach(extincts, menus) do extinct, menu
-            onany(frame, menu.selection) do f, selection
-                i = findfirst(==(selection), extinct_strings)
-                extinct[] .= getindex.(f.endemic_presences, i)
-                notify(extinct)
-            end
-        end
-        foreach(pred_axes, predators, pred_keys, carrycaps) do ax, pred, k, cc
-            Makie.image!(ax, pred; colorrange=(0.0, cc), colormap=:magma, interpolate=false)
-        end
-        foreach(extinct_axes, extincts, Iterators.Cycle([:blues, :reds, :greens])) do ax, extinct, colormap
-            Makie.image!(ax, extinct; colorrange=(0.0, 1.0), colormap, interpolate=false)
-        end
-        return nothing
+    islands = map(inits, pred_inits, outputs, pred_outputs, outputs_kw, ag_masks) do init, pred_init, output, pred_output, output_kw, ag_mask 
+        (; init, pred_init, output, pred_output, output_kw, ag_mask)
     end
+
+
+    return (; ruleset, islands)
 end
-
-function mk_pred(init, ruleset, mask; carrycap, kw...)
-    MakieOutput(init;
-        kw...,
-        fps=100,
-        store=false,
-        ruleset,
-        sim_kw=(; printframe=true),
-    ) do fig, frame, time
-        # nanmask = map(x -> x ? 1.0f0 : NaN32, mask)
-        pred_keys = propertynames(frame[].pred_pops[1])
-        ncols = length(pred_keys)
-        pred_axes = map(1:ncols) do i
-            Axis(fig[1, i]; title=string(pred_keys[i]))
-        end
-        linkaxes!(pred_axes...)
-        predators = map(1:ncols) do i
-            Observable(Array(Float32.(getindex.(frame[].pred_pops, i))))
-        end
-
-        on(frame) do f
-            foreach(predators, 1:ncols) do pred, i
-                pred[] .= getindex.(f.pred_pops, i)
-                notify(pred)
-            end
-        end
-        foreach(pred_axes, predators, pred_keys, carrycap) do ax, pred, k, cc
-            Makie.image!(ax, pred; colorrange=(0, cc), colormap=:viridis, interpolate=false)
-        end
-        return nothing
-    end
-end
-
-

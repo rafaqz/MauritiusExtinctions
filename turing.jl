@@ -17,15 +17,6 @@ Plots.plot(Base.Fix2(_slope_speed, 2), 0:0.1:10)
 
 logit(x) = one(x)/(one(x) + exp(-x))
 
-function predict_extinctions(ruleset, init; tspan, kw...)
-    output = TransformedOutput(init; tspan, kw...) do data
-        map(>(0), sum(data.species))
-    end
-    sim!(output, ruleset)
-    # Return NamedVector of years to extinction
-    return sum(sim) .+ first(tspan) .- 1
-end
-
 function define_threats(human, cat, rat, habitat)
     # define a threat rule here
     # probably should not be a new anonymous function

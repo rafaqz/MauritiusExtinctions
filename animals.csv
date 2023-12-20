@@ -5,4 +5,4 @@ norway_rat,2.7,15,,rmax and max_density are made up
 mouse,4.7,52,,rmax is made up max_density from Le Corre (2015)
 pig,0.58,0.3,Zivin (2000) Lewis (2017),"~30/km2 maximum is common in forsests on tropical islands"
 snake,2,20,,rmax and max_density are made up
-macaque|0.22,1.33,Ross 1992 + Santosa et al 2012, 0.33 in native habitats while 1.33 in disturbed habitats in mauritius
+macaque,0.22,1.33,Ross 1992 + Santosa et al 2012, 0.33 in native habitats while 1.33 in disturbed habitats in mauritius
