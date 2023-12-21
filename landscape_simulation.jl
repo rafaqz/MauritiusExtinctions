@@ -180,7 +180,7 @@ landscape_events = (
 )
 
 # Rasters.rplot(ustrip.(last(travel_times.mus)))
-human_suitability = map(travel_times, slope_stacks, dems) do tt, ss, dem
+human_suitabilities = map(travel_times, slope_stacks, dems) do tt, ss, dem
     slope_suitability = (1 .- ss.slope) # Steep bad, flat good
     slices = map(tt) do travel_time
         travel_suitability = (1 .- travel_time ./ 50u"hr")
@@ -197,7 +197,7 @@ distance_to_water = map(island_keys) do k
     fix_order(Raster(joinpath(distancedir, string(k), "to_water.tif")))
 end
 
-suitability = map(human_suitability, distance_to_water) do hs, dtw
+suitabilities = map(human_suitabilities, distance_to_water) do hs, dtw
     # dtw = 1 ./ (1 .+ sqrt.(replace_missing(dtw, Inf)))
     native = fill!(similar(hs), 1.0)
     cleared = hs .^ 2# .* dtw
@@ -244,11 +244,13 @@ end
 mus_native_veg_tif_path = "/home/raf/PhD/Mascarenes/Data/Generated/mus_native_veg.tif"
 target_native_fraction = Raster(mus_native_veg_tif_path) ./ 4
 
-auxs = map(compiled, suitability) do history, suitability
-    map(fix_order, (; history, suitability))#, target_native_fraction))
+
+auxs = map(events, compiled, suitability) do events, comp, suitability
+    map(fix_order, (; events, history=comp.timeline, suitability))#, target_native_fraction))
 end
 
 tspans = (mus=1600:2018, reu=1600:2018, rod=1700:2018)
+auxs.mus
 array_outputs = map(init_states, masks, auxs, tspans) do init, mask, aux, tspan
     ResultOutput(init;
         aux, mask, tspan,

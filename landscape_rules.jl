@@ -43,14 +43,12 @@ transitions = let empty = (native=0.0, cleared=0.0, abandoned=0.0, urban=0.0, fo
 end
 map(==(keys(first(transitions))) ∘ keys, transitions)
 
-history = compiled.mus.timeline
 # The logic of sequential category change - can a transition happen at all
 # Human Population and species introduction events
-eventrule = let events=landscape_events.mus,
-                states=states,
-                history=history
-                # D=dims(masks.mus),
+eventrule = let states=states, # D=dims(masks.mus),
     SetGrid{:landcover,:landcover}() do data, l1, l2
+        history = get(data, Aux{:history}())
+        events = get(data, Aux{:events}())
         current_year = currenttime(data)
         if hasselection(history, Ti(At(current_year)))
             foreach(eachindex(l1), l1, view(history, Ti(At(current_year)))) do I, state, hist
