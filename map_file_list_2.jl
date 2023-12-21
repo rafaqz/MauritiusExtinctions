@@ -267,6 +267,14 @@ function define_map_files(;
             cleared = 1815 => ["geranium", "vanilla", "cane"],
             abandonned = 1815 => ["wasteland", "forest"],
         ),
+        public_map ="/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/34.jpg" => _get_categories => (;
+            native=1940=>["vegetation1", "vegetation2", "vegetation3"],
+            cleared=1940=>["cleared1", "cleared2"],
+            abandoned=1940=>["vegetation1", "vegetation2", "vegetation3"],
+            urban=1940=>["cleared1", "cleared2"],
+            forestry=1940=>["vegetation1", "vegetation2", "vegetation3"],
+            water=1940=>["lake"],
+        ),
         atlas_1960_agriculture = "$path/Data/Selected/Reunion/Undigitised/atlas_agriculture_1960_2.jpg" => _get_categories => (;
             native=1960 => ["forest", "shrubland", "rock", "savannah", "geranium_discontinuous"],
             cleared=1960 => ["cane", "geranium_continuous", "tea", "geranium_discontinuous"],

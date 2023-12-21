@@ -16,6 +16,7 @@ using Geomorphometry
 include("species_rules.jl")
 include("raster_common.jl")
 include("makie.jl")
+fig = Figure()
 
 function gpu_cleanup(A)
     x, y, ti = lookup(A, (X, Y, Ti))
@@ -58,17 +59,28 @@ end
 island_extinct_names = map(get_species_names, island_extinct)
 aggfactor = 8
 
-lc_predictions_path = "$outputdir/lc_predictions.nc"
+lc_predictions_paths = (
+    mus="$outputdir/lc_predictions_mus.nc",
+    reu="$outputdir/lc_predictions_reu.nc",
+    rod="$outputdir/lc_predictions_rod.nc",
+)
+
 # netcdf has the annoying center locus for time
-lc_predictions = RasterStack(lc_predictions_path) |>
-    x -> rebuild(Rasters.modify(BitArray, x); missingval=false) |>
-    x -> Rasters.set(x, Ti => Int.(maybeshiftlocus(Start(), dims(x, Ti), )))
-aux = lc_predictions
+lc_predictions = map(lc_predictions_paths) do path
+    lc_predictions = RasterStack(path) |>
+        x -> rebuild(Rasters.modify(BitArray, x); missingval=false) |>
+        x -> Rasters.set(x, Ti => Int.(maybeshiftlocus(Start(), dims(x, Ti), )))
+end
 k = :mus
+k = :reu
+k = :rod
 include("species_rules.jl")
-(; ruleset, islands) = def_syms(pred_df, introductions_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, aux);
+(; ruleset, islands) = def_syms(pred_df, introductions_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, lc_predictions);
 (; output, init, output_kw) = islands[k]
+map(size, output_kw.aux) |> pairs
 @time sim!(output, ruleset; proc=ThreadedCPU());
+Makie.heatmap(output_kw.aux.abandoned[Ti=10])
+Makie.heatmap(output_kw.aux.dem)
 
 # @time sim!(pred_outputs.mus, pred_ruleset; proc=SingleCPU());
 max_pops = map(output) do frame
@@ -76,6 +88,8 @@ max_pops = map(output) do frame
         maximum(x -> getproperty(x, key), frame.pred_pops)
     end
 end |> maximum
+
+max_pops = carrycap .* 200
 
 mkoutput = mk(init, ruleset; carrycaps=max_pops, output_kw...)
 display(mkoutput)

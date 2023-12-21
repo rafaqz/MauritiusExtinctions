@@ -35,61 +35,13 @@ logic = NV(
     water     = NV(native=true,  cleared=true,  abandoned=true,  urban=true,  forestry=false,  water=true),
 )
 
-timeline = NV{(:native, :cleared, :abandoned, :urban, :forestry, :water)}.[
-    (true, false, false, false, false, false)
-    (false, true, false, false, false, false)
-    (false, false, false, true, false, false)
-    (false, true, true, false, false, false)
-    (false, false, false, true, false, false)
-]
-removed = NV{keys(states)}.([
-    (true, false, false, false, false, false)
-    (false, true, false, false, false, false)
-    (false, true, false, true, false, false)
-    (false, true, false, true, false, false)
-    (false, false, false, true, false, false)
-])
-corrected = NV{keys(states)}.([
-    (true, false, false, false, false, false)
-    (false, true, false, false, false, false)
-    (false, true, false, true, false, false)
-    (false, false, false, true, false, false)
-    (false, false, false, true, false, false)
-])
-
-transitions = logic
-reversed = LandscapeChange.reverse_transitions(transitions) 
-indirect = LandscapeChange.indirect_transitions(transitions)
-reversed_indirect = LandscapeChange.reverse_transitions(indirect) 
-force = NV{k}(map(x -> x in (:native, :urban, :water), propertynames(transitions)))
-rev = reverse(eachindex(timeline))
-
-timeline = vec(nv_rasts.rod[X=Near(63.393), Y=Near(-19.7392)])
-timeline1 = copy(timeline); LandscapeChange._apply_transitions!(timeline1, reversed, reversed_indirect, force)
-
-timeline2 = copy(timeline); LandscapeChange._apply_transitions!(view(timeline2, rev), transitions, indirect, force)
-timeline
-timeline1
-timeline2
-LandscapeChange._remove_intermediate_uncertainty!(timeline1)
-LandscapeChange._remove_intermediate_uncertainty!(timeline2)
-possible = map(.|, timeline1, timeline2)
-t, r = LandscapeChange.cross_validate_timeline!(copy(timeline), transitions; simplify=true, cull=false); t
-t, r = LandscapeChange.cross_validate_timeline!(copy(timeline), transitions; simplify=true, cull=true); t
-
-
-a = NV{propertynames(transitions)}((false, false, true, false, true, false))
-b = NV{propertynames(transitions)}((true, false, true, false, true, false))
-
-LandscapeChange._merge_all(a, b, reversed, reversed_indirect, force)
-
 include("map_file_list_2.jl")
-slices = compile_timeline(masks, lc_categories; category_names, files=define_map_files())
+slices = compile_timeline(define_map_files(), masks, keys(lc_categories))
 force = NV{propertynames(logic)}(map(x -> x in (:cleared, :urban, :water), propertynames(logic)))
 nv_rasts = map(slices) do island
     Rasters.combine(namedvector_raster.(island.timeline))
 end
-striped_raw = map(nv_rasts[(:rod,)]) do nv_rast
+striped_raw = map(nv_rasts) do nv_rast
     stripe_raster(nv_rast, states)
 end
 compiled = map(nv_rasts) do nv_rast
@@ -147,7 +99,7 @@ Makie.heatmap!(tyler.axis, rs; colormap=(:magma, 0.5), transparency=true, opacit
 # _merge_all_possible(b, a, logic) |> pairs
 
 cat_counts = let states=states
-    map(human_pop_timeline, compiled) do human_pop, history
+    map(human_pop_timelines, compiled) do human_pop, history
         map(slice(history.timeline[Ti=1600..2017], Ti)) do slice
             total_counts = zeros(Int, size(first(slice)))
             known_counts = zeros(Int, size(first(slice)))
@@ -164,7 +116,7 @@ cat_counts = let states=states
                 pop = human_pop[Near(year)]
                 (; total, known, ratio=known/total, meancount=(known + total) / 2, year, pop)
             end 
-            NamedVector{keys(states)}(vals)
+            nv = NamedVector{propertynames(states)}(vals)
         end 
     end
 end
@@ -174,17 +126,18 @@ high_certainty = map(cat_counts) do cc
         vals = map(cc) do val
             val[k]
         end
-        filter(v -> v.ratio > 0.5, vals)
+        filter(v -> v.ratio > 0.3, vals)
     end
 end
+
 high_certainty.mus.urban
 
 # Cleared land is used for urbanisation by 1992, so don't use it in the model
 lc_predictions = map(high_certainty[(:mus,)]) do hc 
     cleared_model = lm(@formula(meancount ~ pop^2 + pop), DataFrame(hc.cleared))
     urban_model = lm(@formula(meancount ~ pop^2), DataFrame(hc.urban))
-    ti = dims(human_pop_timeline.mus, Ti)
-    pops = map(pop -> (; pop), human_pop_timeline.mus)
+    ti = dims(human_pop_timelines.mus, Ti)
+    pops = map(pop -> (; pop), human_pop_timelines.mus)
     cleared_pred = DimArray(predict(cleared_model, parent(pops)), ti)
     urban_pred = DimArray(predict(urban_model, parent(pops)), ti)
     map((cleared, urban) -> (; cleared, urban), cleared_pred, urban_pred)
@@ -197,7 +150,7 @@ end
 # Plots.scatter!(getproperty.(high_certainty.urban, :known))
 # Plots.scatter!(getproperty.(high_certainty.urban, :meancount))
 # Plots.scatter!(getproperty.(high_certainty.urban, :total))
-# Plots.plot!(human_pop_timeline.mus)
+# Plots.plot!(human_pop_timelines.mus)
 
 # b = (; bounds=(0.0, 2.0))
 # inertia = NamedVector(
@@ -280,185 +233,32 @@ end
 # Rasters.aggregate(sum, pop_density.reu, 50; skipmissingval=true) |> Makie.plot
 # Rasters.aggregate(sum, human_suitability.reu, 50; skipmissingval=true) |> rplot
 
-pn(x, d) = Distributions.pdf(x, d) ./ Distributions.pdf(x, 0)
+include("landscape_rules.jl");
 
-# The amount of influence neighbors have
-b = (; bounds=(-2.0, 2.0))
-transitions = let empty = (native=0.0, cleared=0.0, abandoned=0.0, urban=0.0, forestry=0.0, water=0.0,),
-                  k = Exponential(P(2.0; bounds=(0.00001, 5.0), label="kernel")),
-                  cn = P(0.1; b..., label="cleared from native"),
-                  cc = P(1.0; b..., label="cleared from cleared"),
-                  ca = P(0.2; b..., label="cleared from abandoned"),
-                  aa = P(0.8; b..., label="abandoned from abandoned"),
-                  uc = P(0.2; b..., label="urban from cleared"),
-                  uu = P(1.0; b..., label="urban from urban")
-    # ff = Exponential(P(1.7; b..., label="forestry from forestry"))
-    (
-        native = empty,
-        cleared = (
-            native=d -> cn * pn(k, d), 
-            cleared=d -> cc * pn(k, d), 
-            abandoned=d -> ca * pn(k, d), 
-            urban=0.0,
-            forestry=0.0, 
-            water=0.0,
-        ),
-        abandoned = (
-            native=0.0,
-            cleared=0.0,
-            abandoned=d -> aa * pn(k, d),
-            urban=0.0,
-            forestry=0.0,
-            water=0.0,
-        ),
-        urban = (
-            native=0.0, 
-            cleared=d -> uc * pn(k, d), 
-            abandoned=0.0, 
-            urban=d -> uu * pn(k, d), 
-            forestry=0.0, 
-            water=0.0,
-        ),
-        forestry = empty,
-        water = empty,
+init_states = map(masks) do mask
+    (;  landcover=Rasters.mask!(fill(1, dims(mask); missingval=0), with=mask),
+        native_fraction=rebuild(fill(1.0, dims(mask)); missingval=nothing)
     )
 end
-map(==(keys(first(transitions))) ∘ keys, transitions)
-
-history = compiled.mus.timeline
-# The logic of sequential category change - can a transition happen at all
-# Human Population and species introduction events
-eventrule = let events=landscape_events.mus,
-                states=states,
-                history=history
-                # D=dims(masks.mus),
-    SetGrid{:landcover,:landcover}() do data, l1, l2
-        current_year = currenttime(data)
-        if hasselection(history, Ti(At(current_year)))
-            foreach(eachindex(l1), l1, view(history, Ti(At(current_year)))) do I, state, hist
-                # Fill water
-                # if hist.water && count(hist) == 1
-                    # l1[I] = states.water 
-                # end
-                if count(hist) == 1
-                    l1[I] = findfirst(hist)
-                end
-            end
-        end
-    end
-end
-# for event in events
-#     if event.year == current_year
-#         p = event.geometry
-#         I = DimensionalData.dims2indices(D, (X(Contains(p.X)), Y(Contains(p.Y))))
-#         Iu = map(i -> i-1:i+1, I)
-#         Ic = map(i -> i-10:i+10, I)
-#         l1[Iu...] .= states.urban
-#         l1[Ic...] .= states.cleared
-#         l2[Iu...] .= states.urban
-#         l2[Ic...] .= states.cleared
-#         # l2 .= states.cleared
-#     end
-# end
-        
-# pressure = NamedVector(
-#     native=P(1.0; b...),
-#     cleared=P(1.5; b...),
-#     abandoned=P(1.0; b...),
-#     urban=P(1.0; b...),
-#     forestry=P(1.0; b...),
-# )
-pressure = let preds=lc_predictions.mus, ngridcells=size(sum(masks.mus))
-    leverage=P(3.0; bounds=(1.0, 10.0))
-    # cleared=P(1.5; b...),
-    # urban=P(1.4; b...)
-    abandoned = 0.0
-    forestry = Inf
-    native = 0.0 # Never regrows
-    water = Inf # Put it in as soon as its on the next map
-    (data, rule) -> begin
-        predicted = preds[At(currenttime(data))]
-        stategrid = data[:landcover]
-        hist = view(DynamicGrids.aux(data).history, Ti(Contains(currenttime(data))))
-        allowed_cleared = ThreadsX.count(x -> x.cleared, hist; init=0)
-        allowed_urban = ThreadsX.count(x -> x.urban, hist; init=0)
-        ncleared = ThreadsX.sum(==(rule.states.cleared), parent(stategrid); init=0)
-        nurban = ThreadsX.sum(==(rule.states.urban), parent(stategrid); init=0)
-        urban = LandscapeChange.calc_pressure(leverage, nurban, predicted.urban, allowed_urban)
-        cleared = LandscapeChange.calc_pressure(leverage, ncleared, predicted.cleared, allowed_cleared)
-        # @show cleared urban ncleared nurban ncleared allowed_urban allowed_cleared
-        NamedVector(; native, cleared, abandoned, urban, forestry, water)
-    end
-end
-# A = map(xy -> calc_pressure(1, 0.1, xy..., 10000), DimPoints((n=0:100, p=0:100)))
-# Makie.heatmap(A)
-# v = 1.0 + (-log(rand()^1.0))
-
-n, c, a, u, f, w = states
-precursors = (
-    native =    SA[n, n, n, n],
-    cleared =   SA[n, c, a, f],
-    abandoned = SA[c, a, a, f],
-    urban =     SA[n, c, a, f],
-    forestry =  SA[n, c, a, f],
-    water =     SA[w, w, w, w],
-)
-
-staterule = BottomUp{:landcover}(;
-    stencil=Moore(2),
-    states,
-    inertia=P(1.0),
-    transitions,
-    logic=(; direct=logic, indirect=indirect_logic(logic)),
-    pressure,
-    suitability=map(_ -> 1, states), #Aux{:suitability}(),
-    history=Aux{:history}(),
-    fixed=false,
-    perturbation=P(2.0; bounds=(0.0, 10.0), label="perturbation"),
-)
-
-init_state = (; 
-    landcover=Rasters.mask!(fill(1, dims(masks.mus); missingval=0), with=masks.mus),
-    native_fraction=rebuild(fill(1.0, dims(masks.mus)); missingval=nothing)
-)
 
 mus_native_veg_tif_path = "/home/raf/PhD/Mascarenes/Data/Generated/mus_native_veg.tif"
 target_native_fraction = Raster(mus_native_veg_tif_path) ./ 4
-aux = map(fix_order, (; history, suitability=suitability.mus, target_native_fraction))
-tspan = 1600:2018
-array_output = ArrayOutput(init_state;
-    aux,
-    tspan,
-    store=false,
-    mask=masks.mus,
-    boundary=Remove(),
-    padval=0,
-)
-degradationrule = let states=states, 
-                      degradation_curve=Param(1.0; bounds=(0.0, 4.0)), 
-                      degradation_rate=Param(0.01; bounds=(0.0, 0.01))
-    kernl = Kernel(Moore{4}()) do d
-        exp(-d / degradation_curve)# * degredation_rate
-    end
-    Neighbors{Tuple{:native_fraction,:landcover},:native_fraction}(; stencil=kernl) do data, hood, (native_fraction, landcover), I
-        DynamicGrids.ismasked(data, I...) && return oneunit(native_fraction)
-        target_native_fraction = get(data, Aux{:target_native_fraction}(), I)
-        new_native_fraction = if landcover == states.native
-            degradation = zero(first(hood))
-            @simd for i in 1:length(hood)
-                @inbounds degradation += (1 - hood[i]) * kernel(hood)[i] * degradation_rate
-            end
-            max(native_fraction / (1 + degradation), zero(native_fraction))
-        else
-            zero(native_fraction)
-        end
-        # We don't want to overshoot the real native fraction in real final run
-        return max(target_native_fraction, new_native_fraction)
-    end
+
+auxs = map(compiled, suitability) do history, suitability
+    map(fix_order, (; history, suitability))#, target_native_fraction))
 end
-ruleset = Ruleset(staterule, eventrule, degradationrule; proc=CPUGPU());
-simdata = DynamicGrids.SimData(array_output, ruleset);
-sim!(array_output, ruleset; simdata, proc=CPUGPU(), printframe=true);
+
+tspans = (mus=1600:2018, reu=1600:2018, rod=1700:2018)
+array_outputs = map(init_states, masks, auxs, tspans) do init, mask, aux, tspan
+    ResultOutput(init;
+        aux, mask, tspan,
+        store=false,
+        boundary=Remove(),
+        padval=0,
+    )
+end
+
+sim!(array_outputs.mus, ruleset; printframe=true);
 
 output = MakieOutput(init_state;
     aux, tspan,
@@ -539,3 +339,51 @@ for i in 7:-1:1
 end
 fig[1, 2] = Legend(fig, ax, habitat_names)
 
+
+
+# timeline = NV{(:native, :cleared, :abandoned, :urban, :forestry, :water)}.[
+#     (true, false, false, false, false, false)
+#     (false, true, false, false, false, false)
+#     (false, false, false, true, false, false)
+#     (false, true, true, false, false, false)
+#     (false, false, false, true, false, false)
+# ]
+# removed = NV{keys(states)}.([
+#     (true, false, false, false, false, false)
+#     (false, true, false, false, false, false)
+#     (false, true, false, true, false, false)
+#     (false, true, false, true, false, false)
+#     (false, false, false, true, false, false)
+# ])
+# corrected = NV{keys(states)}.([
+#     (true, false, false, false, false, false)
+#     (false, true, false, false, false, false)
+#     (false, true, false, true, false, false)
+#     (false, false, false, true, false, false)
+#     (false, false, false, true, false, false)
+# ])
+
+# transitions = logic
+# reversed = LandscapeChange.reverse_transitions(transitions) 
+# indirect = LandscapeChange.indirect_transitions(transitions)
+# reversed_indirect = LandscapeChange.reverse_transitions(indirect) 
+# force = NV{k}(map(x -> x in (:native, :urban, :water), propertynames(transitions)))
+# rev = reverse(eachindex(timeline))
+
+# timeline = vec(nv_rasts.rod[X=Near(63.393), Y=Near(-19.7392)])
+# timeline1 = copy(timeline); LandscapeChange._apply_transitions!(timeline1, reversed, reversed_indirect, force)
+
+# timeline2 = copy(timeline); LandscapeChange._apply_transitions!(view(timeline2, rev), transitions, indirect, force)
+# timeline
+# timeline1
+# timeline2
+# LandscapeChange._remove_intermediate_uncertainty!(timeline1)
+# LandscapeChange._remove_intermediate_uncertainty!(timeline2)
+# possible = map(.|, timeline1, timeline2)
+# t, r = LandscapeChange.cross_validate_timeline!(copy(timeline), transitions; simplify=true, cull=false); t
+# t, r = LandscapeChange.cross_validate_timeline!(copy(timeline), transitions; simplify=true, cull=true); t
+
+# a = NV{propertynames(transitions)}((false, false, true, false, true, false))
+# b = NV{propertynames(transitions)}((true, false, true, false, true, false))
+
+# LandscapeChange._merge_all(a, b, reversed, reversed_indirect, force)

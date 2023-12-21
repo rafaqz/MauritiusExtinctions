@@ -19,7 +19,7 @@ include("water.jl")
 
 swap_ext(path, newext) = string(splitext(path)[1], newext)
 
-# for pdf in readdir("/home/raf/PhD/Mascarenes/maps/Rodrigues/cb"; join=true)
+# for pdf in readdir("/home/raf/Zotero/storage/88EB39NJ"; join=true)
 #     name, ext = splitext(pdf)
 #     ext == ".pdf" || continue
 #     png = name * ".png" 
@@ -41,6 +41,9 @@ img_path = "$path/Data/Selected/Reunion/Undigitised/atlas_early_settlement_cropp
 img_path = "$path/Data/Selected/Reunion/Undigitised/atlas_1815_agriculture.jpg" 
 img_path = "$path/Data/Selected/Reunion/Undigitised/atlas_1780_agriculture.jpg" 
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/rodrigues-mauritius-mascarene-islands-mascarenhas-archipelago-1885-GC0ATP.jpg"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/34.jpg"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/Susman/Sussman and Tattersall - 2008 - Distribution, Abundance, and Putative Ecological S.png-06.png"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/Susman/Sussman and Tattersall - 2008 - Distribution, Abundance, and Putative Ecological S.png-07.png"
 
 # img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/cb5989en.png-06.png"
 # img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/cb5989en.png-06_2.png"
@@ -67,18 +70,16 @@ img = load_image(img_path)
 warp_path = splitext(img_path)[1] * ".csv"
 point_table = isfile(warp_path) ? CSV.read(warp_path, DataFrame) : nothing
 warpselector = MapRasterization.WarpSelector(img; 
-    template=dems.rod, guide=(borders.rod, waterways_rivers), point_table, 
+    template=dems.mus, guide=(borders.mus, waterways_rivers), point_table, 
 )
 CSV.write(warp_path, warpselector.warper.point_table[])
-
-rs = warp_to_raster(img_path, dems.rod)
-rs = warp_to_polygon(img_path, dems.rod)
+rs = warp_to_raster(img_path, dems.mus)
+# rs = warp_to_polygon(img_path, dems.reu)
 Makie.plot(rs)
 
 polygons = MapRasterization.warp(warpselector, img; )
 CSV.write(warp_path, warpselector.warper.point_table[])
 output = JSON3.read(read(json_path), MapRasterization.MapSelection)
-
 template = dems.mus
 
 # using JSON3

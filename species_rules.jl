@@ -47,6 +47,7 @@ end
         oneunit(eltype(populations)) + f(params)
     end |> NamedVector
     new_carrycaps = max.(oneunit(eltype(carrycaps)) .* 1e-7, carrycaps .* scaling)
+    any(isinf, new_carrycaps) && error("Inf carrycap found: $new_carrycaps from relative_pop $relative_pop params $params populations $populations, carrycaps $carrycaps and scaling $scaling")
     any(isnan, new_carrycaps) && error("NaN carrycap found: $new_carrycaps from relative_pop $relative_pop params $params populations $populations, carrycaps $carrycaps and scaling $scaling")
     return new_carrycaps
 end
@@ -71,7 +72,7 @@ end
 # end
 
 function def_syms(
-    pred_df, introductions_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, aux
+    pred_df, introductions_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, auxs
 )
     aggscale = aggfactor^2
     moore = Moore{3}()
@@ -113,9 +114,7 @@ function def_syms(
         macaque =    p -> 4p.abandoned + 1.0p.forestry + 0.5p.native,
     )
 
-    pred_inputs = NamedTuple{keys(aux)}(map(Aux, keys(aux)))
-
-    # These need to comewhat balance low growth rates
+    # These need to somewhat balance low growth rates
     spread_rate = NV(
         cat =         30.0,
         black_rat =   1.0,
@@ -125,6 +124,9 @@ function def_syms(
         snake =       1.0,
         macaque =     5.0,
     )
+
+    aux_keys = keys(first(auxs))
+    pred_inputs = NamedTuple{aux_keys}(map(Aux, aux_keys))
 
     # How much these species are supported outside of this system
     # populations = NV(cat=0.01, black_rat=25.0, norway_rat=10.0, pig=0.3)
@@ -138,13 +140,14 @@ function def_syms(
     ag_slope = map(slope_stacks) do s
         Rasters.aggregate(maximum, replace_missing(s.slope, 0), aggfactor)
     end
-    A = first(aux)
-    ag_aux = map(aux) do A
-        ag_A1 = DimensionalData.modify(BitArray, Rasters.aggregate(Center(), A, (X(aggfactor), Y(aggfactor))))
-        # Extend a century earlier
-        ag_A = Rasters.extend(ag_A1; to=(Ti(1500:1:2020),))
-        broadcast_dims!(identity, view(ag_A, Ti=1500..1600), view(ag_A1, Ti=At(1600)))
-        return ag_A
+    ag_auxs = map(auxs) do island_aux
+        ag_aux = map(island_aux) do A
+            ag_A1 = DimensionalData.modify(BitArray, Rasters.aggregate(Center(), A, (X(aggfactor), Y(aggfactor))))
+            # Extend a century earlier
+            ag_A = Rasters.extend(ag_A1; to=(Ti(1500:1:2020),))
+            broadcast_dims!(identity, view(ag_A, Ti=1500..1600), view(ag_A1, Ti=At(1600)))
+            return ag_A
+        end
     end
 
     ag_roughness = map(dems) do dem
@@ -412,7 +415,7 @@ function def_syms(
         boundary=Use()
     )
 
-    outputs_kw = map(island_names, ns_extinct, tspans) do island, n_extinct, tspan
+    outputs_kw = map(island_names, ns_extinct, tspans, ag_auxs) do island, n_extinct, tspan, ag_aux
         aux = (;
             spreadability=getproperty(spreadability, island),
             introductions=getproperty(introductions, island),
