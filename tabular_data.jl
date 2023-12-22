@@ -21,14 +21,14 @@ end
 
 # Population
 # human_pop = CSV.File(joinpath(workdir, "Data/Population/Population.csv")) |> DataFrame
-sugar_cane = CSV.File(joinpath(datadir, "Population/Sugarcane.csv")) |> DataFrame
+sugar_cane = CSV.File("tables/mus_sugarcane.csv") |> DataFrame
 
 all_years = 1600:2020
-mus_census_pop = CSV.File(joinpath(datadir, "Population/lutz_census.csv")) |> DataFrame
-mus_early_pop = CSV.File(joinpath(datadir, "Population/early_population.csv")) |> DataFrame
+mus_census_pop = CSV.File("tables/lutz_census.csv") |> DataFrame
+mus_early_pop = CSV.File("tables/early_population.csv") |> DataFrame
 mus_pop = reduce(vcat, [mus_early_pop, mus_census_pop])
-reu_pop = CSV.File(joinpath(datadir, "Population/reunion_population.csv")) |> DataFrame
-rod_pop = CSV.File(joinpath(datadir, "Population/rodrigues.csv")) |> DataFrame
+reu_pop = CSV.File("tables/reu_population.csv") |> DataFrame
+rod_pop = CSV.File("tables/rod_population.csv") |> DataFrame
 
 human_pop_timelines = map((mus=mus_pop, reu=reu_pop, rod=rod_pop)) do pop
     pop_vec = interpolate_years(pop, (:Year, :Population))
@@ -36,8 +36,8 @@ human_pop_timelines = map((mus=mus_pop, reu=reu_pop, rod=rod_pop)) do pop
 end
 human_pop_timelines.rod[At(1810)]
 
-sugar_vec = interpolate_years(sugar_cane, (:Year, :Area))
-sugar_timeline = DimArray(sugar_vec, Ti(all_years); name=:Area_Sugar)
+mus_sugar_vec = interpolate_years(sugar_cane, (:Year, :Area))
+mus_sugar_timeline = DimArray(sugar_vec, Ti(all_years); name=:Area_Sugar)
 
 
 # using CairoMakie

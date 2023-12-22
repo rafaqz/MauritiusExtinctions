@@ -45,10 +45,11 @@ map(==(keys(first(transitions))) ∘ keys, transitions)
 
 # The logic of sequential category change - can a transition happen at all
 # Human Population and species introduction events
-eventrule = let states=states, # D=dims(masks.mus),
+eventrule = let states=states
+    # D=dims(masks.mus),
     SetGrid{:landcover,:landcover}() do data, l1, l2
-        history = get(data, Aux{:history}())
-        events = get(data, Aux{:events}())
+        history = DynamicGrids.aux(data).history
+        events = DynamicGrids.aux(data).events
         current_year = currenttime(data)
         if hasselection(history, Ti(At(current_year)))
             foreach(eachindex(l1), l1, view(history, Ti(At(current_year)))) do I, state, hist
@@ -84,7 +85,7 @@ end
 #     urban=P(1.0; b...),
 #     forestry=P(1.0; b...),
 # )
-pressure = let preds=lc_predictions.mus, ngridcells=size(sum(masks.mus))
+pressure = let preds=lc_targets.mus, ngridcells=size(sum(masks.mus))
     leverage=P(3.0; bounds=(1.0, 10.0))
     # cleared=P(1.5; b...),
     # urban=P(1.4; b...)

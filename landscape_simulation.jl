@@ -22,7 +22,7 @@ include("map_file_functions.jl")
 
 states = NamedVector(lc_categories)
 
-const P = RealParam 
+const P = RealParam
 const NV = NamedVector
 
 # to category from category
@@ -53,50 +53,15 @@ end
 striped_error = map(compiled) do island
     stripe_raster(island.error, states)
 end
-Rasters.rplot(striped_compiled.rod; colorrange=(1, 6))
 
-Rasters.rplot(striped_raw.mus; colorrange=(1, 6))
-Rasters.rplot(striped_compiled.mus[Ti=1:16]; colorrange=(1, 6))
-Rasters.rplot(striped_raw.reu; colorrange=(1, 6))
-Rasters.rplot(striped_compiled.reu; colorrange=(1, 6))
-Rasters.rplot(striped_raw.rod; colorrange=(1, 6))
-Rasters.rplot(striped_compiled.rod; colorrange=(1, 6))
-
-b = map(x -> x.cleared, compiled.rod.timeline)
-Rasters.rplot(b)
-
-rs = rebuild(resample(striped_raw.rod[Ti=At(2021)]; crs=EPSG(3857)); missingval=0)
-slope.rod
-
-using Tyler, TileProviders, MapTiles
-ext = Extents.extent(rs)
-
-tyler = Tyler.Map(ext; provider=Google(:satelite))
-Makie.heatmap!(tyler.axis, rebuild(resample(rs; crs=EPSG(3857), size=(1000, 1000)), missingval=0), colormap=(:magma, 0.5), transparency=true, opacity=0.2)
-rs = rebuild(resample(slices.rod.files.gade_1.raw; crs=EPSG(3857), size=(1000, 1000)) .== 1; missingval=0)
-sl = rebuild(resample(replace_missing((slices.rod.files.gade_1.raw .== 1) .* slope_stacks.rod.slope, 0); crs=EPSG(3857), size=(1000, 1000)); missingval=0)
-sl = rebuild(resample(replace_missing(slope_stacks.rod.slope, 0); crs=EPSG(3857), size=(1000, 1000)); missingval=0)
-Makie.heatmap!(tyler.axis, sl)
-Makie.heatmap!(tyler.axis, rs; colormap=(:magma, 0.5), transparency=true, opacity=0.2)
-
-
+# Rasters.rplot(striped_raw.mus; colorrange=(1, 6))
+# Rasters.rplot(striped_compiled.mus[Ti=1:16]; colorrange=(1, 6))
+# Rasters.rplot(striped_raw.reu; colorrange=(1, 6))
 # Rasters.rplot(striped_compiled.reu; colorrange=(1, 6))
+# Rasters.rplot(striped_raw.rod; colorrange=(1, 6))
 # Rasters.rplot(striped_compiled.rod; colorrange=(1, 6))
-
-# pixel_timeline1 = compiled.timeline[Y=Near(-20.363), X=Near(57.5015)]
-# pixel_timeline = compiled.timeline[Y=Near(-20.363), X=Near(57.5015)]
-# indirect=indirect_logic(logic) 
-# reversed=reverse_transitions(logic) 
-# reversed_indirect=reverse_transitions(indirect)
-# remove_intermediate_uncertainty!(pixel_timeline, logic, reversed, indirect, reversed_indirect)
-# remove_intermediate_uncertainty!(view(pixel_timeline, reverse(eachindex(pixel_timeline))), reversed, logic, reversed_indirect, indirect)
-# pixel_timeline == pixel_timeline1
-# pixel_timeline
-
-# a = NV(native=true, cleared=false, abandoned=false, urban=true, forestry=false, water=false)
-# b = NV(native=false, cleared=true, abandoned=false, urban=false, forestry=false, water=false)
-# _merge_all_possible(a, b, logic) |> pairs
-# _merge_all_possible(b, a, logic) |> pairs
+# b = map(x -> x.cleared, compiled.rod.timeline)
+# Rasters.rplot(b)
 
 cat_counts = let states=states
     map(human_pop_timelines, compiled) do human_pop, history
@@ -115,9 +80,9 @@ cat_counts = let states=states
                 year = first(refdims(slice, Ti))
                 pop = human_pop[Near(year)]
                 (; total, known, ratio=known/total, meancount=(known + total) / 2, year, pop)
-            end 
+            end
             nv = NamedVector{propertynames(states)}(vals)
-        end 
+        end
     end
 end
 
@@ -130,10 +95,8 @@ high_certainty = map(cat_counts) do cc
     end
 end
 
-high_certainty.mus.urban
-
 # Cleared land is used for urbanisation by 1992, so don't use it in the model
-lc_predictions = map(high_certainty[(:mus,)]) do hc 
+lc_targets = map(high_certainty[(:mus,)]) do hc
     cleared_model = lm(@formula(meancount ~ pop^2 + pop), DataFrame(hc.cleared))
     urban_model = lm(@formula(meancount ~ pop^2), DataFrame(hc.urban))
     ti = dims(human_pop_timelines.mus, Ti)
@@ -161,6 +124,7 @@ end
 #     forestry=P(0.9; b...),
 #     water
 # )
+
 b = (; bounds=(1.0, 2.0))
 landscape_events = (
     mus = [
@@ -233,6 +197,9 @@ end
 # Rasters.aggregate(sum, pop_density.reu, 50; skipmissingval=true) |> Makie.plot
 # Rasters.aggregate(sum, human_suitability.reu, 50; skipmissingval=true) |> rplot
 
+# mus_native_veg_tif_path = "/home/raf/PhD/Mascarenes/Data/Generated/mus_native_veg.tif"
+# target_native_fraction = Raster(mus_native_veg_tif_path) ./ 4
+
 include("landscape_rules.jl");
 
 init_states = map(masks) do mask
@@ -240,49 +207,56 @@ init_states = map(masks) do mask
         native_fraction=rebuild(fill(1.0, dims(mask)); missingval=nothing)
     )
 end
-
-mus_native_veg_tif_path = "/home/raf/PhD/Mascarenes/Data/Generated/mus_native_veg.tif"
-target_native_fraction = Raster(mus_native_veg_tif_path) ./ 4
-
-
-auxs = map(events, compiled, suitability) do events, comp, suitability
-    map(fix_order, (; events, history=comp.timeline, suitability))#, target_native_fraction))
+auxs = map(landscape_events, compiled, suitabilities) do events, comp, suitability
+    (; events, map(fix_order, (; history=comp.timeline, suitability))...)#, target_native_fraction))
+end
+tspans = (mus=1600:2020, reu=1600:2020, rod=1600:2020)
+output_kw = map(init_states, masks, auxs, tspans) do init, mask, aux, tspan
+    (; aux, mask, tspan, store=false, boundary=Remove(), padval=0)
+end
+array_outputs = map(init_states, output_kw) do init, kw
+    ArrayOutput(init; kw...)
+end
+foreach(array_outputs) do output
+    sim!(output, ruleset; printframe=true);
 end
 
-tspans = (mus=1600:2018, reu=1600:2018, rod=1700:2018)
-auxs.mus
-array_outputs = map(init_states, masks, auxs, tspans) do init, mask, aux, tspan
-    ResultOutput(init;
-        aux, mask, tspan,
-        store=false,
-        boundary=Remove(),
-        padval=0,
-    )
+lc_predictions = map(array_outputs) do array_output
+    predicted_lc = Rasters.combine(RasterSeries(array_output, dims(array_output)))
+    map(NamedTuple(states)) do state
+        rebuild(predicted_lc.landcover .== state; missingval=false, refdims=())
+    end |> RasterStack
 end
 
-sim!(array_outputs.mus, ruleset; printframe=true);
+# include("raster_common.jl")
+# foreach(lc_predictions, island_keys) do lc, k
+#     lc_stack_path = "$outputdir/lc_predictions_$k.nc"
+#     write(lc_stack_path, Rasters.modify(A -> UInt8.(A), lc))
+# end
+lc_predictions = map(island_keys) do k
+    lc_stack_path = "$outputdir/lc_predictions_$k.nc"
+    st = rebuild(Rasters.modify(BitArray, RasterStack(lc_stack_path)); missingval=false)
+    Rasters.set(st, Ti => Int.(maybeshiftlocus(Start(), dims(st, Ti), )))
+end
+# netcdf has the annoying center locus for time
 
-output = MakieOutput(init_state;
-    aux, tspan,
-    fps=100,
-    store=true,
-    mask=masks.mus,
-    boundary=Remove(),
-    padval=0,
-    ruleset,
-    sim_kw=(; printframe=true),
-) do (; axis, layout, frame, time)
-    axis1 = axis
+k = :reu
+output = MakieOutput(getproperty(init_states, k);
+    getproperty(output_kw, k)...,
+    fps=100, store=false,
+    ruleset, sim_kw=(; printframe=true),
+) do (; layout, frame, time)
+    axis1 = Axis(layout[1, 1])
     axis2 = Axis(layout[1, 2])
     axis3 = Axis(layout[1, 3])
     linkaxes!(axis1, axis2)
     landcover = Observable(frame[].landcover)
     native_fraction = Observable(frame[].native_fraction)
-    known_slices = Observable(view(striped_compiled.mus, Ti(1)))
+    known_slices = Observable(view(getproperty(striped_compiled, k), Ti(1)))
     on(frame) do f
         landcover[] = f.landcover
         native_fraction[] = f.native_fraction
-        t = tspan[time[]]::Int
+        t = tspans.rod[time[]]::Int
         if hasselection(striped_compiled, Ti(At(t)))
             known_slices[] = view(striped_compiled.mus, Ti(At(t)))
             notify(known_slices)
@@ -299,27 +273,20 @@ output = MakieOutput(init_state;
     return nothing
 end
 
-predicted_lc = Rasters.combine(RasterSeries(array_output, dims(array_output)))
-lc_predictions = map(NamedTuple(states)) do state
-    rebuild(predicted_lc.landcover .== state; missingval=false, refdims=())
-end |> RasterStack
-
-include("raster_common.jl")
-lc_predictions_path = "$outputdir/lc_predictions.nc"
-# write(lc_predictions_path, Rasters.modify(A -> UInt8.(A), lc_predictions))
-lc_predictions = rebuild(Rasters.modify(BitArray, RasterStack(lc_predictions_path)); missingval=false)
-# netcdf has the annoying center locus for time
-lc_predictions = Rasters.set(lc_predictions, Ti => Int.(maybeshiftlocus(Start(), dims(lc_predictions, Ti), )))
-
 mus_veg_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page33_mauritius_vegetation_colored.tif"
-mus_veg = Raster(mus_veg_path)
-# Makie.plot(mus_veg)
+reu_veg_path = "/home/raf/PhD/Mascarenes/Data/Dominique/Vegetation_Rasters/pastveg3.tif"
+original_veg = (;
+    mus=replace_missing(Raster(mus_veg_path), 0),
+    reu=resample(replace_missing(Raster(reu_veg_path), 0); to=masks.reu),
+)
 
 using DataFrames
 nf_slices = getproperty.(output, :native_fraction);
 Rasters.combine(RasterSeries(nf_slices, dims(nf_slices)), Ti);
-
-veg_change = rebuild(UInt8.(broadcast_dims(*, lc_predictions.native, , mus_veg)); missingval=0)
+veg_change = map(lc_predictions[keys(original_veg)], original_veg) do p, v
+    rebuild(UInt8.(broadcast_dims(*, p.native, v)); missingval=0)
+end
+# mus_veg_change = rebuild(UInt8.(broadcast_dims(*, lc_predictions.mus.native, mus_veg)); missingval=0)
 
 Rasters.rplot(veg_change)
 habitat_names = ["semi-dry_evergreen_forest", "open_dry_palm-rich_woodland", "wet_forest", "pandanus_swamp", "mossy_rainforest", "mangrove", "wetland vegetation"]
@@ -366,9 +333,9 @@ fig[1, 2] = Legend(fig, ax, habitat_names)
 # ])
 
 # transitions = logic
-# reversed = LandscapeChange.reverse_transitions(transitions) 
+# reversed = LandscapeChange.reverse_transitions(transitions)
 # indirect = LandscapeChange.indirect_transitions(transitions)
-# reversed_indirect = LandscapeChange.reverse_transitions(indirect) 
+# reversed_indirect = LandscapeChange.reverse_transitions(indirect)
 # force = NV{k}(map(x -> x in (:native, :urban, :water), propertynames(transitions)))
 # rev = reverse(eachindex(timeline))
 
