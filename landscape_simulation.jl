@@ -273,6 +273,9 @@ output = MakieOutput(getproperty(init_states, k);
     return nothing
 end
 
+
+
+
 mus_veg_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page33_mauritius_vegetation_colored.tif"
 reu_veg_path = "/home/raf/PhD/Mascarenes/Data/Dominique/Vegetation_Rasters/pastveg3.tif"
 original_veg = (;

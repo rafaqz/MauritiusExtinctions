@@ -29,11 +29,11 @@ end
 uncleared = gpu_cleanup(Rasters.modify(BitArray, Raster("uncleared.nc")))
 # forested = gpu_cleanup(modify(BitArray, Raster("forested.nc")))
 
-pred_df = CSV.read("animals.csv", DataFrame)
-introductions_df = CSV.read("introductions.csv", DataFrame)
-mascarine_species_csv = "/home/raf/PhD/Mascarenes/Tables/mascarine_species.csv"
-# @async run(`libreoffice $mascarine_species_csv`)
-all_species = CSV.read(mascarine_species_csv, DataFrame) |> 
+pred_df = CSV.read("tables/animals.csv", DataFrame)
+introductions_df = CSV.read("tables/introductions.csv", DataFrame)
+mascarene_species_csv = "tables/mascarene_species.csv"
+# @async run(`libreoffice $mascarene_species_csv`)
+all_species = CSV.read(mascarene_species_csv, DataFrame) |> 
     x -> subset(x, :Species => ByRow(!ismissing))
 island_tables = map((mus=:mus, reu=:reu, rod=:rod)) do key
     df = DataFrame(subset(all_species, key => x -> .!ismissing.(x)))
@@ -59,6 +59,9 @@ end
 island_extinct_names = map(get_species_names, island_extinct)
 aggfactor = 8
 
+rast = Raster(rand(10, 10, 5), (X(), Y(), Band([:a, :b, :c, :d, :e])))
+stack = RasterStack(rast; layersfrom=Band)
+
 lc_predictions_paths = (
     mus="$outputdir/lc_predictions_mus.nc",
     reu="$outputdir/lc_predictions_reu.nc",
@@ -71,30 +74,27 @@ lc_predictions = map(lc_predictions_paths) do path
         x -> rebuild(Rasters.modify(BitArray, x); missingval=false) |>
         x -> Rasters.set(x, Ti => Int.(maybeshiftlocus(Start(), dims(x, Ti), )))
 end
-k = :mus
+Rasters.rplot(lc_predictions.mus[Ti=At(2010)])
+
 k = :reu
 k = :rod
+k = :mus
 include("species_rules.jl")
 (; ruleset, islands) = def_syms(pred_df, introductions_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, lc_predictions);
 (; output, init, output_kw) = islands[k]
-map(size, output_kw.aux) |> pairs
-@time sim!(output, ruleset; proc=ThreadedCPU());
-Makie.heatmap(output_kw.aux.abandoned[Ti=10])
-Makie.heatmap(output_kw.aux.dem)
+@time sim!(output, ruleset; proc=ThreadedCPU(), printframe=true);
+Makie.plot(mean(map(i -> getproperty.(output[end-i].pred_pop, :macaque), 0:20)); colormap=:magma)
+maximum(getproperty.(mkoutput[end].pred_pops, :mouse))
 
-# @time sim!(pred_outputs.mus, pred_ruleset; proc=SingleCPU());
+# Get the max color for Makie
 max_pops = map(output) do frame
-    map(keys(first(frame.pred_pops))) do key
-        maximum(x -> getproperty(x, key), frame.pred_pops)
+    map(propertynames(first(frame.pred_pop))) do key
+        maximum(x -> getproperty(x, key), frame.pred_pop)
     end
 end |> maximum
 
-max_pops = carrycap .* 200
-
 mkoutput = mk(init, ruleset; carrycaps=max_pops, output_kw...)
 display(mkoutput)
-Rasters.rplot(getproperty.(mkoutput[end].pred_pops, :mouse))
-maximum(getproperty.(mkoutput[end].pred_pops, :mouse))
 
 
 function predict_extinctions(ruleset, init; tspan, kw...)

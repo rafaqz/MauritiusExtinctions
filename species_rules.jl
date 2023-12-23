@@ -34,19 +34,19 @@ end
 
 @inline function DynamicGrids.applyrule(
     data, rule::InteractiveCarryCap, 
-    (populations, carrycaps)::NamedTuple{<:Any,<:Tuple{<:NamedVector{Keys},<:NamedVector{Keys}}}, I,
+    populations::NamedVector{Keys}, I,
 ) where Keys
     local_inputs = map(rule.inputs) do val
         get(data, val, I)
     end
-    relative_pop = NamedTuple(populations ./ carrycaps)
+    relative_pop = NamedTuple(populations ./ rule.carrycap)
     # combine populations
     params = merge(relative_pop, local_inputs)
     
     scaling = map(rule.carrycap_scaling[Keys]) do f
         oneunit(eltype(populations)) + f(params)
     end |> NamedVector
-    new_carrycaps = max.(oneunit(eltype(carrycaps)) .* 1e-7, carrycaps .* scaling)
+    new_carrycaps = max.(oneunit(eltype(rule.carrycap)) .* 1e-7, rule.carrycap .* scaling)
     any(isinf, new_carrycaps) && error("Inf carrycap found: $new_carrycaps from relative_pop $relative_pop params $params populations $populations, carrycaps $carrycaps and scaling $scaling")
     any(isnan, new_carrycaps) && error("NaN carrycap found: $new_carrycaps from relative_pop $relative_pop params $params populations $populations, carrycaps $carrycaps and scaling $scaling")
     return new_carrycaps
@@ -107,11 +107,11 @@ function def_syms(
     pred_funcs = (;
         cat =        p -> 1.0p.black_rat + 0.2p.norway_rat + 1.0p.mouse + 10p.urban + 2p.cleared,
         black_rat  = p -> -0.2p.cat - 0.1p.norway_rat - 0.1p.mouse + 0.5p.native + 0.3p.abandoned + 1p.urban,
-        norway_rat = p -> -0.1p.cat - 0.1p.black_rat - 0.1p.mouse + 1.5p.urban,
+        norway_rat = p -> -0.1p.cat - 0.1p.black_rat - 0.1p.mouse + 1.5p.urban - 0.2p.native,
         mouse =      p -> -0.3p.cat - 0.2p.black_rat - 0.2p.norway_rat + 0.8p.cleared + 1.5p.urban,
         pig =        p -> 0.5p.native + 0.4p.abandoned - 1p.urban - 0.3p.cleared,
         snake =      p -> -0.2p.cat + 0.2p.black_rat + 0.3p.mouse - 0.5p.urban + 0.3p.native,
-        macaque =    p -> 4p.abandoned + 1.0p.forestry + 0.5p.native,
+        macaque =    p -> 4p.abandoned + 2p.forestry + 1.5p.native - 1.0p.urban - 0.9p.cleared
     )
 
     # These need to somewhat balance low growth rates
@@ -144,7 +144,7 @@ function def_syms(
         ag_aux = map(island_aux) do A
             ag_A1 = DimensionalData.modify(BitArray, Rasters.aggregate(Center(), A, (X(aggfactor), Y(aggfactor))))
             # Extend a century earlier
-            ag_A = Rasters.extend(ag_A1; to=(Ti(1500:1:2020),))
+            ag_A = Rasters.extend(ag_A1; to=(Ti(Sampled(1500:1:2020; sampling=Intervals(Start())))))
             broadcast_dims!(identity, view(ag_A, Ti=1500..1600), view(ag_A1, Ti=At(1600)))
             return ag_A
         end
@@ -212,7 +212,7 @@ function def_syms(
         map(_ -> carrycap, m)
     end
 
-    pred_carrycap_rule = InteractiveCarryCap{Tuple{:pred_pop,:pred_carrycap},:pred_carrycap}(;
+    pred_carrycap_rule = InteractiveCarryCap{:pred_pop,:pred_carrycap}(;
         carrycap,
         carrycap_scaling=pred_funcs,
         inputs=pred_inputs,
@@ -311,20 +311,18 @@ function def_syms(
             formulation=ExponentialKernel(s),
         )
     end
-    pred_spread_rule = let aggfactor=aggfactor, pred_kernels=pred_kernels
-        SetNeighbors{:pred_pop}(pred_kernels[1]) do data, hood, Ns, I
+    pred_spread_rule = let aggfactor=aggfactor, pred_kernels=pred_kernels, carrycap=carrycap
+        SetNeighbors{Tuple{:pred_pop,:pred_carrycap}}(pred_kernels[1]) do data, hood, (Ns, _), I
             any(isnan, Ns) && error("pred_pop Ns is: $Ns")
             Ns == zero(Ns) && return nothing
             dem = DG.aux(data)[:dem]
-            spr = DG.mask(data)#[:spreadability]
-            spr_nbrs = DG.neighbors(spr, I)
+            carrycap_nbrs = DG.neighbors(DG.grids(data).pred_carrycap, I)
             elev_nbrs = DG.neighbors(dem, I)
             @inbounds elev_center = dem[I...]
 
             # spreadability = DG.neighbors(DG.mask(data), I)
             sum = zero(Ns) # TODO needs cell size here
             cellsize = (30 * aggfactor)
-            any(isnan, spr_nbrs) && return zero(Ns)
 
             # Randomise hood starting position to avoid
             # directional artifacts in output
@@ -335,10 +333,11 @@ function def_syms(
                 if i > length(hood)
                     i = i - length(hood)
                 end
+                sp = carrycap_nbrs[i] ./ carrycap
+                any(map(isnan, sp)) && continue
                 Ih = DG.indices(hood, I)[i]
                 ks = getindex.(DynamicGrids.kernel.(pred_kernels), i)
                 d = DG.distances(hood)[i]
-                sp = spr_nbrs[i]
                 e = elev_nbrs[i]
                 # any(isnan, N) && error("N is NaN")
                 # isnan(k) && error("k is NaN")
@@ -352,7 +351,7 @@ function def_syms(
                 # @show N  k  sp slope_factor one_individual
                 # propagules = N .* k .* sp .* slope_factor .+ ((rand(typeof(N)) .- 0.5) .* one_individual)
                 # propagules = Ns * sp * slope_factor .* kr .* rand(typeof(Ns))
-                propagules = trunc.(Ns * sp * slope_factor .* rand(typeof(Ns)) .^ 3 .* ks .* 40)
+                propagules = trunc.(Ns .* sp .* slope_factor .* rand(typeof(Ns)) .^ 3 .* ks .* 40)
                 any(isnan, propagules) && error("NaNs found Ns: $Ns sp: $sp slope_factor: $slope_factor ks: $ks")
                 sum1 = sum + propagules
                 # If we run out of propagules
