@@ -11,12 +11,12 @@ using Rasters
 using GLMakie
 using NCDatasets
 using Geomorphometry
+using Stencils
 
 # includet("optimisation.jl")
 include("species_rules.jl")
 include("raster_common.jl")
 include("makie.jl")
-fig = Figure()
 
 function gpu_cleanup(A)
     x, y, ti = lookup(A, (X, Y, Ti))
@@ -74,24 +74,58 @@ lc_predictions = map(lc_predictions_paths) do path
         x -> rebuild(Rasters.modify(BitArray, x); missingval=false) |>
         x -> Rasters.set(x, Ti => Int.(maybeshiftlocus(Start(), dims(x, Ti), )))
 end
-Rasters.rplot(lc_predictions.mus[Ti=At(2010)])
 
 k = :reu
 k = :rod
 k = :mus
 include("species_rules.jl")
-(; ruleset, islands) = def_syms(pred_df, introductions_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, lc_predictions);
-(; output, init, output_kw) = islands[k]
-@time sim!(output, ruleset; proc=ThreadedCPU(), printframe=true);
-Makie.plot(mean(map(i -> getproperty.(output[end-i].pred_pop, :macaque), 0:20)); colormap=:magma)
-maximum(getproperty.(mkoutput[end].pred_pops, :mouse))
+(; ruleset, rules, pred_ruleset, endemic_ruleset, islands) = def_syms(
+    pred_df, introductions_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, lc_predictions; 
+    replicates=nothing
+);
+(; output, pred_output, init, output_kw) = islands[k]
+
+@time sim!(pred_output, pred_ruleset; proc=SingleCPU(), printframe=true);
+pred_pops_aux = map(islands, masks) do island, mask
+    (; output, pred_output, init, output_kw, ag_mask) = island
+    @time sim!(pred_output, pred_ruleset; proc=SingleCPU(), printframe=true);
+    A = cat(pred_output...; dims=3)
+    DimArray(A, (dims(ag_mask)..., dims(pred_output)...))
+end
+
+(; ruleset, pred_ruleset, endemic_ruleset, islands) = def_syms(
+    pred_df, introductions_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, lc_predictions; 
+    replicates=100, pred_pops_aux
+);
+(; output, pred_output, init, output_kw) = islands[k]
+@time sim!(output, endemic_ruleset; proc=SingleCPU(), printframe=true);
+@time sim!(output, endemic_ruleset; tspan=1550:1600, proc=CPUGPU(), printframe=true);
+cu_output = Adapt.adapt(CuArray, output);
+prof = CUDA.@profile sim!(cu_output, endemic_ruleset; tspan=1550:1600, proc=CuGPU(), printframe=true)
+
+using CUDA, Adapt
+using ProfileView
+@time sim!(cu_output, endemic_ruleset; proc=CuGPU(), printframe=true);
+prof = CUDA.@profile sim!(cu_output, endemic_ruleset; tspan=1550:1600, proc=CuGPU(), printframe=true)
+prof
+DynamicGrids.replicates(output)
+max_pops = maximum(output)
+
+# using ProfileView
+# @profview sim!(output, ruleset; tspan=1550:1560, proc=SingleCPU(), printframe=true);
+# using Cthulhu
+# descend_clicked()
+# sd = DynamicGrids.SimData(output, Ruleset(ruleset.rules[3]))
+# @descend DynamicGrids.descendable(sd)
+# Makie.plot(mean(map(i -> getproperty.(output[end-i].pred_pop, :macaque), 1:20)); colormap=:magma)
+# maximum(getproperty.(mkoutput[end].pred_pops, :mouse))
 
 # Get the max color for Makie
-max_pops = map(output) do frame
-    map(propertynames(first(frame.pred_pop))) do key
-        maximum(x -> getproperty(x, key), frame.pred_pop)
-    end
-end |> maximum
+# max_pops = map(output) do frame
+#     map(propertynames(first(frame.pred_pop))) do key
+#         maximum(x -> getproperty(x, key), frame.pred_pop)
+#     end
+# end |> maximum
 
 mkoutput = mk(init, ruleset; carrycaps=max_pops, output_kw...)
 display(mkoutput)

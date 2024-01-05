@@ -32,24 +32,58 @@ function InteractiveCarryCap{R,W}(; carrycap, carrycap_scaling, inputs=(;),) whe
     InteractiveCarryCap{R,W}(carrycap, carrycap_scaling, inputs)
 end
 
-@inline function DynamicGrids.applyrule(
+function DynamicGrids.applyrule(
     data, rule::InteractiveCarryCap, 
     populations::NamedVector{Keys}, I,
 ) where Keys
-    local_inputs = map(rule.inputs) do val
-        get(data, val, I)
+    # Somehow the closure breaks without this
+    g = let data=data, I=I
+        val -> (data, val, I)
     end
+    local_inputs = map(g, rule.inputs)
     relative_pop = NamedTuple(populations ./ rule.carrycap)
     # combine populations
     params = merge(relative_pop, local_inputs)
     
-    scaling = map(rule.carrycap_scaling[Keys]) do f
+    scaling = map(rule.carrycap_scaling) do val_f
+        f = DynamicGrids._unwrap(val_f)
         oneunit(eltype(populations)) + f(params)
     end |> NamedVector
-    new_carrycaps = max.(oneunit(eltype(rule.carrycap)) .* 1e-7, rule.carrycap .* scaling)
-    any(isinf, new_carrycaps) && error("Inf carrycap found: $new_carrycaps from relative_pop $relative_pop params $params populations $populations, carrycaps $carrycaps and scaling $scaling")
-    any(isnan, new_carrycaps) && error("NaN carrycap found: $new_carrycaps from relative_pop $relative_pop params $params populations $populations, carrycaps $carrycaps and scaling $scaling")
+    # # Carrycap cant be zero
+    new_carrycaps = max.(oneunit(eltype(rule.carrycap)) .* 1f-10, rule.carrycap .* scaling)
+    # any(isinf, new_carrycaps) && error("Inf carrycap found: $new_carrycaps from relative_pop $relative_pop params $params populations $populations, and scaling $scaling")
+    # any(isnan, local_inputs) && error("""
+    #     NaN carrycap found: $new_carrycaps 
+    #         from relative_pop $relative_pop 
+    #         params $params 
+    #         populations $populations 
+    #         and scaling $scaling
+    # """)
     return new_carrycaps
+end
+
+struct ExtirpationRisks{R,W,F,P,PS,SE} <: DynamicGrids.CellRule{R,W}
+    f::F
+    pred_pop::P
+    pred_suscept::PS
+    stochastic_extirpation::SE
+end
+function ExtirpationRisks{R,W}(; f, pred_pop, pred_suscept, stochastic_extirpation) where {R,W}
+    ExtirpationRisks{R,W}(f, pred_pop, pred_suscept, stochastic_extirpation)
+end
+
+@inline function DynamicGrids.applyrule(data, rule::ExtirpationRisks, endemic_presence, I)
+    pred_pop = get(data, rule.pred_pop, I)
+    pred_suscept = get(data, rule.pred_suscept)[1]
+    map(endemic_presence, pred_suscept) do present, ps
+        if present
+            # rand() < hp * hs & rand() < sum(map(*, ps, pred_pop))
+            rand(Float32) > rule.f(sum(map(*, ps, pred_pop))) || rand(Float32) > rule.stochastic_extirpation
+            # ... etc
+        else
+            false
+        end
+    end
 end
 
     # # scaling = scale_carrycap(populations, rule.carrycap, rule.interactions, local_suitabilities)
@@ -72,7 +106,8 @@ end
 # end
 
 function def_syms(
-    pred_df, introductions_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, auxs
+    pred_df, introductions_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, auxs;
+    replicates=nothing, pred_pops_aux=map(_ -> nothing, dems),
 )
     aggscale = aggfactor^2
     moore = Moore{3}()
@@ -94,7 +129,7 @@ function def_syms(
     =#
 
     # Parameters
-    carrycap = NV(
+    carrycap = Float32.(NV(
         cat =        0.02,
         black_rat =  30.0,
         norway_rat = 15.0,
@@ -102,27 +137,27 @@ function def_syms(
         pig =        0.3,
         snake =      20.0,
         macaque =    1.0,
-    ) .* aggscale
+    )) .* aggscale
 
     pred_funcs = (;
-        cat =        p -> 1.0p.black_rat + 0.2p.norway_rat + 1.0p.mouse + 10p.urban + 2p.cleared,
-        black_rat  = p -> -0.2p.cat - 0.1p.norway_rat - 0.1p.mouse + 0.5p.native + 0.3p.abandoned + 1p.urban,
-        norway_rat = p -> -0.1p.cat - 0.1p.black_rat - 0.1p.mouse + 1.5p.urban - 0.2p.native,
-        mouse =      p -> -0.3p.cat - 0.2p.black_rat - 0.2p.norway_rat + 0.8p.cleared + 1.5p.urban,
-        pig =        p -> 0.5p.native + 0.4p.abandoned - 1p.urban - 0.3p.cleared,
-        snake =      p -> -0.2p.cat + 0.2p.black_rat + 0.3p.mouse - 0.5p.urban + 0.3p.native,
-        macaque =    p -> 4p.abandoned + 2p.forestry + 1.5p.native - 1.0p.urban - 0.9p.cleared
+        cat =        p -> 0.0f0,#1.0p.black_rat + 0.2p.norway_rat + 1.0p.mouse + 10p.urban + 2p.cleared,
+        black_rat  = p -> 0.0f0,#-0.2p.cat - 0.1p.norway_rat - 0.1p.mouse + 0.5p.native + 0.3p.abandoned + 1p.urban,
+        norway_rat = p -> 0.0f0,#-0.1p.cat - 0.1p.black_rat - 0.1p.mouse + 1.5p.urban - 0.2p.native,
+        mouse =      p -> 0.0f0,#-0.3p.cat - 0.2p.black_rat - 0.2p.norway_rat + 0.8p.cleared + 1.5p.urban,
+        pig =        p -> 0.0f0,#0.5p.native + 0.4p.abandoned - 1p.urban - 0.3p.cleared,
+        snake =      p -> 0.0f0,#-0.2p.cat + 0.2p.black_rat + 0.3p.mouse - 0.5p.urban + 0.3p.native,
+        macaque =    p -> 0.0f0,#4p.abandoned + 2p.forestry + 1.5p.native - 1.0p.urban - 0.9p.cleared
     )
 
     # These need to somewhat balance low growth rates
     spread_rate = NV(
-        cat =         30.0,
-        black_rat =   1.0,
-        norway_rat =  1.0,
-        mouse =       0.5,
-        pig =         15.0,
-        snake =       1.0,
-        macaque =     5.0,
+        cat =         30.0f0,
+        black_rat =   1.0f0,
+        norway_rat =  1.0f0,
+        mouse =       0.5f0,
+        pig =         15.0f0,
+        snake =       1.0f0,
+        macaque =     5.0f0,
     )
 
     aux_keys = keys(first(auxs))
@@ -153,10 +188,10 @@ function def_syms(
     ag_roughness = map(dems) do dem
         # Clip roughness at a maximum of 500
         rgh = min.(roughness(replace_missing(dem, 0)), 500)
-        Rasters.aggregate(maximum, rgh ./ 500, aggfactor)
+        Float32.(replace_missing(Rasters.aggregate(maximum, rgh ./ 500, aggfactor), NaN))
     end
     ag_dems = map(dems) do dem
-        Rasters.aggregate(Rasters.Center(), dem, aggfactor)
+        Float32.(replace_missing(Rasters.aggregate(Rasters.Center(), dem, aggfactor), NaN))
     end
     ag_local_cost = map(ag_dems) do dem
         window = Window{2}()
@@ -164,7 +199,8 @@ function def_syms(
 
     kernel = DispersalKernel(
         stencil=moore,
-        formulation=ExponentialKernel()
+        formulation=ExponentialKernel(Param(1.0f0, bounds=(0.0f0, 2.0f0))),
+        cellsize=1.0f0,
     )
     stencil_masks = map(ag_masks) do mask
         StencilArray(mask, kernel; padding=Halo{:out}())
@@ -186,14 +222,14 @@ function def_syms(
     island_names = NamedTuple{keys(masks)}(keys(masks))
 
     one_individual = map(pred_indices) do _
-        1.0
+        1.0f0
     end
 
     introductions = map(island_names) do key
         island_df = filter(r -> r.island == string(key), introductions_df)
         inits = map(pred_indices, one_individual) do i, oi
-            x = zeros(length(pred_keys))
-            x[i] = oi * 100 * aggfactor
+            x = zeros(Float16, length(pred_keys))
+            x[i] = Float16(oi * 100 * aggfactor)
             PredNV(x)
         end
 
@@ -203,10 +239,10 @@ function def_syms(
         end
     end
 
-    pred_rmax = PredNV(pred_df.rmax)
-    pred_max_density = PredNV(pred_df.max_density)
+    pred_rmax = Float32.(PredNV(pred_df.rmax))
+    pred_max_density = Float32.(PredNV(pred_df.max_density))
     pred_pops = map(ag_masks) do m
-        map(_ -> map(_ -> 0.0, pred_rmax), m)
+        map(_ -> map(_ -> 0.0f0, pred_rmax), m)
     end
     pred_carrycaps = map(ag_masks) do m
         map(_ -> carrycap, m)
@@ -214,7 +250,7 @@ function def_syms(
 
     pred_carrycap_rule = InteractiveCarryCap{:pred_pop,:pred_carrycap}(;
         carrycap,
-        carrycap_scaling=pred_funcs,
+        carrycap_scaling=map(Val, pred_funcs),
         inputs=pred_inputs,
     )
 
@@ -222,23 +258,24 @@ function def_syms(
         rate=pred_rmax,
         carrycap=Grid{:pred_carrycap}(),
         timestep=1,
+        nsteps_type=Float32,
     )
 
     habitat_requirements = map(ExtinctNVs) do ExtinctNV
-        rand(ExtinctNV)
+        Float32.(rand(ExtinctNV))
     end
     hunting_suscepts = map(ExtinctNVs) do ExtinctNV
-        rand(ExtinctNV)
+        Float32.(rand(ExtinctNV))
     end
     # Dummy values. This will be calculated by the optimiser
     pred_suscepts = map(ns_extinct, ExtinctNVs) do n_extinct, ExtinctNV
-        cat_sus = ExtinctNV(LinRange(0.0, 0.02, n_extinct))
-        black_rat_sus = ExtinctNV(LinRange(0.0, 0.01, n_extinct))
-        norway_rat_sus = ExtinctNV(LinRange(0.0, 0.01, n_extinct))
-        mouse_sus = ExtinctNV(LinRange(0.0, 0.001, n_extinct))
-        pig_sus = ExtinctNV(LinRange(0.0, 0.005, n_extinct))
-        snake_sus = ExtinctNV(LinRange(0.0, 0.005, n_extinct))
-        macaque_sus = ExtinctNV(LinRange(0.0, 0.003, n_extinct))
+        cat_sus = ExtinctNV(LinRange(Float32(0.0), Float32(0.02), n_extinct))
+        black_rat_sus = ExtinctNV(LinRange(Float32(0.0), Float32(0.01), n_extinct))
+        norway_rat_sus = ExtinctNV(LinRange(Float32(0.0), Float32(0.01), n_extinct))
+        mouse_sus = ExtinctNV(LinRange(Float32(0.0), Float32(0.001), n_extinct))
+        pig_sus = ExtinctNV(LinRange(Float32(0.0), Float32(0.005), n_extinct))
+        snake_sus = ExtinctNV(LinRange(Float32(0.0), Float32(0.005), n_extinct))
+        macaque_sus = ExtinctNV(LinRange(Float32(0.0), Float32(0.003), n_extinct))
         pred_suscept = map(cat_sus, black_rat_sus, norway_rat_sus, mouse_sus, pig_sus, snake_sus, macaque_sus) do c, br, nr, m, p, s, ma
             PredNV((c, br, nr, m, p, s, ma)) ./ aggscale
         end
@@ -254,38 +291,26 @@ function def_syms(
 
     #### Rules ##########################################################333
 
-    introduction_rule = SetGrid{:pred_pop}() do data, pred_pop, t
-        D = dims(DG.init(data).pred_pop)
-        current_year = currenttime(data)
-        intros = DG.aux(data)[:introductions]
-        foreach(intros) do intro
-            if intro.year == current_year
-                p = intro.geometry
-                I = DimensionalData.dims2indices(D, (X(Contains(p.X)), Y(Contains(p.Y))))
-                pred_pop[I...] = pred_pop[I...] .+ intro.init
-            end
-        end
-    end
-
-    risks_rule = let stochastic_extirpation=0.001*aggfactor, f=tanh
-        Cell{Tuple{:pred_pop,:endemic_presence},:endemic_presence}() do data, (pred_pop, endemic_presence), I
-            pred_suscept = DG.aux(data).pred_suscept
-            map(endemic_presence, pred_suscept) do present, ps
-                if present
-                    # rand() < hp * hs & rand() < sum(map(*, ps, pred_pop))
-                    rand() > f(sum(map(*, ps, pred_pop))) && rand() > stochastic_extirpation
-                    # ... etc
-                else
-                    false
+    introduction_rule = let introductions_aux=Aux{:introductions}()
+        SetGrid{:pred_pop}() do data, pred_pop, t
+            D = dims(DG.init(data).pred_pop)
+            current_year = currenttime(data)
+            intros = get(data, introductions_aux)
+            foreach(intros) do intro
+                if intro.year == current_year
+                    p = intro.geometry
+                    I = DimensionalData.dims2indices(D, (X(Contains(p.X)), Y(Contains(p.Y))))[1:2]
+                    # x = view(pred_pop, I..., :) .+ (intro.init,)
+                    # @show x I size(intro.init) size(pred_pop)
+                    pred_pop[I..., :] .= view(pred_pop, I..., :) .+ (intro.init,)
                 end
             end
         end
     end
-    # hp = get(data, Aux{:hunting_pressure}(), I)
 
-    habitat = let
+    habitat = let native=Aux{:native}()
         Cell{:presences}() do data, presences, I
-            hp = get(data, Aux{:native}(), I)
+            hp = get(data, native, I)
             habitat_requirement = DG.aux(data).habitat_requirement
             map(presences, habitat_requirement) do present, hs
                 if present
@@ -297,9 +322,9 @@ function def_syms(
         end
     end
 
-    clearing_rule = let
+    clearing_rule = let native=Aux{:native}()
         Cell{:endemic_presence}() do data, presences, I
-            uc = get(data, Aux{:native}(), I)
+            uc = get(data, native, I)
             presences .& uc
         end
     end
@@ -309,14 +334,23 @@ function def_syms(
             stencil=moore,
             # formulation=ExponentialKernel(Param(s, bounds=(0.000000000001, 100.0)))
             formulation=ExponentialKernel(s),
+            cellsize=1.0f0,
         )
     end
-    pred_spread_rule = let aggfactor=aggfactor, pred_kernels=pred_kernels, carrycap=carrycap
+    pred_spread_rule = let demaux=Aux{:dem}(), aggfactor=aggfactor, pred_kernels=pred_kernels, carrycap=carrycap
         SetNeighbors{Tuple{:pred_pop,:pred_carrycap}}(pred_kernels[1]) do data, hood, (Ns, _), I
-            any(isnan, Ns) && error("pred_pop Ns is: $Ns")
+            if any(isnan, Ns) 
+                data[:pred_pop][I...] = zero(Ns)
+                return nothing
+            end
             Ns == zero(Ns) && return nothing
-            dem = DG.aux(data)[:dem]
-            carrycap_nbrs = DG.neighbors(DG.grids(data).pred_carrycap, I)
+            dem = get(data, demaux)
+            reps = DynamicGrids.replicates(data)
+            carrycap_nbrs = if isnothing(reps)
+                DG.neighbors(DG.grids(data).pred_carrycap, I)
+            else
+                DG.neighbors(DG.grids(data).pred_carrycap, (I..., reps))
+            end
             elev_nbrs = DG.neighbors(dem, I)
             @inbounds elev_center = dem[I...]
 
@@ -347,12 +381,12 @@ function def_syms(
                 # speed = (6ℯ.^(slopefactor .* (slope .+ distfactor)))
 
                 # slope_factor = 1 - min(slope, 1) # TODO needs cell size here
-                slope_factor = 1.0000000001 - min(abs(e - elev_center) / cellsize, 1)
+                slope_factor = 1.0000000001f0 - min(abs(e - elev_center) / cellsize, 1)
                 # @show N  k  sp slope_factor one_individual
                 # propagules = N .* k .* sp .* slope_factor .+ ((rand(typeof(N)) .- 0.5) .* one_individual)
                 # propagules = Ns * sp * slope_factor .* kr .* rand(typeof(Ns))
-                propagules = trunc.(Ns .* sp .* slope_factor .* rand(typeof(Ns)) .^ 3 .* ks .* 40)
-                any(isnan, propagules) && error("NaNs found Ns: $Ns sp: $sp slope_factor: $slope_factor ks: $ks")
+                propagules = trunc.(Float32.(Ns .* sp .* slope_factor .* rand(typeof(Ns)) .^ 3 .* ks .* 40))
+                # any(isnan, propagules) && error("NaNs found Ns: $Ns sp: $sp slope_factor: $slope_factor ks: $ks")
                 sum1 = sum + propagules
                 # If we run out of propagules
                 if any(sum1 .> Ns)
@@ -363,7 +397,7 @@ function def_syms(
                 end
                 add!(data[:pred_pop], propagules, Ih...)
             end
-            @inbounds any(isnan, data[:pred_pop][I...]) && error("NaN in output")
+            # @inbounds any(isnan, data[:pred_pop][I...]) && error("NaN in output")
             @inbounds sub!(data[:pred_pop], sum, I...)
             return nothing
         end
@@ -376,23 +410,36 @@ function def_syms(
     # )
 
     recouperation_rates = map(ExtinctNVs) do ExtinctNV
-        rand(ExtinctNV) / 10
+        Float32.(rand(ExtinctNV) / 10)
     end
-    endemic_recouperation_rule = let
+    endemic_recouperation_rule = let recouperation_rate_aux=Aux{:recouperation_rate}()
         Neighbors{:endemic_presence}(Moore(2)) do data, hood, prescences, I
             any(prescences) || return prescences
-            recouperation_rate = DG.aux(data).recouperation_rate
-            i = 0
+            recouperation_rate = DG.get(data, recouperation_rate_aux)
             nbr_sums = sum(hood)
             map(prescences, nbr_sums, recouperation_rate) do p, n_nbrs, rr
                 if p
                     true
                 else
-                    rand() < (n_nbrs / length(hood) * rr)
+                    rand(Float32) < (n_nbrs * rr / length(hood))
                 end
             end
         end
     end
+
+    risks_rule = ExtirpationRisks{:endemic_presence}(; 
+        f=tanh,
+        pred_pop=Grid{:pred_pop}(), 
+        pred_suscept=Aux{:pred_suscept}(), 
+        stochastic_extirpation=0.001f0/aggfactor, 
+    )
+
+    aux_pred_risks_rule = ExtirpationRisks{:endemic_presence}(; 
+        f=tanh,
+        pred_pop=Aux{:pred_pop}(), 
+        pred_suscept=Aux{:pred_suscept}(), 
+        stochastic_extirpation=0.001f0/aggfactor, 
+    )
 
     tspans = map(introductions) do intros
         # t1 = minimum(x -> x.year, intros) - 2
@@ -401,49 +448,75 @@ function def_syms(
     inits = map(pred_pops, pred_carrycaps, endemic_presences) do pred_pop, pred_carrycap, endemic_presence
         (; pred_pop, pred_carrycap, endemic_presence)
     end
-    ruleset = Ruleset(
-        introduction_rule,
-        pred_carrycap_rule, pred_spread_rule, pred_growth_rule,
-        endemic_recouperation_rule, risks_rule, clearing_rule;
-        boundary=Use()
-    )
+    pred_inits = map(pred_pops, pred_carrycaps) do pred_pop, pred_carrycap
+        (; pred_pop, pred_carrycap)
+    end
 
     pred_ruleset = Ruleset(
         introduction_rule,
-        pred_carrycap_rule, pred_spread_rule, pred_growth_rule;
-        boundary=Use()
+        pred_carrycap_rule, 
+        pred_spread_rule, 
+        pred_growth_rule;
+        boundary=Remove()
     )
 
-    outputs_kw = map(island_names, ns_extinct, tspans, ag_auxs) do island, n_extinct, tspan, ag_aux
+    endemic_ruleset = Ruleset(
+        endemic_recouperation_rule, 
+        aux_pred_risks_rule, 
+        clearing_rule;
+        boundary=Remove()
+    )
+
+    ruleset = Ruleset(
+        DynamicGrids.rules(pred_ruleset)..., 
+        Chain(endemic_recouperation_rule, risks_rule, clearing_rule);
+        boundary=Remove()
+    )
+
+    rules = (;
+        introduction_rule,
+        pred_carrycap_rule, 
+        pred_spread_rule, 
+        pred_growth_rule,
+        endemic_recouperation_rule, 
+        risks_rule,
+        aux_pred_risks_rule, 
+        clearing_rule,
+    )
+
+    outputs_kw = map(island_names, ns_extinct, tspans, ag_auxs, pred_pops_aux) do island, n_extinct, tspan, ag_aux, pred_pop
         aux = (;
             spreadability=getproperty(spreadability, island),
             introductions=getproperty(introductions, island),
-            pred_suscept=getproperty(pred_suscepts, island),
+            pred_suscept=[getproperty(pred_suscepts, island)],
             recouperation_rate=getproperty(recouperation_rates, island),
             habitat_requirement=getproperty(habitat_requirements, island),
             dem=getproperty(stencil_dems, island),
+            pred_pop,
             ag_aux...
         )
-        (; aux, mask=getproperty(stencil_masks, island), tspan, n_extinct)
+        (; aux, mask=getproperty(stencil_masks, island), replicates, tspan, n_extinct)
     end
     outputs = map(inits, outputs_kw) do init, kw
-        ArrayOutput(init; kw...)
-        # trans_output = TransformedOutput(init; kw...) do f
-        #     Base.reduce(parent(parent(f.endemic_presences)); init=zero(eltype(f.endemic_presences))) do acc, xs
+        ResultOutput(init; kw...)
+        # TransformedOutput(init; kw...) do f
+        #     presentces = Base.reduce(parent(parent(f.endemic_presences)); init=zero(eltype(f.endemic_presences))) do acc, xs
         #         map(|, acc, xs)
         #     end
+        #     Base.maximum(f.pred_pop)
         # end
-    end
-    pred_inits = map(pred_pops) do pred_pops
-        (; pred_pops)
     end
     pred_outputs = map(pred_inits, outputs_kw) do init, kw
-        ArrayOutput(init; kw...)
-        # trans_output = TransformedOutput(init; kw...) do f
-        #     Base.reduce(parent(parent(f.endemic_presences)); init=zero(eltype(f.endemic_presences))) do acc, xs
-        #         map(|, acc, xs)
-        #     end
-        # end
+        if isnothing(replicates)
+            trans_output = TransformedOutput(init; kw...) do f
+                Array(f.pred_pop)
+                # Base.reduce(parent(parent(f.endemic_presences)); init=zero(eltype(f.endemic_presences))) do acc, xs
+                #     map(|, acc, xs)
+                # end
+            end
+        else
+            ResultOutput(init; kw...)
+        end
     end
     # Sum as we go
     # ncells = sum(DG.mask(output))
@@ -456,5 +529,5 @@ function def_syms(
     end
 
 
-    return (; ruleset, islands)
+    return (; ruleset, rules, pred_ruleset, endemic_ruleset, islands)
 end
