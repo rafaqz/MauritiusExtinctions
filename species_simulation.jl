@@ -99,7 +99,7 @@ end
 );
 (; output, pred_output, init, output_kw) = islands[k]
 @time sim!(output, endemic_ruleset; proc=SingleCPU(), printframe=true);
-@time sim!(output, endemic_ruleset; tspan=1550:1600, proc=CPUGPU(), printframe=true);
+@time sim!(output, endemic_ruleset; tspan=1550:2018, proc=CPUGPU(), printframe=true);
 cu_output = Adapt.adapt(CuArray, output);
 prof = CUDA.@profile sim!(cu_output, endemic_ruleset; tspan=1550:1600, proc=CuGPU(), printframe=true)
 

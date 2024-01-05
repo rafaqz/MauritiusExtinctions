@@ -62,23 +62,24 @@ function DynamicGrids.applyrule(
     return new_carrycaps
 end
 
-struct ExtirpationRisks{R,W,F,P,PS,SE} <: DynamicGrids.CellRule{R,W}
+struct ExtirpationRisks{R,W,F,P,PS,SE,Sc} <: DynamicGrids.CellRule{R,W}
     f::F
     pred_pop::P
     pred_suscept::PS
     stochastic_extirpation::SE
+    pred_suscept_scaling::Sc
 end
-function ExtirpationRisks{R,W}(; f, pred_pop, pred_suscept, stochastic_extirpation) where {R,W}
-    ExtirpationRisks{R,W}(f, pred_pop, pred_suscept, stochastic_extirpation)
+function ExtirpationRisks{R,W}(; f, pred_pop, pred_suscept, stochastic_extirpation, scaling) where {R,W}
+    ExtirpationRisks{R,W}(f, pred_pop, pred_suscept, stochastic_extirpation, scaling)
 end
 
 @inline function DynamicGrids.applyrule(data, rule::ExtirpationRisks, endemic_presence, I)
     pred_pop = get(data, rule.pred_pop, I)
-    pred_suscept = get(data, rule.pred_suscept)[1]
+    pred_suscept = get(data, rule.pred_suscept)
     map(endemic_presence, pred_suscept) do present, ps
         if present
             # rand() < hp * hs & rand() < sum(map(*, ps, pred_pop))
-            rand(Float32) > rule.f(sum(map(*, ps, pred_pop))) || rand(Float32) > rule.stochastic_extirpation
+            rand(Float32) > rule.f(sum(map(*, ps, pred_pop)) / rule.scaling) || rand(Float32) > rule.stochastic_extirpation
             # ... etc
         else
             false
@@ -228,8 +229,8 @@ function def_syms(
     introductions = map(island_names) do key
         island_df = filter(r -> r.island == string(key), introductions_df)
         inits = map(pred_indices, one_individual) do i, oi
-            x = zeros(Float16, length(pred_keys))
-            x[i] = Float16(oi * 100 * aggfactor)
+            x = zeros(Float32, length(pred_keys))
+            x[i] = Float32(oi * 100 * aggfactor)
             PredNV(x)
         end
 
@@ -262,13 +263,13 @@ function def_syms(
     )
 
     habitat_requirements = map(ExtinctNVs) do ExtinctNV
-        Float32.(rand(ExtinctNV))
+        round.(UInt8, rand(ExtinctNV) .* 255)
     end
     hunting_suscepts = map(ExtinctNVs) do ExtinctNV
-        Float32.(rand(ExtinctNV))
+        round.(UInt8, rand(ExtinctNV) .* 255)
     end
     # Dummy values. This will be calculated by the optimiser
-    pred_suscepts = map(ns_extinct, ExtinctNVs) do n_extinct, ExtinctNV
+    pred_suscepts_f32 = map(ns_extinct, ExtinctNVs) do n_extinct, ExtinctNV
         cat_sus = ExtinctNV(LinRange(Float32(0.0), Float32(0.02), n_extinct))
         black_rat_sus = ExtinctNV(LinRange(Float32(0.0), Float32(0.01), n_extinct))
         norway_rat_sus = ExtinctNV(LinRange(Float32(0.0), Float32(0.01), n_extinct))
@@ -277,7 +278,13 @@ function def_syms(
         snake_sus = ExtinctNV(LinRange(Float32(0.0), Float32(0.005), n_extinct))
         macaque_sus = ExtinctNV(LinRange(Float32(0.0), Float32(0.003), n_extinct))
         pred_suscept = map(cat_sus, black_rat_sus, norway_rat_sus, mouse_sus, pig_sus, snake_sus, macaque_sus) do c, br, nr, m, p, s, ma
-            PredNV((c, br, nr, m, p, s, ma)) ./ aggscale
+            PredNV((c, br, nr, m, p, s, ma)) ./ aggscale 
+        end
+    end
+    pred_suscept_scaling = 255 / maximum(maximum(map(maximum, pred_suscepts_f32)))
+    pred_suscepts_uint8 = map(pred_suscepts_f32) do ps
+        map(ps) do p
+            round.(UInt8, p .* pred_suscept_scaling)
         end
     end
 
@@ -432,6 +439,7 @@ function def_syms(
         pred_pop=Grid{:pred_pop}(), 
         pred_suscept=Aux{:pred_suscept}(), 
         stochastic_extirpation=0.001f0/aggfactor, 
+        pred_suscept_scaling,
     )
 
     aux_pred_risks_rule = ExtirpationRisks{:endemic_presence}(; 
@@ -439,6 +447,7 @@ function def_syms(
         pred_pop=Aux{:pred_pop}(), 
         pred_suscept=Aux{:pred_suscept}(), 
         stochastic_extirpation=0.001f0/aggfactor, 
+        pred_suscept_scaling,
     )
 
     tspans = map(introductions) do intros
@@ -488,7 +497,7 @@ function def_syms(
         aux = (;
             spreadability=getproperty(spreadability, island),
             introductions=getproperty(introductions, island),
-            pred_suscept=[getproperty(pred_suscepts, island)],
+            pred_suscept=getproperty(pred_suscepts, island),
             recouperation_rate=getproperty(recouperation_rates, island),
             habitat_requirement=getproperty(habitat_requirements, island),
             dem=getproperty(stencil_dems, island),
