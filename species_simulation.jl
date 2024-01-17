@@ -12,6 +12,7 @@ using GLMakie
 using NCDatasets
 using Geomorphometry
 using Stencils
+using Statistics
 
 # includet("optimisation.jl")
 include("species_rules.jl")
@@ -75,41 +76,39 @@ lc_predictions = map(lc_predictions_paths) do path
         x -> Rasters.set(x, Ti => Int.(maybeshiftlocus(Start(), dims(x, Ti), )))
 end
 
+auxs = agg_aux(masks, slope_stacks, dems, lc_predictions, aggfactor)
+Makie.image(lc_all[k][Ti=300]; colormap=:batlow)
+
+# Just for Makie...
+# This kind of merges the pixel colors...
+lc_all = map(auxs) do aux
+    rebuild(map(aux.lc) do lcs
+        sum(map(.*, ntuple(UInt8, length(lcs)), lcs))
+    end; missingval=0.0)
+end
+# Rasters.rplot(lc_all.mus; colorrange=(1, 6))
+# Rasters.rplot(lc_predictions.mus[Ti=At(2000)])
+# Rasters.rplot(lc_ag[Ti=At(2000)])
+# Makie.plot(sum.(lc_fractions)[Ti=52])
+
 k = :reu
 k = :rod
 k = :mus
 include("species_rules.jl")
 (; ruleset, rules, pred_ruleset, endemic_ruleset, islands) = def_syms(
-    pred_df, introductions_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, lc_predictions; 
-    replicates=nothing
+    pred_df, introductions_df, island_extinct_tables, auxs, aggfactor; 
+    replicates=nothing, pred_pops_aux
 );
-(; output, pred_output, init, output_kw) = islands[k]
-
-@time sim!(pred_output, pred_ruleset; proc=SingleCPU(), printframe=true);
-pred_pops_aux = map(islands, masks) do island, mask
-    (; output, pred_output, init, output_kw, ag_mask) = island
-    @time sim!(pred_output, pred_ruleset; proc=SingleCPU(), printframe=true);
-    A = cat(pred_output...; dims=3)
-    DimArray(A, (dims(ag_mask)..., dims(pred_output)...))
-end
-
-(; ruleset, pred_ruleset, endemic_ruleset, islands) = def_syms(
-    pred_df, introductions_df, aggfactor, dems, masks, slope_stacks, island_extinct_tables, lc_predictions; 
-    replicates=100, pred_pops_aux
-);
-(; output, pred_output, init, output_kw) = islands[k]
-@time sim!(output, endemic_ruleset; proc=SingleCPU(), printframe=true);
-@time sim!(output, endemic_ruleset; tspan=1550:2018, proc=CPUGPU(), printframe=true);
-cu_output = Adapt.adapt(CuArray, output);
-prof = CUDA.@profile sim!(cu_output, endemic_ruleset; tspan=1550:1600, proc=CuGPU(), printframe=true)
-
-using CUDA, Adapt
-using ProfileView
-@time sim!(cu_output, endemic_ruleset; proc=CuGPU(), printframe=true);
-prof = CUDA.@profile sim!(cu_output, endemic_ruleset; tspan=1550:1600, proc=CuGPU(), printframe=true)
-prof
-DynamicGrids.replicates(output)
-max_pops = maximum(output)
+(; output, max_output, pred_output, init, output_kw) = islands[k]
+@time sim!(max_output, pred_ruleset; proc=CPUGPU(), printframe=true);
+@time sim!(output, ruleset; proc=SingleCPU(), printframe=true);
+# @time sim!(pred_output, pred_ruleset; proc=CPUGPU(), printframe=true);
+maxpops = maximum(max_output)
+mkoutput = mk_pred(init, pred_ruleset; maxpops, landcover=lc_all[k], output_kw...)
+mkoutput = mk_endemic(init, endemic_ruleset; maxpops, pred_pop=pred_pops_aux[k], landcover=lc_all[k], output_kw...)
+mkoutput = mk(init, ruleset; maxpops, landcover=lc_all[k], output_kw...)
+DynamicGrids.mask(mkoutput)
+display(mkoutput)
 
 # using ProfileView
 # @profview sim!(output, ruleset; tspan=1550:1560, proc=SingleCPU(), printframe=true);
@@ -127,23 +126,37 @@ max_pops = maximum(output)
 #     end
 # end |> maximum
 
-mkoutput = mk(init, ruleset; carrycaps=max_pops, output_kw...)
-display(mkoutput)
+pred_pops_aux = map(islands) do island
+    (; pred_output, init) = island
+    @time sim!(pred_output, pred_ruleset; proc=SingleCPU(), printframe=true);
+    A = cat(pred_output...; dims=3)
+    DimArray(A, (dims(init.pred_pop)..., dims(pred_output)...))
+end
+pred_pops_aux.mus
 
-
-function predict_extinctions(ruleset, init; tspan, kw...)
-    output = TransformedOutput(init; tspan, kw...) do data
-        map(>(0), sum(data.species))
+function predict_extinctions(ruleset, islands)
+    map(islands) do island
+        _predict_extinctions(ruleset, island)
     end
-    sim!(output, ruleset)
+end
+function _predict_extinctions(ruleset, island)
+    output = TransformedOutput(island.endemic_init; island.output_kw...) do f
+        mean(sum, eachslice(f.endemic_presence; dims=3))
+    end
+    sim!(output, ruleset; printframe=true, proc=CPUGPU())
+    return output
     # Return NamedVector of years to extinction
-    return sum(sim) .+ first(tspan) .- 1
+    # return sum(output) .+ first(island.output_kw.tspan) .- 1
 end
 
-function predict_extinctions(ruleset, inits; kw...)
-    map(islands) do 
-        predict_extinctions(ruleset, island.init; 
-            tspan=island.tspan, aux=island.aux, kw...
-        )
-    end
-end
+(isnothing(pred_pops_aux) && error()); (; ruleset, pred_ruleset, endemic_ruleset, islands) = def_syms(
+    pred_df, introductions_df, island_extinct_tables, auxs, aggfactor; 
+    replicates=100, pred_pops_aux
+);
+(; output, max_output, pred_output, init, output_kw) = islands[k]
+@time preds = predict_extinctions(endemic_ruleset, islands)
+# @time sim!(output, endemic_ruleset; proc=CPUGPU(), printframe=true);
+# @time sim!(max_output, ruleset; proc=SingleCPU(), printframe=true);
+sum(map(xs -> xs .> 10, preds.reu)) .+ first(DynamicGrids.tspan(output))
+sum(map(xs -> xs .> 10, preds.mus)) .+ first(DynamicGrids.tspan(output))
+sum(map(xs -> xs .> 10, preds.rod)) .+ first(DynamicGrids.tspan(output))
