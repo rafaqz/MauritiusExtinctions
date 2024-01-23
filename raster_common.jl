@@ -30,7 +30,7 @@ gdal_borders = (
 )
 borders = (
    mus=GeoInterface.convert(MultiPolygon, gdal_borders.mus),
-   reu=MultiPolygon([GeoInterface.convert(Polygon, gdal_borders.reu)]),
+   reu=GeoInterface.convert(MultiPolygon, gdal_borders.reu),
    rod=GeoInterface.convert(MultiPolygon, gdal_borders.rod),
 )
 island_bounds = (

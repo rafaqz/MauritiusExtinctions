@@ -274,43 +274,10 @@ output = MakieOutput(getproperty(init_states, k);
 end
 
 
-
-
-mus_veg_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page33_mauritius_vegetation_colored.tif"
-reu_veg_path = "/home/raf/PhD/Mascarenes/Data/Dominique/Vegetation_Rasters/pastveg3.tif"
-original_veg = (;
-    mus=replace_missing(Raster(mus_veg_path), 0),
-    reu=resample(replace_missing(Raster(reu_veg_path), 0); to=masks.reu),
-)
-
-using DataFrames
-nf_slices = getproperty.(output, :native_fraction);
-Rasters.combine(RasterSeries(nf_slices, dims(nf_slices)), Ti);
-veg_change = map(lc_predictions[keys(original_veg)], original_veg) do p, v
-    rebuild(UInt8.(broadcast_dims(*, p.native, v)); missingval=0)
-end
+# using DataFrames
+# nf_slices = getproperty.(output, :native_fraction);
+# Rasters.combine(RasterSeries(nf_slices, dims(nf_slices)), Ti);
 # mus_veg_change = rebuild(UInt8.(broadcast_dims(*, lc_predictions.mus.native, mus_veg)); missingval=0)
-
-Rasters.rplot(veg_change)
-habitat_names = ["semi-dry_evergreen_forest", "open_dry_palm-rich_woodland", "wet_forest", "pandanus_swamp", "mossy_rainforest", "mangrove", "wetland vegetation"]
-length(habitat_names)
-habitat_sums = cat(map(1:7) do habitat
-    dropdims(sum(==(habitat), veg_change; dims=(X, Y)); dims=(X, Y))
-end...; dims=Dim{:habitat}(habitat_names))
-init_total = sum(habitat_sums) do x
-    x[1]
-end
-cum = cumsum(habitat_sums; dims=2)
-x = lookup(habitat_sums, Ti)
-fig = Figure()
-ax = Axis(fig[1, 1])
-for i in 7:-1:1
-    y = parent(cum[habitat=i])
-    Makie.lines!(x, y; color=:black)
-    band!(x, fill(0, length(x)), y; label = "Label")
-end
-fig[1, 2] = Legend(fig, ax, habitat_names)
-
 
 
 # timeline = NV{(:native, :cleared, :abandoned, :urban, :forestry, :water)}.[
@@ -359,3 +326,4 @@ fig[1, 2] = Legend(fig, ax, habitat_names)
 # b = NV{propertynames(transitions)}((true, false, true, false, true, false))
 
 # LandscapeChange._merge_all(a, b, reversed, reversed_indirect, force)
+

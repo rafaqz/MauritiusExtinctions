@@ -2,6 +2,8 @@ using DynamicGrids, Dispersal, LandscapeChange, ModelParameters
 using StaticArrays
 using Rasters
 using ThreadsX
+using Distributions
+using Setfield
 const DG = DynamicGrids
 const DD = DimensionalData
 
@@ -19,7 +21,7 @@ function InteractiveCarryCap{R,W}(; carrycap, carrycap_scaling, inputs=(;),) whe
     InteractiveCarryCap{R,W}(carrycap, carrycap_scaling, inputs)
 end
 
-Base.@assume_effects :foldable function DynamicGrids.applyrule(
+@inline Base.@assume_effects :foldable function DynamicGrids.applyrule(
     data, rule::InteractiveCarryCap,
     populations::NamedVector{Keys}, I,
 ) where Keys
@@ -37,28 +39,66 @@ Base.@assume_effects :foldable function DynamicGrids.applyrule(
     return new_carrycaps
 end
 
-struct ExtirpationRisks{R,W,F,P,PS,SE} <: DynamicGrids.CellRule{R,W}
+struct ExtirpationRisks{R,W,F,T,PR,PS,PP,E,SE} <: DynamicGrids.CellRule{R,W}
     f::F
-    pred_pop::P
+    traits::T
+    pred_response::PR
     pred_suscept::PS
+    pred_pop::PP
+    pred_effect::E
     stochastic_extirpation::SE
 end
-function ExtirpationRisks{R,W}(; f, pred_pop, pred_suscept, stochastic_extirpation) where {R,W}
-    ExtirpationRisks{R,W}(f, pred_pop, pred_suscept, stochastic_extirpation)
+function ExtirpationRisks{R,W}(; f, traits, pred_response, pred_suscept, pred_pop, pred_effect, stochastic_extirpation) where {R,W}
+    ExtirpationRisks{R,W}(f, traits, pred_response, pred_suscept, pred_pop, pred_effect, stochastic_extirpation)
 end
 
 @inline function DynamicGrids.applyrule(data, rule::ExtirpationRisks, endemic_presence, I)
-    pred_pop = get(data, rule.pred_pop, I)
-    pred_suscept = get(data, rule.pred_suscept)
-    map(endemic_presence, pred_suscept) do present, ps
-        if present
-            # rand() < hp * hs & rand() < sum(map(*, ps, pred_pop))
-            rand(Float32) > rule.f(sum(map(*, ps, pred_pop))) && rand(Float32) > rule.stochastic_extirpation
-            # ... etc
+    # If they are all absent do nothing
+    any(endemic_presence) || return endemic_presence
+
+    # Get the effect of predators on each endemic
+    pred_effect = if isnothing(rule.pred_effect)
+        pred_pop = get(data, rule.pred_pop, I)
+        pred_suscept = get(data, rule.pred_suscept)
+        predator_effect(rule.f, pred_pop, pred_suscept)
+    else
+        # We have already precalculated the effect
+        get(data, rule.pred_effect, I)
+    end
+
+    return map(endemic_presence, pred_effect) do present, effect
+        if present 
+            # rand(typeof(effect)) > effect && rand() > rule.stochastic_extirpation
+            typeof(effect)(0.5) > effect
         else
             false
         end
     end
+end
+
+function predator_effect(f, pred_pop, pred_suscept)
+    Float32.(f.(sum(map(pred_suscept, pred_pop) do ps, pp
+        map(xs -> xs .* pp, ps)
+    end)))
+end
+
+function predator_suceptibility(mass_response, pred_response, traits)
+    pred_suscept = mapreduce(+, pred_response, traits) do pr, t
+        map(mass_response, pr) do m, p
+            t .* p .* m
+        end
+    end ./ (32 * 8^2)
+end
+
+@inline function DynamicGrids.modifyrule(rule::ExtirpationRisks, data::AbstractSimData)
+    if isnothing(rule.pred_effect) 
+        pred_response = get(data, rule.pred_response)
+        mass_response = get(data, rule.mass_response)
+        traits = get(data, rule.traits)
+        @set! rule.pred_suscept = predator_suceptibility(mass_response, pred_response, traits)
+    end
+    @set! rule.traits = nothing # Simplify for GPU argument size
+    @set rule.pred_response = nothing # Simplify for GPU argument size
 end
 
 function agg_aux(masks::NamedTuple, slope_stacks, dems, lcs, aggfactor)
@@ -84,17 +124,18 @@ function agg_aux(mask_orig::AbstractArray, slope_orig, dem_orig, lc_orig, aggfac
 end
 
 function def_syms(
-    pred_df, introductions_df, island_extinct_tables, auxs, aggfactor;
-    replicates=nothing, pred_pops_aux=map(_ -> nothing, dems),
+    pred_df, introductions_df, island_endemic_tables, auxs, aggfactor;
+    replicates=nothing, pred_pops_aux,
+    pred_keys=(:cat, :black_rat, :norway_rat, :mouse, :pig, :wolf_snake, :macaque)
 )
     aggscale = aggfactor^2
     window = Window{2}()
     moore = Moore{3}()
-    ns_extinct = map(nrow, island_extinct_tables)
-    extinct_keys = map(island_extinct_tables) do extinct_table
-        Tuple(Symbol.(replace.(extinct_table.Species, Ref(' ' => '_'))))
+    ns_endemic = map(nrow, island_endemic_tables)
+    endemic_keys = map(island_endemic_tables) do endemic_table
+        Tuple(Symbol.(replace.(endemic_table.Species, Ref(' ' => '_'))))
     end
-    ExtinctNVs = map(extinct_keys) do ek
+    EndemicNVs = map(endemic_keys) do ek
         NamedVector{ek,length(ek)}
     end
 
@@ -108,36 +149,134 @@ function def_syms(
     =#
 
     # Parameters
-    carrycap = Float32.(NV(
+
+    # These are taken from the literature in contexts where it seems also applicable to the Mascarenes
+    carrycap = Float32.(NV(;
         cat =        0.02,
         black_rat =  30.0,
-        norway_rat = 15.0,
+        norway_rat = 15.0, # This one is more of a guess
         mouse =      52.0,
         pig =        0.3,
-        snake =      20.0,
+        wolf_snake = 20.0, # As is this one
         macaque =    1.0,
-    )) .* aggscale
+    ) .* aggscale)[pred_keys]
 
+    # These are parametries from reading qualitative literature and quantitative literature without
+    # enough context to really use the number.
+    # Maybe we should fit them to some observations in specific points at specific times.
+    # Refs: Smucker et al 2000 - Hawaiii cats, rats, mice
     pred_funcs = (;
         cat =        p -> 1.0f0p.black_rat + 0.3f0p.norway_rat + 1.0f0p.mouse + 10f0p.urban + 2f0p.cleared,
         black_rat  = p -> -0.2f0p.cat - 0.1f0p.norway_rat - 0.1f0p.mouse + 0.5f0p.native + 0.3f0p.abandoned + 1p.urban,
         norway_rat = p -> -0.1f0p.cat - 0.1f0p.black_rat - 0.1f0p.mouse + 1.5f0p.urban - 0.2f0p.native,
         mouse =      p -> -0.3f0p.cat - 0.2f0p.black_rat - 0.2f0p.norway_rat + 0.8f0p.cleared + 1.5f0p.urban,
         pig =        p -> 0.5f0p.native + 0.4f0p.abandoned - 2f0p.urban - 1.0f0p.cleared,
-        snake =      p -> -0.2f0p.cat + 0.2f0p.black_rat + 0.3f0p.mouse - 0.5f0p.urban + 0.3f0p.native,
+        wolf_snake =      p -> -0.2f0p.cat + 0.2f0p.black_rat + 0.3f0p.mouse - 0.5f0p.urban + 0.3f0p.native,
         macaque =    p -> 1.0f0p.abandoned + 0.7f0p.forestry + 0.4f0p.native - 1.0f0p.urban - 0.8f0p.cleared
-    )
+    )[pred_keys]
 
-    # These need to somewhat balance low growth rates
-    spread_rate = NV(
+    # These need to somewhat balance low growth rates. They are almost totally made up.
+    # The units are in pixels - it needs fixing to the aggregation size.
+    spread_rate = NV(;
         cat =         30.0f0,
         black_rat =   1.0f0,
         norway_rat =  1.0f0,
         mouse =       0.5f0,
         pig =         15.0f0,
-        snake =       1.0f0,
+        wolf_snake =  1.0f0,
         macaque =     5.0f0,
     )
+
+    # These dummy values will be optimised. Its likely too many for that but we
+    # can reduce the numver of predators, removing mouse, macaque etc
+    pred_response_raw = (;
+        ismammal = (;
+            cat =         0.1,
+            black_rat =   0.02,
+            norway_rat =  0.02,
+            mouse =       0.00,
+            pig =         0.04,
+            wolf_snake =  0.02,
+            macaque =     0.02,
+        ),
+        isbird = (;
+            cat =         0.1,
+            black_rat =   0.03,
+            norway_rat =  0.03,
+            mouse =       0.02,
+            pig =         0.01,
+            wolf_snake =  0.03,
+            macaque =     0.01,
+        ),
+        isreptile = (;
+            cat =         0.2,
+            black_rat =   0.02,
+            norway_rat =  0.02,
+            mouse =       0.01,
+            pig =         0.02,
+            wolf_snake =  0.02,
+            macaque =     0.02,
+        ),
+        isgroundnesting = (;
+            cat =         0.2,
+            black_rat =   0.01,
+            norway_rat =  0.02,
+            mouse =       0.01,
+            pig =         0.05,
+            wolf_snake =  0.0,
+            macaque =     0.0,
+        ),
+        flightlessness = (;
+            cat =         0.2,
+            black_rat =   0.01,
+            norway_rat =  0.02,
+            mouse =       0.01,
+            pig =         0.05,
+            wolf_snake =  0.01,
+            macaque =     0.0,
+        ),
+    )
+
+    response_keys = NamedTuple{keys(pred_response_raw)}(keys(pred_response_raw))
+    pred_response = map(response_keys, pred_response_raw) do k, ps
+        map(ps[pred_keys], pred_keys) do val, label
+            Param(val; label=Symbol(k, :_, label))
+        end |> NV{pred_keys}
+    end
+
+    island_endemic_traits = map(island_endemic_tables, ns_endemic, EndemicNVs) do table, n_endemic, EndemicNV
+        ismammal = EndemicNV(table.Group .== "mammal")
+        isbird = EndemicNV(table.Group .== "bird")
+        isreptile = EndemicNV(table.Group .== "reptile")
+        isgroundnesting = EndemicNV(table.Ground_nesting)
+        flightlessness = EndemicNV(Float32.(1 .- table.Flight_capacity))
+        (; ismammal, isbird, isreptile, isgroundnesting, flightlessness)
+    end
+    gecko_mass = 8 # estimated mean of multiple species
+    skink_mass = 3 # estimated mean of multiple species
+    mouse_mass = 16.25
+    wolf_snake_pre_mass = round(0.48gecko_mass + 0.30mouse_mass + 0.22skink_mass)
+
+    mean_prey_mass = (;
+        cat =         (41.0, 51.0), # Pearre and Maaas 1998
+        black_rat =   (10.0, 10.0), # made up
+        norway_rat =  (8.0f0, 8.0), # made up
+        mouse =       (3.0f0, 5.0), # made up
+        pig =         (100.0, 100.0), # made up
+        wolf_snake =  (9.0f0, 7.0), # Estimated from Fritts 1993
+        macaque =     (100.0, 100.0), # made up
+    )
+
+    island_mass_response = map(island_endemic_tables, EndemicNVs) do table, EndemicNV
+        endemic_mass = EndemicNV(table.Mass)
+        map(mean_prey_mass) do (mean, std)
+            dist = Distributions.Normal(mean, 2std) # Doubled because of the skew
+            scalar = 1 / pdf(dist, mean)
+            map(endemic_mass) do pm
+                pdf(dist, pm) * scalar
+            end
+        end
+    end
 
     # How much these species are supported outside of this system
     # populations = NV(cat=0.01, black_rat=25.0, norway_rat=10.0, pig=0.3)
@@ -162,7 +301,7 @@ function def_syms(
     pred_names = PredNV(pred_keys)
     pred_indices = PredNV(ntuple(identity, length(pred_keys)))
     island_names = NamedTuple{keys(auxs)}(keys(auxs))
-    pred_inits = map(pred_indices) do i
+    pred_init_nvs = map(pred_indices) do i
         x = zeros(Float16, length(pred_keys))
         x[i] = 50 * aggfactor
         PredNV(x)
@@ -171,7 +310,7 @@ function def_syms(
     introductions = map(island_names) do key
         island_df = filter(r -> r.island == string(key), introductions_df)
         map(eachrow(island_df)) do r
-            init = pred_inits[Symbol(r.species)]
+            init = pred_init_nvs[Symbol(r.species)]
             (; year=r.year, geometry=(X=r.lon, Y=r.lat), init)
         end
     end
@@ -184,7 +323,6 @@ function def_syms(
     pred_carrycaps = map(auxs) do aux
         map(_ -> carrycap, aux.mask)
     end
-
 
     pred_carrycap_rule = InteractiveCarryCap{:pred_pop,:pred_carrycap}(;
         carrycap,
@@ -199,24 +337,12 @@ function def_syms(
         nsteps_type=Float32,
     )
 
-    habitat_requirements = map(ExtinctNVs) do ExtinctNV
-        Float32.(rand(ExtinctNV))
+    habitat_requirements = map(EndemicNVs) do EndemicNV
+        Float32.(rand(EndemicNV))
     end
-    hunting_suscepts = map(ExtinctNVs) do ExtinctNV
-        Float32.(rand(ExtinctNV))
-    end
-    # Dummy values. This will be calculated by the optimiser
-    pred_suscepts = map(ns_extinct, ExtinctNVs) do n_extinct, ExtinctNV
-        cat_sus = ExtinctNV(LinRange(Float32(0.0), Float32(0.01), n_extinct))
-        black_rat_sus = ExtinctNV(LinRange(Float32(0.0), Float32(0.005), n_extinct))
-        norway_rat_sus = ExtinctNV(LinRange(Float32(0.0), Float32(0.07), n_extinct))
-        mouse_sus = ExtinctNV(LinRange(Float32(0.0), Float32(0.001), n_extinct))
-        pig_sus = ExtinctNV(LinRange(Float32(0.0), Float32(0.005), n_extinct))
-        snake_sus = ExtinctNV(LinRange(Float32(0.0), Float32(0.005), n_extinct))
-        macaque_sus = ExtinctNV(LinRange(Float32(0.0), Float32(0.003), n_extinct))
-        pred_suscept = map(cat_sus, black_rat_sus, norway_rat_sus, mouse_sus, pig_sus, snake_sus, macaque_sus) do c, br, nr, m, p, s, ma
-            PredNV((c, br, nr, m, p, s, ma)) ./ aggscale
-        end |> collect
+
+    hunting_suscepts = map(EndemicNVs) do EndemicNV
+        Float32.(rand(EndemicNV))
     end
 
     # Every species is everywhere initially, in this dumb model
@@ -263,7 +389,7 @@ function def_syms(
     clearing_rule = let landcover=Aux{:landcover}()
         Cell{:endemic_presence}() do data, presences, I
             lc = get(data, landcover, I)
-            presences .& (lc.native > 0.2f0)
+            presences .& (lc.native > 0.0f0)
         end
     end
 
@@ -275,7 +401,7 @@ function def_syms(
             cellsize=1.0f0,
         )
     end
-    pred_spread_rule = let demaux=Aux{:dem}(), aggfactor=aggfactor, pred_kernels=pred_kernels, carrycap=carrycap, slope_scalar=Param(5.0, bounds=(1.0, 20.0))
+    pred_spread_rule = let demaux=Aux{:dem}(), aggfactor=aggfactor, pred_kernels=pred_kernels, carrycap=carrycap, slope_scalar=5.0 # Param(5.0, bounds=(1.0, 20.0))
         SetNeighbors{Tuple{:pred_pop,:pred_carrycap}}(pred_kernels[1]) do data, hood, (Ns, _), I
             Ns === zero(Ns) && return nothing
             dem = get(data, demaux)
@@ -330,19 +456,23 @@ function def_syms(
         end
     end # let
 
-    recouperation_rates = map(ExtinctNVs) do ExtinctNV
-        Float32.(rand(ExtinctNV) / 10)
+    recouperation_rates = map(EndemicNVs) do EndemicNV
+        Float32.(rand(EndemicNV) / 10)
     end
     endemic_recouperation_rule = let recouperation_rate_aux=Aux{:recouperation_rate}()
-        Neighbors{:endemic_presence}(Moore(2)) do data, hood, prescences, I
-            any(prescences) || return prescences
+        Neighbors{:endemic_presence}(Moore(1)) do data, hood, prescences, I
+            # any(prescences) || return prescences
             recouperation_rate = DG.get(data, recouperation_rate_aux)
-            nbr_sums = sum(hood)
+            nbr_sums = foldl(hood; init=Base.reinterpret.(UInt8, zero(first(hood)))) do x, y
+                Base.reinterpret(UInt8, x) + Base.reinterpret(UInt8, y)
+            end
             map(prescences, nbr_sums, recouperation_rate) do p, n_nbrs, rr
                 if p
                     true
-                else
+                elseif n_nbrs > 0
                     rand(Float32) < (n_nbrs * rr / length(hood))
+                else
+                    false
                 end
             end
         end
@@ -350,16 +480,22 @@ function def_syms(
 
     risks_rule = ExtirpationRisks{:endemic_presence}(;
         f=tanh,
+        traits=Aux{:endemic_traits}(),
+        pred_response,
+        pred_suscept=nothing,
+        pred_effect=nothing,
         pred_pop=Grid{:pred_pop}(),
-        pred_suscept=Aux{:pred_suscept}(),
         stochastic_extirpation=0.005f0/aggfactor,
     )
 
     aux_pred_risks_rule = ExtirpationRisks{:endemic_presence}(;
         f=tanh,
-        pred_pop=Aux{:pred_pop}(),
-        pred_suscept=Aux{:pred_suscept}(),
-        stochastic_extirpation=0.001f0/aggfactor,
+        traits=Aux{:endemic_traits}(),
+        pred_response,
+        pred_suscept=nothing,
+        pred_effect=Aux{:pred_effect}(),
+        pred_pop=nothing,
+        stochastic_extirpation=0.005f0/aggfactor,
     )
 
     tspans = map(introductions) do intros
@@ -385,9 +521,7 @@ function def_syms(
     )
 
     endemic_ruleset = Ruleset(
-        endemic_recouperation_rule,
-        aux_pred_risks_rule,
-        clearing_rule;
+        Chain(endemic_recouperation_rule, aux_pred_risks_rule, clearing_rule);
         boundary=Remove()
     )
 
@@ -408,17 +542,23 @@ function def_syms(
         clearing_rule,
     )
 
-    outputs_kw = map(island_names, ns_extinct, tspans, auxs, pred_pops_aux) do island, n_extinct, tspan, aux1, pred_pop
+    pred_effects = map(pred_pops_aux, island_mass_response, island_endemic_traits) do pred_pop, mass_response, traits
+        pred_suscept = predator_suceptibility(mass_response, pred_response, traits)
+        isnothing(pred_pop) ? nothing : predator_effect.(risks_rule.f, pred_pop, Ref(pred_suscept))
+    end
+
+    outputs_kw = map(island_names, ns_endemic, tspans, auxs, pred_pops_aux, island_endemic_traits, pred_effects) do island, n_endemic, tspan, aux1, pred_pop, endemic_traits, pred_effect
         aux = (;
             introductions=getproperty(introductions, island),
-            pred_suscept=getproperty(pred_suscepts, island),
             recouperation_rate=getproperty(recouperation_rates, island),
             habitat_requirement=getproperty(habitat_requirements, island),
             dem=getproperty(stencil_dems, island),
             pred_pop,
+            endemic_traits,
+            pred_effect,
             landcover=aux1.lc
         )
-        (; aux, mask=getproperty(stencil_masks, island), replicates, tspan, n_extinct)
+        (; aux, mask=getproperty(stencil_masks, island), replicates, tspan, n_endemic)
     end
     outputs = map(inits, outputs_kw) do init, kw
         ResultOutput(init; kw...)
@@ -435,18 +575,32 @@ function def_syms(
         if isnothing(replicates)
             trans_output = TransformedOutput(init; kw...) do f
                 Array(f.pred_pop)
-                # Base.reduce(parent(parent(f.endemic_presences)); init=zero(eltype(f.endemic_presences))) do acc, xs
-                #     map(|, acc, xs)
-                # end
             end
         else
             ResultOutput(init; kw...)
         end
     end
-
-    islands = map(inits, endemic_inits, pred_inits, outputs, max_outputs, pred_outputs, outputs_kw, auxs) do init, endemic_init, pred_init, output, max_output, pred_output, output_kw, aux
-        (; init, endemic_init, pred_init, output, max_output, pred_output, output_kw, mask=aux.mask)
+    endemic_outputs = map(endemic_inits, outputs_kw) do init, kw
+        ResultOutput(init; kw...)
+    end
+    outputs = map(inits, outputs_kw) do init, kw
+        ResultOutput(init; kw...)
     end
 
-    return (; ruleset, rules, pred_ruleset, endemic_ruleset, islands)
+    islands = map(
+        inits, endemic_inits, pred_inits, outputs, max_outputs, endemic_outputs, pred_outputs, outputs_kw, auxs, island_mass_response
+    ) do init, endemic_init, pred_init, output, max_output, endemic_output, pred_output, output_kw, aux, mass_response
+        (; init, endemic_init, pred_init, output, max_output, endemic_output, pred_output, output_kw, aux, mass_response)
+    end
+
+    return (; ruleset, rules, pred_ruleset, endemic_ruleset, islands, pred_response)
+end
+
+function gpu_cleanup(A)
+    x, y, ti = lookup(A, (X, Y, Ti))
+    Rasters.set(A,
+        Ti => Sampled(first(ti) - 0.5:last(ti) - 0.5; sampling=Intervals(Start())),
+        X => LinRange(first(x), last(x), length(x)),
+        Y => LinRange(first(y), last(y), length(y)),
+    )
 end

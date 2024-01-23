@@ -1,8 +1,34 @@
-using JSON3, MapRasterization, GeoInterface, Rasters, FileIO, ImageIO, DataFrames, CSV, GeoJSON, Colors
-using DimensionalData.LookupArrays
+const HOMII = [
+    "Continuous_urban",
+    "Discontinuous_urban",
+    "Forest",
+    "Shrub_vegetation",
+    "Herbaceaous_vegetation",
+    "Mangrove",
+    "Barren_Land",
+    "Water",
+    "Sugarcane",
+    "Pasture",
+    "",
+    "Other_cropland"
+] => (;
+    native=2017 => ["Forest", "Shrub_vegetation"],
+    cleared=2017 => ["Barren_Land", "Sugarcane", "Pasture", "Shrub_vegetation", "Herbaceaous_vegetation", "Other_cropland"],
+    abandoned=2017 => ["Barren_Land", "Pasture", "Shrub_vegetation", "Forest", "Herbaceaous_vegetation"],
+    urban=2017 => ["Continuous_urban", "Discontinuous_urban"],
+    forestry=2017 => "Forest",
+    water=2017 => "Water",
+)
 
+function _get_categories(image_path)
+    json_path = splitext(image_path)[1] * ".json"
+    data = JSON3.read(read(json_path), MapRasterization.MapSelection)
+    original_names = data.settings.category_name
+end
 
-function define_map_files(; path = "/home/raf/PhD/Mascarenes/Data/Selected")
+function define_map_files(; 
+    path = "/home/raf/PhD/Mascarenes"
+)
     # Here we define:
     # - all of the files we use
     # - what the land-cover categories are called for the file
@@ -12,501 +38,293 @@ function define_map_files(; path = "/home/raf/PhD/Mascarenes/Data/Selected")
     # The function will later be broadcasted over masks of the separate layers to combine them
     # Mostly is `|` which is "or" so we make a mask of values that are true in one or the other file
     file_details = (mus=(;
-        atlas_dutch_period = (filename="Mauritius/Undigitised/atlas_dutch_period.jpg", poly=1, layers=(;
-            uncleared="undisturbed",
-            ebony_harvest="ebony_harvest",
-            cleared="cleared",
-        )),
-        atlas_18C_land_use = (filename="Mauritius/Undigitised/atlas_18C_land_use.jpg", poly=1, layers=(;
-            cleared=(
-                cleared_1772=["cleared_1772", "abandoned_1810"],
-                cleared_1810=["cleared_1772", "cleared_1810"],
-            ),
-            urban = (urban_1763="urban_1763", urban_1810=["urban_1763", "urban_1810"]),
-            abandoned=(abandoned_1810="abandoned_1810",),
-            # uncleared=(uncleared_1772=["cleared_1810", "not_cleared_1810"), uncleared_1810="not_cleared_1810"),
-        )),
-        atlas_1992_vegetation = (filename="Mauritius/Undigitised/atlas_1992_vegetation.jpg", poly=1, layers=(;)),
-        atlas_1992_agriculture = (filename="Mauritius/Undigitised/atlas_1992_agriculture.jpg", poly=1, layers=(;
-            urban="urban",
-            cleared=["cane", "forage", "tea", "market_gardens", "cane_or_market_gardens", 
-                     "cane_or_tea", "tea_or_market_gardens", "cane_or_fruit", "pasture"],
-            forestry="forestry",
-            water="lakes",
-            unsure="forest",
-        )),
-        atlas_1992_land_use = (filename="Mauritius/Undigitised/atlas_1992_land_use.jpg", poly=1, layers=(;
-            urban=["urban", "other_state_land_urban"],
-            cleared=["small_properties", "medium_properties", "large_properties", "rose_bell"],
-            unsure= ["other_state_land", "forest", "mountain_reserves", "tea_development_forest", 
-                     "private_forest_or_wasteland"],
-        )),
-        vegetation = (filename="Mauritius/Undigitised/page33_mauritius_vegetation_colored.png", poly=1, layers=(;)),
-        atlas_19C_land_use = (filename="Mauritius/Undigitised/atlas_19C_land_use.jpg", poly=1, layers=(;
-            cleared=(;
+        atlas_dutch_period = "$path/Data/Selected/Mauritius/Undigitised/atlas_dutch_period.jpg" => _get_categories => (;
+            native=[
+                1600 => :mask,
+                1709 => ["ebony_harvest", "undisturbed"],
+                1710 => ["ebony_harvest", "undisturbed"],
+            ],
+            # undisturbed=1709 => "undisturbed",
+            # disturbed=1709 => "ebony_harvest",
+            cleared=1709 => "cleared",
+            abandoned=1710 => "cleared",
+        ),
+        atlas_18C_land_use = "$path/Data/Selected/Mauritius/Undigitised/atlas_18C_land_use.jpg" => _get_categories => (;
+            native=[
+                1763 => ["not_cleared_1810", "cleared_1772", "cleared_1810"],
+                1772 => ["not_cleared_1810", "cleared_1810"],
+                1810 => ["not_cleared_1810"],
+            ],
+            cleared=[
+                1763 => ["cleared_1772", "abandoned_1810", "urban_1810"],
+                1772 => ["cleared_1772", "abandoned_1810", "urban_1810"],
+                1810 => ["cleared_1772", "cleared_1810"],
+            ],
+            urban = [
+                1763 => "urban_1763",
+                1772 => ["urban_1763", "urban_1810"],
+                1810 => ["urban_1763", "urban_1810"],
+            ],
+            abandoned=[
+                1763 => "abandoned_1810",
+                1772 => "abandoned_1810",
+                1810 => "abandoned_1810",
+            ],
+        ),
+        fraser_1835_from_gleadow = "$path/Data/Selected/Mauritius/Undigitised/1835_fraser_from_gleadow.jpg" => _get_categories => (;
+            cleared=1835 => "sea", # sea and cleared are swapped
+            urban=1835 => "sea", # we don't know what part of the cleared area was urban
+            abandoned=1835 => "sea", # or abandoned
+            native=1835 => "forest",
+            # water=1835 => "forest",
+        ),
+        atlas_19C_land_use = "$path/Data/Selected/Mauritius/Undigitised/atlas_19C_land_use.jpg" => _get_categories => (;
+            native=[
+                1810 => ["not_cleared_1968", "cleared_1854", "cleared_1854_abdn_1905", "cleared_1854_abdn_1968", "cleared_1905", "cleared_1968", "cleared_1968_abdn_1968"],
+                1854 => ["not_cleared_1968", "cleared_1905", "cleared_1968", "cleared_1968_abdn_1968"],
+                1905 => ["not_cleared_1968", "cleared_1968", "cleared_1968_abdn_1968"],
+                # 1968 => "not_cleared_1968",
+            ],
+            cleared=[
                 # We assume that clearing happened some time before the area
                 # became urban, so we include 1905 urban in 1810 cleared
                 # because these urban areas of the map hide information about clearing.
-                cleared_1810=["cleared_1810", "urban_1905", "cleared_1810_abdn_1905"],
-                cleared_1854=["cleared_1810", "urban_1905", "cleared_1854", "cleared_1810_abdn_1905", "cleared_1854_abdn_1905", "cleared_1854_abdn_1968"],
-                cleared_1905=["cleared_1810", "cleared_1854", "cleared_1905", "cleared_1854_abdn_1968", "cleared_1905_abdn_1968"],
-                cleared_1968=["cleared_1810", "cleared_1854", "cleared_1905", "cleared_1968"],
+                # 1810 => ["cleared_1810", "urban_1905", "cleared_1810_abdn_1905"],
+                1854 => ["cleared_1810", "cleared_1854", "urban_1905", "cleared_1810_abdn_1905", "cleared_1810_abdn_1968", "cleared_1854_abdn_1905", "cleared_1854_abdn_1968"],
+                1905 => ["cleared_1810", "cleared_1854", "cleared_1905", "cleared_1810_abdn_1968", "cleared_1854_abdn_1968", "cleared_1905_abdn_1968"],
+                # This is worse than the 1965 map
+                # 1968 => ["cleared_1810", "cleared_1854", "cleared_1905", "cleared_1968"],
+
+            ],
+            abandoned=[
+                1854 => ["cleared_1810_abdn_1905"],
+                1905 => ["cleared_1810_abdn_1905", "cleared_1854_abdn_1905", "cleared_1905_abdn_1905",],
+                # 1968 => ["cleared_1810_abdn_1905", "cleared_1854_abdn_1905", "cleared_1905_abdn_1905", "cleared_1810_abdn_1968", "cleared_1854_abdn_1968", "cleared_1905_abdn_1968", "cleared_1968_abdn_1968"],
+            ],
+            urban=[
+                1810 => "urban_1810",
+                1854 => ["urban_1810", "urban_1905"],
+                1905 => ["urban_1810", "urban_1905"],
+                # 1968 => ["urban_1810", "urban_1905", "cleared_1810", "cleared_1854", "cleared_1905"],
+            ],
+            forestry = [
+                # 1968 => ["not_cleared_1968", "cleared_1810_abdn_1905", "cleared_1854_abdn_1905", "cleared_1905_abdn_1905", "cleared_1810_abdn_1968", "cleared_1854_abdn_1968", "cleared_1905_abdn_1968", "cleared_1968_abdn_1968"],
+            ],
+            water=[
+                1810 => "lakes",
+                1854 => "lakes",
+                1905 => "lakes",
+                # 1968 => "lakes",
+            ],
+        ),
+        landcover_1965 = "$path/Data/Selected/Mauritius/Undigitised/mus_landuse_1965_100_hi_c.pdf" => _get_categories => (;
+            native=1965 => ["Forest_natural", "Swamps", "Rock", "Scrub", "Savannah"],
+            cleared=1965 => ["Sugar", "Vegetables", "Tea"],
+            abandoned=1965 => ["Rock", "Scrub", "Savannah"],
+            urban=1965 => "Built_up",
+            forestry=1965 => "Forest_plantation",
+            water=[
+                1965 => "Reservoirs",
+                2020 => "Reservoirs",
+            ],
+        ),
+        # atlas_1992_vegetation = "$path/Data/Selected/Mauritius/Undigitised/atlas_1992_vegetation.jpg" => (;),
+        atlas_1992_agriculture = "$path/Data/Selected/Mauritius/Undigitised/atlas_1992_agriculture.jpg" => _get_categories => (;
+            native=1992 => "forest",
+            cleared=1992 => [
+                "cane", "forage", "tea", "market_gardens", "cane_or_market_gardens",
+                "cane_or_tea", "tea_or_market_gardens", "cane_or_fruit", "pasture",
+            ],
+            urban=1992 => "urban",
+            forestry=[
+                1992 => "forestry",
+                2020 => "forestry",
+                2021 => "forestry",
+            ],
+            water=1992 => "lakes",
+            abandoned=1992 => ["pasture", "forest"],
+        ),
+        # We need a second round with this file as the categories overlap
+        # This will overwrite anything incorrect in the first file for the specified year
+        atlas_19C_land_use_2 = "$path/Data/Selected/Mauritius/Undigitised/atlas_19C_land_use_2.jpg" => _get_categories => (;
+            abandoned=[
+                1905 => "abdn_1854-1905_cleared_1905-1968",
+            ],
+            cleared=[
+                1854 => "abdn_1854-1905_cleared_1905-1968",
+                # 1968 => "abdn_1854-1905_cleared_1905-1968",
+            ],
+        ),
+        # desroches_1773_from_gleadow = "$path/Data/Selected/Mauritius/Undigitised/1773_desroches_from_gleadow.jpg" => (;
+        #     conceded=1773 => "conceded_land",
+        # ),
+        # atlas_1992_land_use = "$path/Data/Selected/Mauritius/Undigitised/atlas_1992_land_use.jpg" => (;
+        #     urban=1992 => ["urban", "other_state_land_urban"],
+        #     cleared=1992 => [
+        #         "small_properties", "medium_properties", "large_properties", "rose_bell",
+        #         "other_state_land", "mountain_reserves", "tea_development_forest",
+        #         "forest", "private_forest_or_wasteland",
+        #     ],
+        #     abandoned=1992 => [
+        #         "small_properties", "medium_properties", "large_properties", "rose_bell",
+        #         "other_state_land", "mountain_reserves", "tea_development_forest",
+        #         "forest", "private_forest_or_wasteland",
+        #     ],
+        #     forestry=[
+        #         1992 => [
+        #             "other_state_land", "mountain_reserves", "tea_development_forest",
+        #             "forest", "private_forest_or_wasteland",
+        #         ],
+        #         # Force forestry to stop growing after 1992 we know it stopped.
+        #         # 2021 => [
+        #         #     "other_state_land", "mountain_reserves", "tea_development_forest",
+        #         #     "forest", "private_forest_or_wasteland",
+        #         # ],
+        #     ],
+        #     native=1992 => [
+        #         "other_state_land", "mountain_reserves", "tea_development_forest",
+        #         "forest", "private_forest_or_wasteland",
+        #     ],
+        #     water=[
+        #         1992 => "lakes",
+        #     ]
+        # ),
+        wlf = "$path/Data/Generated/Landcover/mus_wlf_shape.tif" => ["cleared", "other"] => (;
+                native=2002 => "other",
+                cleared=2002 => "cleared",
+                abandoned=2002 => "other",
+                urban=2002 => "other",
+                forestry=2002 => "other",
+                water=2002 => "other",
             ),
-            water = "lakes",
-            urban = (; urban_1810="urban_1810", urban_1905=["urban_1810", "urban_1905"]),
-            abandoned=(
-                abandoned_1905=["cleared_1810_abdn_1905", "cleared_1854_abdn_1905", "cleared_1905_abdn_1905",],
-                abandoned_1968=["cleared_1810_abdn_1905", "cleared_1854_abdn_1968", "cleared_1905_abdn_1905", "cleared_1905_abdn_1968", "cleared_1968_abdn_1968"],
+        homiisland = "$path/Data/Generated/Landcover/mus_landcover.tif" => HOMII,
+        # mascarine_birds_1 = "/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds.tif" =>
+            # ["Forestry"] => (; forestry=1984 => "Forestry",),
+        # ),
+        forest = "$path/Data/Selected/Mauritius/forest.tif" => ["low", "medium", "high"] => (;
+                native=[
+                    2020 => ["low", "medium", "high"],
+                ],
+                cleared=2020 => (&, :mask, (!, ["low", "medium", "high"])),
+                abandoned=2020 => (&, :mask, (!, ["low", "medium", "high"])),
+                urban=2020 => (&, :mask, (!, ["low", "medium", "high"])),
             ),
-            # uncleared=(uncleared_1772=["cleared_1810", "not_cleared_1810"), uncleared_1968="not_cleared_1968"),
-        )),
-        # We need a second round with this file as the categories overlap 
-        atlas_19C_land_use_2 = (filename="Mauritius/Undigitised/atlas_19C_land_use_2.jpg", poly=1, layers=(;
-            abandoned=(abandoned_1905_cleared_1968="abdn_1854-1905_cleared_1905-1968",),
-            # urban = (; urban_1968=["urban_1968")),
-        )),
-        desroches_1773_from_gleadow = (filename="Mauritius/Undigitised/1773_desroches_from_gleadow.jpg", poly=1, layers=(;
-            conceded=(conceded_1773="conceded_land"),
-        )),
-        # fraser_1835_composite_etsy = (filename="Mauritius/Undigitised/1835_fraser_composite_etsy.png", poly=1, layers=(;
+        forestry_1975 = "$path/maps/Mauritius/Studies_of_Mascarine_birds/31.png-1.png" => _get_categories => (;
+                cleared=1975 => "cleared_1975",
+                forestry=1975 => "cleared_1975",
+            ),
+        vegetation_1975 = "$path/maps/Mauritius/Studies_of_Mascarine_birds/9.png-1.png" => _get_categories => (;
+                native=1975 => ["surviving_native", "mixed_native_and_plantation"],
+                cleared=1975 => "cleared_1975",
+                abandoned=1975 => "exotic_scrub",
+                forestry=1975 => ["forest_plantation", "mixed_native_and_plantation"]
+            ),
+        forestry_1980 = "$path/maps/Mauritius/Studies_of_Mascarine_birds/49_2.png-1.png" => _get_categories => (;
+                native=[
+                    1947 => ["native_1947_or_1980", "native_1980"],
+                    1980 => ["native_1980"],
+                ],
+            ),
+        forestry_1984 = "$path/maps/Mauritius/Studies_of_Mascarine_birds/48.png-1.png" => _get_categories => (;
+                cleared=1984 => "cleared_1973-1984",
+                forestry=1984 => "cleared_1973-1984",
+            ),
+        # vegetation = "$path/Data/Selected/Mauritius/Undigitised/page33_mauritius_vegetation_colored.png" => (;),
+        # fraser_1835_composite_etsy = "$path/Data/Selected/Mauritius/Undigitised/1835_fraser_composite_etsy.png" => (;
         #     cleared=(cleared_1835="cleared",), uncleared=(forest_1835="uncleared",),
-        # )),
-        fraser_1835_from_gleadow = (filename="Mauritius/Undigitised/1835_fraser_from_gleadow.jpg", poly=1, layers=(;
-            cleared=(cleared_1835="sea",), # sea and cleared are swapped
-            uncleared=(forest_1835="forest",),
-        )),
-        surveyor_general_1872_from_gleadow = (filename="Mauritius/Undigitised/1872_surveyor_general_from_gleadow.jpg", poly=1, layers=(;
-            # cleared=(cleared_1850="cleared_1850-70", cleared_1870=("cleared_1850-70", "cleared_1870-72"), cleared_1872=("cleared_1850-70", "cleared_1870-72")),
-            forest=(forest_1850=["forest_1872", "cleared_1850-70", "cleared_1870-72"],
-                    forest_1870=["forest_1872", "cleared_1870-72"],
-                    forest_1872="forest_1872",
-            ),
-        )),
-        landcover_1965 = (filename="Mauritius/Undigitised/mus_landuse_1965_100_hi_c.pdf", poly=1, layers=(;
-            urban="Built_up",
-            cleared=["Sugar", "Vegetables", "Tea"],
-            forestry="Forest_plantation",
-            water="Reservoirs",
-            unsure=["Forest_natural", "Rock", "Swamps", "Scrub", "Savannah"], 
-        )),
+        # ),
+        # surveyor_general_1872_from_gleadow = "$path/Data/Selected/Mauritius/Undigitised/1872_surveyor_general_from_gleadow.jpg" => (;
+        #     # cleared=(cleared_1850="cleared_1850-70", cleared_1870=("cleared_1850-70", "cleared_1870-72"), cleared_1872=("cleared_1850-70", "cleared_1870-72")),
+        #     forest=[
+        #         1850 => ["forest_1872", "cleared_1850-70", "cleared_1870-72"],
+        #         1870 => ["forest_1872", "cleared_1870-72"],
+        #         1872 => "forest_1872",
+        #     ],
+        # ),
     ), reu=(;
-        # cadet_invasives=(filename="Reunion/Undigitised/cadet_invasives.jpg", poly=1, layers=(;)),
-        # atlas_vegetation = (filename="Reunion/Undigitised/atlas_vegetation.jpg", poly=1, layers=(;)),
-        # atlas_ownership = (filename="Reunion/Undigitised/atlas_ownership.jpg", poly=1, layers=(;)),
-        # atlas_1960_population = (filename="Reunion/Undigitised/atlas_1960_population.jpg", poly=1, layers=(;)),
-        # "atlas_1960_agriculture" => (filename="Reunion/Undigitised/atlas_agriculture_1960.jpg", poly=1, layers=(;)),
-        # atlas_population_1967 = (filename="Reunion/Undigitised/atlas_population_1967.jpg", poly=1, layers=(;)),
-        atlas_1960_agriculture = (filename="Reunion/Undigitised/atlas_agriculture_1960_2.jpg", poly=1, layers=(;
-            uncleared=["rock", "forest", "shrubland", "savannah"],
-            agriculture=["cane", "geranium_continuous", "geranium_discontinuous", "tea"],
-            forestry=["casuarina", "acacia", "cryptomeria", "labourdonassia"],
-            urban="urban",
-        )),
-        atlas_1815_agriculture = (filename="Reunion/Undigitised/atlas_1815_agriculture.jpg", poly=1, layers=(;
-            uncleared = "forest",
-            cleared = ["geranium", "vanilla", "cane"],
-            abandonned = "wasteland"
-        )),
-        atlas_1780_agriculture = (filename="Reunion/Undigitised/atlas_1780_agriculture.jpg", poly=1, layers=(;
-            uncleared = "native",
-            # cleared = (!, "forest"),
-        )),
-        atlas_early_settlement = (filename="Reunion/Undigitised/atlas_early_settlement_cropped.jpg", poly=1, layers=(;
-            concessions=(conceded_1715_1765="conceded_1715-1765", conceded_1665_1715="concede_1665-1715"),
-        )),
+        # cadet_invasives="$path/Data/Selected/Reunion/Undigitised/cadet_invasives.jpg" => (;)),
+        # atlas_vegetation = "$path/Data/Selected/Reunion/Undigitised/atlas_vegetation.jpg" => (;)),
+        # atlas_ownership = "$path/Data/Selected/Reunion/Undigitised/atlas_ownership.jpg" => (;)),
+        # atlas_1960_population = "$path/Data/Selected/Reunion/Undigitised/atlas_1960_population.jpg" => (;)),
+        # "atlas_1960_agriculture" => "$path/Data/Selected/Reunion/Undigitised/atlas_agriculture_1960.jpg" => (;)),
+        # atlas_population_1967 = "$path/Data/Selected/Reunion/Undigitised/atlas_population_1967.jpg" => (;)),
+        atlas_early_settlement = "$path/Data/Selected/Reunion/Undigitised/atlas_early_settlement_cropped.jpg" => _get_categories => (;
+            native=[1715 => ["forest", "concede_1665-1715", "conceded_1715-1765"], 
+                    1765 => ["forest", "concede_1665-1715", "conceded_1715-1765"]],
+            cleared=[1715 => "concede_1665-1715", 
+                     1765 => ["concede_1665-1715", "conceded_1715-1765"]],
+            abandoned=[1765 => "concede_1665-1715"], # Guess (maybe wrongly) that land was not abanondoned at 50-0 years after concession
+        ),
+        atlas_1780_agriculture = "$path/Data/Selected/Reunion/Undigitised/atlas_1780_agriculture.jpg" => _get_categories => (;
+            native = [
+                1600 => :mask,
+                1780 => ["native", "rock"]
+            ],
+            cleared = 1780 => (!, ["native", "rock"]),
+        ),
+        atlas_1815_agriculture = "$path/Data/Selected/Reunion/Undigitised/atlas_1815_agriculture.jpg" => _get_categories => (;
+            native = 1815 => "forest",
+            cleared = 1815 => ["geranium", "vanilla", "cane"],
+            abandonned = 1815 => ["wasteland", "forest"],
+        ),
+        public_map ="/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/34.jpg" => _get_categories => (;
+            native=1940=>["vegetation1", "vegetation2", "vegetation3"],
+            cleared=1940=>["cleared1", "cleared2"],
+            abandoned=1940=>["vegetation1", "vegetation2", "vegetation3"],
+            urban=1940=>["cleared1", "cleared2"],
+            forestry=1940=>["vegetation1", "vegetation2", "vegetation3"],
+            water=1940=>["lake"],
+        ),
+        atlas_1960_agriculture = "$path/Data/Selected/Reunion/Undigitised/atlas_agriculture_1960_2.jpg" => _get_categories => (;
+            native=1960 => ["forest", "shrubland", "rock", "savannah", "geranium_discontinuous"],
+            cleared=1960 => ["cane", "geranium_continuous", "tea", "geranium_discontinuous"],
+            abandoned=1960 => ["forest", "shrubland", "rock", "savannah"],
+            urban=1960 => "urban",
+            forestry=1960 => ["casuarina", "acacia", "cryptomeria", "labourdonassia"],
+            water=nothing,
+        ),
+        # atlas_1960_land_owndership = "$path/Data/Selected/Reunion/Undigitised/atlas_ownership.jpg" => (;
+        #     native=1960 => "National_forest_office",
+        #     forestry=1960 => "National_forest_office",
+        #     urban=1960 => "Habitat",
+        # ),
+        # homiisland = "$path/Data/Generated/Landcover/reu_landcover.tif" => HOMII,
+        # natpark = "$path/Data/Generated/NationalParks/reu.tiff" => ["national park"] => (;
+        #     native=2021 => "national park"
+        # )
+        quantifying_invasion_landcover = "$path/Data/Selected/Reunion/Undigitised/aec13048-fig-0001-m.jpg" => _get_categories => (;
+            native=2019 => "Extant_native_vegetation",
+            abandoned=2019 => "Disturbed_secondary_vegetation",
+            cleared=2019 => "Agricultural_areas",
+            urban=2019 => "Artificial_areas",
+        ),
+        native = "$path/Data/Generated/reu_all_natives.tif" => ["native_remnant"] => (;
+            native=2021 => "native_remnant",
+            cleared=2021 => (!, "native_remnant"),
+            abandoned=2021 => (!, "native_remnant"),
+            urban=2021 => (!, "native_remnant"),
+            forestry=2021 => (!, "native_remnant"),
+            water=2021 => (!, "native_remnant"),
+        ),
+    ), rod=(;
+        # This was not at all accurate the urban areas may be decorative or suggestive
+        # urban_1885 = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/rodrigues-mauritius-mascarene-islands-mascarenhas-archipelago-1885-GC0ATP.jpg" => _get_categories => (;
+        #     urban=1885 => "urban",
+        # ),
+        gade_1 = "$path/Data/Selected/Rodrigues/Gade_1985_landcover.png" => ["native_remnant"] => (;
+            native = [1700 => :mask, 1985 => :force => "native_remnant"],
+        ),
+        gade_2 = "$path/Data/Selected/Rodrigues/Gade_1985_landcover_2.png" => _get_categories => (;
+            abandoned=1985 => ["reforested", "fallow_or_settled"],
+            cleared=1985 => ["cultivated", "grazing", "fallow_or_settled"],
+            urban=1985 => "fallow_or_settled", # Unclear how large the "fallow" part is
+        ),
+        homiisland = "$path/Data/Generated/Landcover/rod_landcover.tif" => HOMII,
+        rural_development_planning = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/cb5989en.png-06_colored.png" => _get_categories => (;
+            native=2021 => ["nature_reserve", "forest"],
+            abandoned=2021 => ["silvo_pasture", "nature_reserve", "forest", "riparian_vegetation"], 
+            cleared=2021 => ["silvo_pasture", "pasture", "agriculture", "agricultural_residential"],
+            urban=[2016 => "urban_residential", 2021 => "urban_residential"], # force urban into homiisland
+        ),
     ))
-
-    files = map(file_details) do island
-        map(island) do (; filename, poly, layers)
-            (; filename=joinpath(path, filename), poly, layers)
-        end
-    end
-    return files
 end
-
-function make_raster_slices(masks, categories; path="/home/raf/PhD/Mascarenes/Data/Selected")
-    # Copy duplicated file wrap points
-    fn = joinpath(path, "Mauritius/Undigitised/atlas_19C_land_use")
-    cp(fn * ".csv", fn * "_2.csv"; force=true)
-    files = define_map_files()
-
-    # Load all rasters and make masks layers for all land-cover classes.
-    # We get the numbers form the saved ".json" file for the project.
-    rasters = map(files) do island_files
-        map(island_files) do file
-            image_path = file.filename
-            raster_path = splitext(image_path)[1] * ".tif"
-            raw = fix_order(Raster(raster_path))
-            json_path = splitext(file.filename)[1] * ".json"
-            data = JSON3.read(read(json_path), MapRasterization.MapSelection)
-            grouped = map(file.layers) do layer
-                _category_raster(raw, data.settings.category_name, layer)
-            end
-            out = (; raw, grouped)
-        end
-    end
-
-    # Generate timelines
-    # Here we combined slices from multiple separate maps to 
-    # make time slices for each land-cover type.
-    mus_timelines = let
-        m = rasters.mus
-        emptymask = falses(dims(masks.mus); missingval=false)
-
-        forestry_1965 = m.landcover_1965.grouped.forestry
-        forestry_1992 = m.atlas_1992_agriculture.grouped.forestry .| forestry_1965
-
-        # Assume we never abandon urban areas
-        urban_1600 = emptymask
-        urban_1721 = emptymask
-        urban_1763 = m.atlas_18C_land_use.grouped.urban.urban_1763
-        urban_1810 = m.atlas_19C_land_use.grouped.urban.urban_1810 .| urban_1763
-        urban_1905 = m.atlas_19C_land_use.grouped.urban.urban_1905 .| urban_1810
-        urban_1965 = m.landcover_1965.grouped.urban .| urban_1905
-        urban_1992 = m.atlas_1992_agriculture.grouped.urban .| urban_1965
-
-        abandonded_1905_cleared_1968 = m.atlas_19C_land_use_2.grouped.abandoned.abandoned_1905_cleared_1968
-
-        # Clearing
-        # No clearing has occurred yet
-        cleared_1600 = emptymask
-        cleared_1638 = emptymask
-        # Atlas dutch period
-        cleared_1709 = m.atlas_dutch_period.grouped.cleared
-        # Dutch departure abandonment
-        cleared_1711 = emptymask
-        # French arrival still abandoned
-        cleared_1721 = emptymask
-        # Atlas 18_C
-        cleared_1772 = m.atlas_18C_land_use.grouped.cleared.cleared_1772
-        cleared_1810 = m.atlas_18C_land_use.grouped.cleared.cleared_1810
-        # Atlas 19C
-        cleared_19C = m.atlas_19C_land_use.grouped.cleared
-        cleared_1810 = cleared_19C.cleared_1810
-        cleared_1854 = cleared_19C.cleared_1854
-        cleared_1905 = cleared_19C.cleared_1905
-        cleared_1965 = m.landcover_1965.grouped.cleared
-        cleared_1968 = cleared_19C.cleared_1968 .| cleared_1965 .& .!(forestry_1965 .| urban_1965 .| abandoned_1965)
-
-        fraser_forest = m.fraser_1835_from_gleadow.grouped.uncleared.forest_1835
-        # Gleadow hand drawn 19C maps
-        # We try to reduce cartographical innacuracies of the projection by masking
-        # the gleadow and fraser maps with the previous and subsequent atlas maps.
-        # This will have the effect of reducing the total cleared area for thes
-        # frames by a small amount
-        # TODO Delete this after fixing 1905 maps?
-        # cleared_1905 = cleared_1905 .| cleared_1872
-        cleared_1992 = m.atlas_1992_agriculture.grouped.cleared
-            # m.atlas_1992_land_use.grouped.cleared
-
-        # Abandoned cleared land
-        abandoned_1600 = emptymask
-        abandoned_1638 = emptymask
-        abandoned_1709 = emptymask
-        # Dutch departure
-        abandoned_1711 = cleared_1709
-        # French arrival
-        abandoned_1721 = abandoned_1711
-        abandoned_1772 = (abandoned_1721 .| cleared_1721 .| urban_1721) .& .!(cleared_1772 .| urban_1763)
-        # English arrival
-        abandoned_1810 = (((abandoned_1772 .| cleared_1772 .| urban_1810) .& .!(cleared_1810 .| urban_1810)) .|
-                          m.atlas_18C_land_use.grouped.abandoned.abandoned_1810)
-        # 1810 abandonment may be subsequently cleared, so & its inverse
-        # We don't have urban data for this time, but the cleared maps appear to include urban
-        abandoned_1854 = ((abandoned_1810 .| cleared_1810) .& .!(cleared_1854 .| urban_1810))
-        # abandoned_1870 = ((abandoned_1854 .| cleared_1854) .& .!(cleared_1870 .| urban_1810))
-        # abandoned_1872 = ((abandoned_1870 .| cleared_1870) .& .!(cleared_1872 .| urban_1810))
-        abandoned_1905 = m.atlas_19C_land_use_2.grouped.abandoned.abandoned_1905_cleared_1968 .|
-            m.atlas_19C_land_use.grouped.abandoned.abandoned_1905 .& .!(cleared_1905)
-        abandoned_1965 = ((abandoned_1905 .| cleared_1905) .& .!(cleared_1965 .| urban_1965 .| forestry_1965))
-        abandoned_1968 = m.atlas_19C_land_use.grouped.abandoned.abandoned_1968
-        # There is no abandonment data for 1992 so we use 
-        # previous abandonned land and the difference with 1968 cleared land
-        abandoned_1992 = (abandoned_1968 .| cleared_1968) .& 
-            # And remove anything cleared, urban or forestry in 1992
-            .!(cleared_1992 .| urban_1992 .| forestry_1992)
-
-        # We need abandonement data from 1810 so this is moved later
-        # Cleared areas in 1835 must not be uncleared again later in 1854
-        cleared_1835 = .!(fraser_forest) .& (cleared_1854 .| abandoned_1854)
-        # Uncleared areas that were previously cleared or abandoned
-        # in 1810 or abandoned in 1854 are also abandoned in 1835
-        abandoned_1835 = fraser_forest .& (abandoned_1810 .| cleared_1810 .| abandoned_1854)
-
-        # sg_forest = m.surveyor_general_1872_from_gleadow.grouped.forest
-        # uncleared_1905 = .!(urban_1905 .| cleared_1905 .| abandoned_1905)
-        # cleared_1850 = .!(uncleared_1905 .& sg_forest.forest_1850) .& .!(urban_1810)
-        # cleared_1870 = .!(uncleared_1905 .& sg_forest.forest_1870) .| cleared_1854 .& .!(urban_1810)
-        # cleared_1872 = .!(uncleared_1905 .& sg_forest.forest_1872) .| cleared_1854 .& .!(urban_1810)
-
-        cleared = [
-            1600=>masks.mus .& cleared_1600,
-            1638=>masks.mus .& cleared_1638,
-            1709=>masks.mus .& cleared_1709,
-            1711=>masks.mus .& cleared_1711,
-            1721=>masks.mus .& cleared_1721,
-            1772=>masks.mus .& cleared_1772,
-            1810=>masks.mus .& cleared_1810,
-            1835=>masks.mus .& cleared_1835,
-            # 1850=>masks.mus .& cleared_1850,
-            1854=>masks.mus .& cleared_1854,
-            # 1870=>masks.mus .& cleared_1870,
-            # 1872=>masks.mus .& cleared_1872,
-            1905=>masks.mus .& cleared_1905,
-            1965=>masks.mus .& cleared_1965,
-            1968=>masks.mus .& cleared_1968,
-            1992=>masks.mus .& cleared_1992,
-        ]
-
-        cleared = RasterSeries(last.(cleared), Ti(first.(cleared); 
-            span=Irregular(1500, first(last(cleared))),
-            sampling=Intervals(End()),
-        ))
-        abandoned = [
-            1600=>masks.mus .& abandoned_1600,
-            1638=>masks.mus .& abandoned_1600,
-            1709=>masks.mus .& abandoned_1709,
-            1711=>masks.mus .& abandoned_1711,
-            1721=>masks.mus .& abandoned_1721,
-            1772=>masks.mus .& abandoned_1772,
-            1810=>masks.mus .& abandoned_1810,
-            1835=>masks.mus .& abandoned_1835,
-            1854=>masks.mus .& abandoned_1854,
-            # 1870=>abandoned_1870,
-            # 1872=>abandoned_1872,
-            1905=>masks.mus .& abandoned_1905,
-            1968=>masks.mus .& abandoned_1968,
-            1992=>masks.mus .& abandoned_1992,
-        ]
-        abandoned = RasterSeries(last.(abandoned), Ti(first.(abandoned); 
-            span=Irregular(1500, first(last(abandoned))),
-            sampling=Intervals(End())
-        ))
-        urban = [
-            1600=>masks.mus .& urban_1600,
-            1721=>masks.mus .& urban_1721,
-            1763=>masks.mus .& urban_1763,
-            1810=>masks.mus .& urban_1810,
-            1905=>masks.mus .& urban_1905,
-            1965=>masks.mus .& urban_1965,
-            1992=>masks.mus .& urban_1992,
-        ]
-        urban = RasterSeries(last.(urban), Ti(first.(urban); 
-            span=Irregular(1500, first(last(urban))),
-            sampling=Intervals(End()),
-        ))
-        forestry = [
-            1600=>emptymask,
-            1905=>emptymask,
-            1965=>masks.mus .& forestry_1965,
-            1992=>masks.mus .& forestry_1992,
-        ]
-        forestry = RasterSeries(last.(forestry), Ti(first.(forestry); 
-            span=Irregular(1500, first(last(forestry))),
-            sampling=Intervals(End()),
-        ))
-
-        water_1905 = m.atlas_19C_land_use.grouped.water
-        water_1965 = m.landcover_1965.grouped.water .| water_1905
-        water_1992 = m.atlas_1992_agriculture.grouped.water .| water_1965
-        
-        water = [
-            1905=>masks.mus .& water_1905
-            1965=>masks.mus .& water_1965
-            1992=>masks.mus .& water_1992
-        ]
-        water = RasterSeries(last.(water), Ti(first.(water); 
-            span=Irregular(1500, first(last(water))),
-            sampling=Intervals(End()),
-        ))
-        # lc_classes = (cleared, abandoned, urban, forestry, water)
-        # all_times = intersect(map(a -> lookup(a, Ti), lc_classes)...)
-        # native = DimArray(Ti(all_times)) do t
-        #     .!(cleared[At(t)] .| abandoned[At(t)] .| urban[At(t)] .| forestry[At(t)] .| water[At(t)]) .& masks.mus
-        # end
-
-        function _combine(W, F, C, A, U)
-            A = broadcast(W, F, C, A, U, masks.mus) do w, f, c, a, u, m
-                if !m
-                    0
-                elseif w
-                    categories.water
-                elseif f
-                    categories.forestry
-                elseif u
-                    categories.urban
-                elseif a
-                    categories.abandoned
-                elseif c
-                    categories.cleared
-                else
-                    categories.native
-                end
-            end
-            rebuild(A; missingval=0)
-        end
-        # Combine cleared and abandoned Bool masks into Int rasters
-        lc = RasterSeries(map(lookup(cleared, Ti)) do t
-            i = Ti(Contains(t))
-            _combine(water[i], forestry[i], cleared[i], abandoned[i], urban[i])
-        end, dims(cleared, Ti))
-        (; cleared, abandoned, urban, forestry, water, lc)
-    end
-
-    reu_timelines = let
-        r = rasters.reu
-        cleared_1780 = (.!(r.atlas_1780_agriculture.grouped.uncleared)) .& masks.reu
-        cleared_1715 = r.atlas_early_settlement.grouped.concessions.conceded_1665_1715 .& cleared_1780 .& masks.reu
-        cleared_1765 = ((r.atlas_early_settlement.grouped.concessions.conceded_1715_1765 .| cleared_1715) .& cleared_1780) .& masks.reu
-        cleared_1815 = (r.atlas_1815_agriculture.grouped.cleared .| cleared_1780) .& masks.reu
-        cleared_1960 = (.!(r.atlas_1960_agriculture.grouped.uncleared) .| cleared_1815) .& masks.reu
-        # cleared = Rasters.combine(RasterSeries(cleared, Ti([1715, 1765, 1780, 1815, 1960]; sampling=Intervals(End()))))
-        cleared = RasterSeries(
-            [cleared_1715, cleared_1765, cleared_1780, cleared_1815, cleared_1960],
-            Ti([1715, 1765, 1780, 1815, 1960]; sampling=Intervals(End())),
-        )
-        urban = RasterSeries(
-            [cleared_1715, cleared_1765, cleared_1780, cleared_1815, cleared_1960],
-            Ti([1715, 1765, 1780, 1815, 1960]; sampling=Intervals(End())),
-        )
-
-        # lc_classes = (cleared, urban,)
-        # all_times = intersect(map(a -> lookup(a, Ti), lc_classes)...)
-        # native = DimArray(Ti(all_times)) do t
-        #     .!(cleared[At(t)] .| urban[At(t)]) .& masks.mus
-        # end
-
-        # We don't have abandonment data for Reunion
-        (; urban, cleared)
-    end
-
-    # output NamedTuples with (:raw, :grouped, :timeline) keys
-    return (;
-        mus=(files=rasters.mus, timelines=mus_timelines),
-        reu=(files=rasters.reu, timelines=reu_timelines),
-    )
-end # make_raster_slices
-
-function _category_raster(raster::Raster, category_names::Vector, layers::NamedTuple)
-    map(layers) do layer
-        _category_raster(raster, category_names, layer)
-    end
-end
-function _category_raster(raster::Raster, category_names::Vector, layer_components::Vector{String})
-    layers = map(l -> _category_raster(raster, category_names, l), layer_components)
-    out = rebuild(Bool.(broadcast(|, layers...)); missingval=false)
-    @assert eltype(out) == Bool
-    @assert missingval(out) == false
-    return out
-end
-function _category_raster(raster::Raster, category_names::Vector, category::String)
-    I = findall(==(category), map(String, category_names))
-    if length(I) == 0
-        error("could not find $category in $(category_names)")
-    end
-    # Get all values matching the first category as a mask
-    out = rebuild(Bool.(raster .== first(I)); missingval=false)
-    # Add pixels for any subsequent categories
-    foreach(I[2:end]) do i
-        out .|= raster .== first(i)
-    end
-    @assert eltype(out) == Bool
-    @assert missingval(out) == false
-    return out
-end
-function _category_to_raster(raster::Raster, category_names::Vector, x)
-    error("slice must be a String, NamedTuple or Vector{String}, got $x")
-end
-
-open_output(T, x::NamedTuple) = open_output(x.filename)
-function open_output(T, filename::String)
-    json_path = splitext(filename)[1] * ".json"
-    return isfile(json_path) ? JSON3.read(read(json_path), T) : nothing
-end
-
-open_warp_points(x::NamedTuple) = open_warp_points(x.filename)
-function open_warp_points(filename::String)
-    csv_path = splitext(filename)[1] * ".csv"
-    return isfile(csv_path) ? CSV.read(csv_path, DataFrame) : nothing
-end
-
-function warp_to_raster(img_path::String, template::Raster;
-    object_type=MapRasterization.MapSelection, edit=false, save=true, kw...
-)
-    img = load_image(img_path)
-    csv_path = splitext(img_path)[1] * ".csv"
-    points = isfile(csv_path) ? open_warp_points(img_path) : nothing
-    if edit || !isfile(csv_path)
-        warp_points = if isnothing(points)
-            MapRasterization.click_warp(img;
-                template=reverse(template; dims=Y()), kw...
-            )
-        else
-            :x_known in names(points) && rename!(points, [:x_known => :x_a, :y_known => :y_a, :x_unknown => :x_b, :y_unknown => :y_b])
-            # if :x_a in names(points)
-                MapRasterization.click_warp(img;
-                    template=reverse(template; dims=Y()), points, kw...
-                )
-            # else
-                # MapRasterization.click_warp(Float64.(Gray.(img));
-                    # template=reverse(template; dims=Y()), missingval=missingval(template),
-                # )
-            # end
-        end
-        if save
-            df = DataFrame(warp_points)
-            CSV.write(csv_path, df)
-        end
-    end
-    if save && isfile(splitext(img_path)[1] * ".json")
-        df = CSV.read(csv_path, DataFrame)
-        output = open_output(object_type, img_path)
-        poly = 1
-        if object_type <: MapRasterization.MapSelection
-            out = Int.(reshape(output.output, size(img)))
-            warper = MapRasterization.Warper(df, template, poly)
-            rs = MapRasterization.warp(warper, out; missingval=0)
-            raster_path = splitext(img_path)[1] * ".tif"
-            # write(raster_path, rs)
-            rs = mask(Raster(raster_path); with=template)
-            write(raster_path, rs)
-            return rs
-        elseif object_type <: MapRasterization.CategoryShapes
-            warper = MapRasterization.Warper(df, template, poly)
-            warped_geoms = map(output.shapes) do sh
-                geoms = Polygon.(sh)
-                warped = MapRasterization.warp(warper, geoms)
-                map(warped) do g
-                    collect(GeoInterface.getpoint(g))
-                end
-            end
-            warped = MapRasterization.CategoryShapes{Polygon}(warped_geoms, output.category_names)
-            # GeoJSON.write(splitext(img_path)[1] * "_warped.geojson", warped)
-            return warped
-        end
-    end
-end
-
-function choose_categories(img_path::String;
-    save=true, restart=false,
-    output=restart ? nothing : open_output(MapRasterization.MapSelection, img_path),
-)
-    img = load_image(img_path)
-    if isnothing(output)
-        cs = MapRasterization.CategorySelector(img)
-    else
-        cs = MapRasterization.CategorySelector(img, output)
-    end
-    if save
-        output = MapRasterization.MapSelection(cs)
-        json_path = splitext(img_path)[1] * ".json"
-        if isfile(json_path)
-            backup_path = splitext(img_path)[1] * "_backup.json"
-            cp(json_path, backup_path; force=true)
-        end
-        write(json_path, JSON3.write(output))
-    end
-    return cs
-end
-
-load_image(img_path::String) = RGB{Float64}.(load(img_path) |> rotr90)
