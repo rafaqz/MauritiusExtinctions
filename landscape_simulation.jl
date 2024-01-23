@@ -35,7 +35,7 @@ logic = NV(
     water     = NV(native=true,  cleared=true,  abandoned=true,  urban=true,  forestry=false,  water=true),
 )
 
-include("map_file_list_2.jl")
+include("map_file_list.jl")
 slices = compile_timeline(define_map_files(), masks, keys(lc_categories))
 force = NV{propertynames(logic)}(map(x -> x in (:cleared, :urban, :water), propertynames(logic)))
 nv_rasts = map(slices) do island
