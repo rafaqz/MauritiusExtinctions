@@ -25,7 +25,7 @@ end
     data, rule::InteractiveCarryCap,
     populations::NamedVector{Keys}, I,
 ) where Keys
-    local_inputs = get(data, rule.inputs, I)
+    local_inputs = NamedTuple(get(data, rule.inputs, I))
     relative_pop = NamedTuple(populations ./ rule.carrycap)
     # combine populations
     params = merge(relative_pop, local_inputs)
@@ -60,7 +60,7 @@ end
     pred_effect = if isnothing(rule.pred_effect)
         pred_pop = get(data, rule.pred_pop, I)
         pred_suscept = get(data, rule.pred_suscept)
-        predator_effect(rule.f, pred_pop, pred_suscept)
+        map(rule.f, predator_effect(pred_pop, pred_suscept))
     else
         # We have already precalculated the effect
         get(data, rule.pred_effect, I)
@@ -68,34 +68,42 @@ end
 
     return map(endemic_presence, pred_effect) do present, effect
         if present 
-            # rand(typeof(effect)) > effect && rand() > rule.stochastic_extirpation
-            typeof(effect)(0.5) > effect
+            rand(typeof(effect)) > effect && rand() > rule.stochastic_extirpation
+            # typeof(effect)(0.5) > effect
         else
             false
         end
     end
 end
 
-function predator_effect(f, pred_pop, pred_suscept)
-    Float32.(f.(sum(map(pred_suscept, pred_pop) do ps, pp
-        map(xs -> xs .* pp, ps)
-    end)))
+Base.@assume_effects :foldable function predator_effect(pred_pop, pred_suscept)
+    mapreduce(+, pred_suscept, pred_pop) do ps, pp
+         map(xs -> map(Float32 ∘ *, xs, pp), ps)
+    end
 end
 
-function predator_suceptibility(mass_response, pred_response, traits)
-    pred_suscept = mapreduce(+, pred_response, traits) do pr, t
-        map(mass_response, pr) do m, p
-            t .* p .* m
-        end
+# function predator_suceptibility(mass_response, pred_response, traits)
+#     pred_suscept = mapreduce(+, pred_response, traits) do pr, t
+#         map(mass_response, pr) do m, p
+#             t .* p .* m
+#         end
+#     end ./ (32 * 8^2)
+# end
+
+function predator_suceptibility(pred_response, traits)
+    mapreduce(+, pred_response, traits) do pr, t
+        map(NamedVector(pr)) do p
+            NamedVector(t) .* p
+        end |> NamedVector
     end ./ (32 * 8^2)
 end
 
 @inline function DynamicGrids.modifyrule(rule::ExtirpationRisks, data::AbstractSimData)
     if isnothing(rule.pred_effect) 
         pred_response = get(data, rule.pred_response)
-        mass_response = get(data, rule.mass_response)
+        # mass_response = get(data, rule.mass_response)
         traits = get(data, rule.traits)
-        @set! rule.pred_suscept = predator_suceptibility(mass_response, pred_response, traits)
+        @set! rule.pred_suscept = predator_suceptibility(pred_response, traits)
     end
     @set! rule.traits = nothing # Simplify for GPU argument size
     @set rule.pred_response = nothing # Simplify for GPU argument size
@@ -239,9 +247,9 @@ function def_syms(
 
     response_keys = NamedTuple{keys(pred_response_raw)}(keys(pred_response_raw))
     pred_response = map(response_keys, pred_response_raw) do k, ps
-        map(ps[pred_keys], pred_keys) do val, label
+        map(NamedTuple(ps[pred_keys]), NamedTuple{pred_keys}(pred_keys)) do val, label
             Param(val; label=Symbol(k, :_, label))
-        end |> NV{pred_keys}
+        end
     end
 
     island_endemic_traits = map(island_endemic_tables, ns_endemic, EndemicNVs) do table, n_endemic, EndemicNV
@@ -543,8 +551,8 @@ function def_syms(
     )
 
     pred_effects = map(pred_pops_aux, island_mass_response, island_endemic_traits) do pred_pop, mass_response, traits
-        pred_suscept = predator_suceptibility(mass_response, pred_response, traits)
-        isnothing(pred_pop) ? nothing : predator_effect.(risks_rule.f, pred_pop, Ref(pred_suscept))
+        pred_suscept = predator_suceptibility(pred_response, traits)
+        isnothing(pred_pop) ? nothing : generate_predator_effect(risks_rule.f, pred_pop, pred_suscept)
     end
 
     outputs_kw = map(island_names, ns_endemic, tspans, auxs, pred_pops_aux, island_endemic_traits, pred_effects) do island, n_endemic, tspan, aux1, pred_pop, endemic_traits, pred_effect
@@ -587,10 +595,11 @@ function def_syms(
         ResultOutput(init; kw...)
     end
 
+    island_keys = NamedTuple{keys(inits)}(keys(inits))
     islands = map(
-        inits, endemic_inits, pred_inits, outputs, max_outputs, endemic_outputs, pred_outputs, outputs_kw, auxs, island_mass_response
-    ) do init, endemic_init, pred_init, output, max_output, endemic_output, pred_output, output_kw, aux, mass_response
-        (; init, endemic_init, pred_init, output, max_output, endemic_output, pred_output, output_kw, aux, mass_response)
+        island_keys, inits, endemic_inits, pred_inits, outputs, max_outputs, endemic_outputs, pred_outputs, outputs_kw, auxs, island_mass_response
+    ) do key, init, endemic_init, pred_init, output, max_output, endemic_output, pred_output, output_kw, aux, mass_response
+        (; key, init, endemic_init, pred_init, output, max_output, endemic_output, pred_output, output_kw, aux, mass_response)
     end
 
     return (; ruleset, rules, pred_ruleset, endemic_ruleset, islands, pred_response)
@@ -603,4 +612,39 @@ function gpu_cleanup(A)
         X => LinRange(first(x), last(x), length(x)),
         Y => LinRange(first(y), last(y), length(y)),
     )
+end
+
+function generate_predator_effect!(f, x, pred_pop, pred_suscept)
+    ThreadsX.map!(x, pred_pop) do pop
+        map(f, predator_effect(pop, pred_suscept))
+    end
+end
+
+function generate_predator_effect(f, pred_pop::Union{AbstractArray{<:Any,2},AbstractArray{<:Any,3}}, pred_suscept)
+    xs = ThreadsX.map(pred_pop) do pop
+        map(f, predator_effect(pop, pred_suscept))
+    end
+    rebuild(pred_pop, xs)
+end
+
+function predict_extinctions(endemic_ruleset::Ruleset, islands, pred_response)
+    map(islands) do island
+        _predict_extinctions(endemic_ruleset, island, pred_response)
+    end
+end
+function _predict_extinctions(endemic_ruleset::Ruleset, island, pred_response)
+    @show island.key
+    kw = island.output_kw
+    aux = kw.aux
+    pred_suscept = predator_suceptibility(pred_response, aux.endemic_traits)
+    (; pred_pop, pred_effect) = aux
+    generate_predator_effect!(tanh, pred_effect, pred_pop, pred_suscept)
+    output = TransformedOutput(island.endemic_init; kw...) do f
+        # Take the mean over the replicates dimension
+        mean(sum, eachslice(f.endemic_presence; dims=3))
+    end
+    sim!(output, endemic_ruleset; printframe=false, proc=CPUGPU())
+    return output
+    # Return NamedVector of years to extinction
+    # return sum(output) .+ first(island.output_kw.tspan) .- 1
 end

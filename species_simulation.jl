@@ -14,6 +14,7 @@ using Geomorphometry
 using Stencils
 using Statistics
 using Setfield
+using ConstructionBase
 
 # includet("optimisation.jl")
 include("species_rules.jl")
@@ -27,7 +28,7 @@ uncleared = gpu_cleanup(Rasters.modify(BitArray, Raster("uncleared.nc")))
 pred_df = CSV.read("tables/animals.csv", DataFrame)
 introductions_df = CSV.read("tables/introductions.csv", DataFrame)
 mascarene_species_csv = "tables/mascarene_species.csv"
-@async run(`libreoffice $mascarene_species_csv`)
+# @async run(`libreoffice $mascarene_species_csv`)
 all_species = CSV.read(mascarene_species_csv, DataFrame) |> 
     x -> subset(x, :Species => ByRow(!ismissing))
 island_tables = map(island_keys) do key
@@ -84,7 +85,6 @@ pred_pops_aux = isdefined(Main, :pred_pops_aux) ? pred_pops_aux : map(_ -> nothi
     replicates=nothing, pred_pops_aux
 );
 (; output, max_output, endemic_output, pred_output, init, output_kw) = islands[k]
-@time sim!(max_output, pred_ruleset; proc=SingleCPU(), printframe=true);
 # @time sim!(output, ruleset; proc=SingleCPU(), printframe=true);
 # Optimisation
 pred_pops_aux = map(islands) do island
@@ -93,6 +93,14 @@ pred_pops_aux = map(islands) do island
     A = cat(pred_output...; dims=3)
     DimArray(A, (dims(init.pred_pop)..., dims(pred_output)...))
 end
+(; ruleset, rules, pred_ruleset, endemic_ruleset, islands, pred_response) = def_syms(
+    pred_df, introductions_df, island_endemic_tables, auxs, aggfactor; 
+    replicates=10, pred_pops_aux
+);
+(; output, max_output, endemic_output, pred_output, init, output_kw) = islands[k]
+@time sim!(max_output, pred_ruleset; proc=SingleCPU(), printframe=true);
+# maxpops = maximum(max_output)
+
 (; ruleset, rules, pred_ruleset, endemic_ruleset, islands) = def_syms(
     pred_df, introductions_df, island_endemic_tables, auxs, aggfactor; 
     replicates=nothing, pred_pops_aux
@@ -113,67 +121,50 @@ endemic_ruleset = Ruleset(
 
 # @time sim!(output, endemic_ruleset; proc=CuGPU(), printframe=true);
 # @profview sim!(output, endemic_ruleset; proc=SingleCPU(), printframe=true);
-maxpops = maximum(max_output)
-maxpops = maximum(pred_pops_aux[k])
+# maxpops = maximum(pred_pops_aux[k]) .* 4
+# maxpops = maxpops .* 2
 
 mkoutput = mk_pred(init, pred_ruleset; maxpops, landcover=lc_all[k], output_kw...)
-mkoutput = mk_endemic(init, endemic_ruleset; ncolumns=5, maxpops, pred_pop=pred_pops_aux[k], landcover=lc_all[k], output_kw...)
 mkoutput = mk(init, ruleset; maxpops, landcover=lc_all[k], output_kw..., ncolumns=5)
+
+k = :mus
+k = :rod
+k = :reu
+(; output, max_output, endemic_output, pred_output, init, output_kw) = islands[k]
+
+p = Rasters.rplot(lc_all.mus[Ti=At(1700:2018)]; colorrange=(1, 6))
+save("images/landcover_simulation.png", p)
+# mkoutput = mk_endemic(init, endemic_ruleset; ncolumns=5, maxpops, pred_pop=pred_pops_aux[k], landcover=lc_all[k], output_kw...)
 display(mkoutput)
 
-function predict_extinctions(ruleset, islands, parameters)
-    map(islands) do island
-        _predict_extinctions(ruleset, island, parameters)
-    end
-end
-function _predict_extinctions(ruleset, island, pred_pops, pred_response, parameters)
-    aux = island.output_kw.aux
-    traits = aux.endemic_traits
-    pred_suscept = predator_suceptibility(island.mass_response, pred_response, traits)
-    pred_pop = pred_pops_aux[k];
-    pred_pop
-    using ProfileView, Cthulhu
-    @descend 
-    f(parent(pred_pop), pred_suscept);
-    f(pred_pop, pred_suscept) = 
-    predator_effect.(tanh, pred_pop, (pred_suscept,))
-    typeof(parent(pred_pop))
-    aux = (;
-        recouperation_rate=island.recouperation_rates,
-        habitat_requirement=island.habitat_requirements,
-        pred_pop,
-        pred_effect,
-    )
 
-    output = TransformedOutput(island.endemic_init; island.output_kw..., aux) do f
-        mean(sum, eachslice(f.endemic_presence; dims=3))
-    end
-    sim!(output, ruleset; printframe=true, proc=CPUGPU())
-    return output
-    # Return NamedVector of years to extinction
-    # return sum(output) .+ first(island.output_kw.tspan) .- 1
-end
-
-function predator_effect(f, pred_pop, pred_suscept)
-    Float32.(f.(sum(map(pred_suscept, pred_pop) do ps, pp
-        map(xs -> xs .* pp, ps)
-    end)))
-end
-
-function predator_suceptibility(mass_response, pred_response, traits)
-    pred_suscept = mapreduce(+, pred_response, traits) do pr, t
-        map(mass_response, pr) do m, p
-            t .* p .* m
-        end
-    end ./ (32 * 8^2)
-end
-
+using LossFunctions
 # Outputs with replicates
-(isnothing(pred_pops_aux) && error()); (; ruleset, pred_ruleset, endemic_ruleset, islands) = def_syms(
+(isnothing(pred_pops_aux) && error()); (; endemic_ruleset, islands) = def_syms(
     pred_df, introductions_df, island_endemic_tables, auxs, aggfactor; 
-    replicates=10, pred_pops_aux
+    replicates=100, pred_pops_aux
 );
 (; output, max_output, endemic_output, pred_output, init, output_kw) = islands[k]
+
+predictions = predict_extinctions(endemic_ruleset, islands, pred_response)
+
+using Optimization
+rosenbrock(x, p) = (p[1] - x[1])^2 + p[2] * (x[2] - x[1]^2)^2
+x0 = zeros(2)
+p = [1.0, 100.0]
+
+prob = OptimizationProblem(rosenbrock, x0, p)
+
+using OptimizationOptimJL
+sol = solve(prob, NelderMead())
+
+using OptimizationBBO
+prob = OptimizationProblem(rosenbrock, x0, p, lb = [-1.0, -1.0], ub = [1.0, 1.0])
+sol = solve(prob, BBO_adaptive_de_rand_1_bin_radiuslimited())
+
+
+
+
 @time sim!(endemic_output, endemic_ruleset; proc=SingleCPU(), printframe=true);
 cu_endemic_output = Adapt.adapt(CuArray, endemic_output)
 CUDA.@profile sim!(cu_endemic_output, endemic_ruleset; proc=CuGPU(), printframe=true)
@@ -181,8 +172,6 @@ CUDA.@profile sim!(cu_endemic_output, endemic_ruleset; proc=CuGPU(), printframe=
 # @time sim!(output, endemic_ruleset; proc=CPUGPU(), printframe=true);
 # @time sim!(max_output, ruleset; proc=SingleCPU(), printframe=true);
 sum(map(xs -> xs .> 10, preds.reu)) .+ first(DynamicGrids.tspan(output))
-sum(map(xs -> xs .> 10, preds.mus)) .+ first(DynamicGrids.tspan(output))
-sum(map(xs -> xs .> 10, preds.rod)) .+ first(DynamicGrids.tspan(output))
 
 # intercept = 0.085
 # slope = 1.177

@@ -12,7 +12,7 @@ using MapRasterization
 using GLMakie
 GLMakie.activate!()
 include("common.jl")
-include("map_file_list.jl")
+include("map_file_list2.jl")
 include("map_file_functions.jl")
 include("raster_common.jl")
 include("water.jl")
