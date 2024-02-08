@@ -67,6 +67,10 @@ lc_predictions = map(lc_predictions_paths) do path
         x -> Rasters.set(x, Ti => Int.(maybeshiftlocus(Start(), dims(x, Ti), )))
 end
 auxs = agg_aux(masks, slope_stacks, dems, lc_predictions, aggfactor)
+auxs.mus.lc
+lc = map(CartesianIndices(first(lc_ag1))) do I
+    Float32.(NV(lc_ag1[I]))
+end
 # Just for Makie, kind of merges the pixel colors...
 lc_all = map(auxs) do aux
     rebuild(map(aux.lc) do lcs
@@ -138,7 +142,7 @@ save("images/landcover_simulation.png", p)
 display(mkoutput)
 
 
-using LossFunctions
+using LossFunctions, Optimization
 # Outputs with replicates
 (isnothing(pred_pops_aux) && error()); (; endemic_ruleset, islands) = def_syms(
     pred_df, introductions_df, island_endemic_tables, auxs, aggfactor; 
@@ -148,7 +152,6 @@ using LossFunctions
 
 predictions = predict_extinctions(endemic_ruleset, islands, pred_response)
 
-using Optimization
 rosenbrock(x, p) = (p[1] - x[1])^2 + p[2] * (x[2] - x[1]^2)^2
 x0 = zeros(2)
 p = [1.0, 100.0]

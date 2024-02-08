@@ -121,6 +121,7 @@ function agg_aux(mask_orig::AbstractArray, slope_orig, dem_orig, lc_orig, aggfac
     # rgh = Float32.(replace_missing(Rasters.aggregate(maximum, min.(roughness(replace_missing(dem_orig, 0)), 500)./ 500, aggfactor), NaN))
     dem = Float32.(replace_missing(Rasters.aggregate(Rasters.Center(), dem_orig, aggfactor), 0))
     lc_ag = Rasters.aggregate(mean, rebuild(lc_orig; missingval=nothing), (X(aggfactor), Y(aggfactor)))
+    @show typeof(lc_ag)
     lc_ag1 = Rasters.extend(lc_ag; to=(Ti(Sampled(1500:1:2020; sampling=Intervals(Start())))), missingval=false)
     map(DimensionalData.layers(lc_ag1)) do A
         broadcast_dims!(identity, view(A, Ti=1500..1600), view(A, Ti=At(1600)))
