@@ -638,4 +638,3 @@ function generate_predator_effect(f, pred_pop::Union{AbstractArray{<:Any,2},Abst
     end
     rebuild(pred_pop, xs)
 end
-nd
