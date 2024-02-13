@@ -29,9 +29,9 @@ gdal_borders = (
     rod=GADM.get("MUS").geom[1],
 )
 borders = (
-   mus=GeoInterface.convert(MultiPolygon, gdal_borders.mus),
-   reu=GeoInterface.convert(MultiPolygon, gdal_borders.reu),
-   rod=GeoInterface.convert(MultiPolygon, gdal_borders.rod),
+   mus=GeoInterface.convert(GeometryBasics, gdal_borders.mus),
+   reu=GeoInterface.convert(GeometryBasics, gdal_borders.reu),
+   rod=GeoInterface.convert(GeometryBasics, gdal_borders.rod),
 )
 island_bounds = (
     # mus=((57.1, 57.9), (-20.6, -19.8)), # with islands
