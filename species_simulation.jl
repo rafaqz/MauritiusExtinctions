@@ -15,6 +15,7 @@ using Stencils
 using Statistics
 using Setfield
 using ConstructionBase
+using JLD2
 
 # includet("optimisation.jl")
 include("species_rules.jl")
@@ -99,73 +100,40 @@ pred_pops_aux = map(islands) do island
 end
 (; ruleset, rules, pred_ruleset, endemic_ruleset, islands, pred_response) = def_syms(
     pred_df, introductions_df, island_endemic_tables, auxs, aggfactor; 
-    replicates=10, pred_pops_aux
+    replicates=2, pred_pops_aux
 );
-(; output, max_output, endemic_output, pred_output, init, output_kw) = islands[k]
-@time sim!(max_output, pred_ruleset; proc=SingleCPU(), printframe=true);
-# maxpops = maximum(max_output)
 
-(; ruleset, rules, pred_ruleset, endemic_ruleset, islands) = def_syms(
-    pred_df, introductions_df, island_endemic_tables, auxs, aggfactor; 
-    replicates=nothing, pred_pops_aux
+# Store so we don't have to run the above
+jldsave("sym_setup.jld2";
+    pred_df, introductions_df, island_endemic_tables, auxs, aggfactor, pred_pops_aux, 
+    ruleset, rules, pred_ruleset, endemic_ruleset, islands, pred_response
 );
-(; output, max_output, endemic_output, pred_output, init, output_kw) = islands[k]
-island = islands[k]
 
-endemic_ruleset = Ruleset(
-    Chain(rules.endemic_recouperation_rule, rules.aux_pred_risks_rule, rules.clearing_rule);
-    boundary=Remove()
-)
-@time sim!(endemic_output, endemic_ruleset; proc=SingleCPU(), printframe=true);
-# using ProfileView
-# using CUDA, Adapt
-# cu_endemic_output = Adapt.adapt(CuArray, endemic_output)
-# CUDA.@profile sim!(cu_endemic_output, endemic_ruleset; proc=CuGPU(), printframe=true)
-# DynamicGrids.aux(cu_endemic_output).pred_effect
+# (; output, max_output, endemic_output, pred_output, init, output_kw) = islands[k]
+# @time sim!(max_output, pred_ruleset; proc=SingleCPU(), printframe=true);
+# # maxpops = maximum(max_output)
 
-# @time sim!(output, endemic_ruleset; proc=CuGPU(), printframe=true);
-# @profview sim!(output, endemic_ruleset; proc=SingleCPU(), printframe=true);
-# maxpops = maximum(pred_pops_aux[k]) .* 4
-# maxpops = maxpops .* 2
+# (; ruleset, rules, pred_ruleset, endemic_ruleset, islands) = def_syms(
+#     pred_df, introductions_df, island_endemic_tables, auxs, aggfactor; 
+#     replicates=nothing, pred_pops_aux
+# );
+# (; output, max_output, endemic_output, pred_output, init, output_kw) = islands[k]
+# island = islands[k]
 
-mkoutput = mk_pred(init, pred_ruleset; maxpops, landcover=lc_all[k], output_kw...)
-mkoutput = mk(init, ruleset; maxpops, landcover=lc_all[k], output_kw..., ncolumns=5)
+# @time sim!(endemic_output, endemic_ruleset; proc=SingleCPU(), printframe=true);
 
-k = :mus
-k = :rod
-k = :reu
-(; output, max_output, endemic_output, pred_output, init, output_kw) = islands[k]
+# mkoutput = mk_pred(init, pred_ruleset; maxpops, landcover=lc_all[k], output_kw...)
+# mkoutput = mk(init, ruleset; maxpops, landcover=lc_all[k], output_kw..., ncolumns=5)
 
-p = Rasters.rplot(lc_all.mus[Ti=At(1700:2018)]; colorrange=(1, 6))
-save("images/landcover_simulation.png", p)
-# mkoutput = mk_endemic(init, endemic_ruleset; ncolumns=5, maxpops, pred_pop=pred_pops_aux[k], landcover=lc_all[k], output_kw...)
-display(mkoutput)
+# k = :mus
+# k = :rod
+# k = :reu
+# (; output, max_output, endemic_output, pred_output, init, output_kw) = islands[k]
 
-
-using LossFunctions, Optimization
-# Outputs with replicates
-(isnothing(pred_pops_aux) && error()); (; endemic_ruleset, islands) = def_syms(
-    pred_df, introductions_df, island_endemic_tables, auxs, aggfactor; 
-    replicates=100, pred_pops_aux
-);
-(; output, max_output, endemic_output, pred_output, init, output_kw) = islands[k]
-
-predictions = predict_extinctions(endemic_ruleset, islands, pred_response)
-
-rosenbrock(x, p) = (p[1] - x[1])^2 + p[2] * (x[2] - x[1]^2)^2
-x0 = zeros(2)
-p = [1.0, 100.0]
-
-prob = OptimizationProblem(rosenbrock, x0, p)
-
-using OptimizationOptimJL
-sol = solve(prob, NelderMead())
-
-using OptimizationBBO
-prob = OptimizationProblem(rosenbrock, x0, p, lb = [-1.0, -1.0], ub = [1.0, 1.0])
-sol = solve(prob, BBO_adaptive_de_rand_1_bin_radiuslimited())
-
-
+# p = Rasters.rplot(lc_all.mus[Ti=At(1700:2018)]; colorrange=(1, 6))
+# save("images/landcover_simulation.png", p)
+# # mkoutput = mk_endemic(init, endemic_ruleset; ncolumns=5, maxpops, pred_pop=pred_pops_aux[k], landcover=lc_all[k], output_kw...)
+# display(mkoutput)
 
 
 @time sim!(endemic_output, endemic_ruleset; proc=SingleCPU(), printframe=true);

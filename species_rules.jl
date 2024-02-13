@@ -121,7 +121,6 @@ function agg_aux(mask_orig::AbstractArray, slope_orig, dem_orig, lc_orig, aggfac
     # rgh = Float32.(replace_missing(Rasters.aggregate(maximum, min.(roughness(replace_missing(dem_orig, 0)), 500)./ 500, aggfactor), NaN))
     dem = Float32.(replace_missing(Rasters.aggregate(Rasters.Center(), dem_orig, aggfactor), 0))
     lc_ag = Rasters.aggregate(mean, rebuild(lc_orig; missingval=nothing), (X(aggfactor), Y(aggfactor)))
-    @show typeof(lc_ag)
     lc_ag1 = Rasters.extend(lc_ag; to=(Ti(Sampled(1500:1:2020; sampling=Intervals(Start())))), missingval=false)
     map(DimensionalData.layers(lc_ag1)) do A
         broadcast_dims!(identity, view(A, Ti=1500..1600), view(A, Ti=At(1600)))
@@ -141,11 +140,24 @@ function def_syms(
     window = Window{2}()
     moore = Moore{3}()
     ns_endemic = map(nrow, island_endemic_tables)
+    island_keys = NamedTuple{keys(island_endemic_tables)}(keys(island_endemic_tables))
     endemic_keys = map(island_endemic_tables) do endemic_table
         Tuple(Symbol.(replace.(endemic_table.Species, Ref(' ' => '_'))))
     end
     EndemicNVs = map(endemic_keys) do ek
         NamedVector{ek,length(ek)}
+    end
+
+    # Extract extinction dates
+    # We use 2020 as our "not extinct yet" date
+    island_extinction_dates = map(island_endemic_tables, EndemicNVs, island_keys) do table, EndemicNV, key
+        map(table[!, Symbol(key, :_extinct)]) do x
+            if ismissing(x) 
+                2020
+            else
+                parse(Int, first(split(x, ':')))
+            end
+        end |> EndemicNV
     end
 
     #= Assumptions
@@ -596,11 +608,10 @@ function def_syms(
         ResultOutput(init; kw...)
     end
 
-    island_keys = NamedTuple{keys(inits)}(keys(inits))
     islands = map(
-        island_keys, inits, endemic_inits, pred_inits, outputs, max_outputs, endemic_outputs, pred_outputs, outputs_kw, auxs, island_mass_response
-    ) do key, init, endemic_init, pred_init, output, max_output, endemic_output, pred_output, output_kw, aux, mass_response
-        (; key, init, endemic_init, pred_init, output, max_output, endemic_output, pred_output, output_kw, aux, mass_response)
+        island_keys, inits, endemic_inits, pred_inits, outputs, max_outputs, endemic_outputs, pred_outputs, outputs_kw, auxs, island_mass_response, island_extinction_dates
+    ) do key, init, endemic_init, pred_init, output, max_output, endemic_output, pred_output, output_kw, aux, mass_response, extinction_dates
+        (; key, init, endemic_init, pred_init, output, max_output, endemic_output, pred_output, output_kw, aux, mass_response, extinction_dates)
     end
 
     return (; ruleset, rules, pred_ruleset, endemic_ruleset, islands, pred_response)
@@ -627,25 +638,4 @@ function generate_predator_effect(f, pred_pop::Union{AbstractArray{<:Any,2},Abst
     end
     rebuild(pred_pop, xs)
 end
-
-function predict_extinctions(endemic_ruleset::Ruleset, islands, pred_response)
-    map(islands) do island
-        _predict_extinctions(endemic_ruleset, island, pred_response)
-    end
-end
-function _predict_extinctions(endemic_ruleset::Ruleset, island, pred_response)
-    @show island.key
-    kw = island.output_kw
-    aux = kw.aux
-    pred_suscept = predator_suceptibility(pred_response, aux.endemic_traits)
-    (; pred_pop, pred_effect) = aux
-    generate_predator_effect!(tanh, pred_effect, pred_pop, pred_suscept)
-    output = TransformedOutput(island.endemic_init; kw...) do f
-        # Take the mean over the replicates dimension
-        mean(sum, eachslice(f.endemic_presence; dims=3))
-    end
-    sim!(output, endemic_ruleset; printframe=false, proc=CPUGPU())
-    return output
-    # Return NamedVector of years to extinction
-    # return sum(output) .+ first(island.output_kw.tspan) .- 1
-end
+nd
