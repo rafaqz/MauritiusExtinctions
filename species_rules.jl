@@ -115,19 +115,19 @@ function agg_aux(masks::NamedTuple, slope_stacks, dems, lcs, aggfactor)
     end
 end
 function agg_aux(mask_orig::AbstractArray, slope_orig, dem_orig, lc_orig, aggfactor)
-    mask = Rasters.aggregate(Rasters.Center(), mask_orig, aggfactor)
-    slope = Rasters.aggregate(maximum, replace_missing(slope_orig.slope, 0), aggfactor)
+    mask = Rasters.aggregate(Rasters.Center(), mask_orig, aggfactor; skipmissingval=true)
+    slope = Rasters.aggregate(maximum, replace_missing(slope_orig.slope, 0), aggfactor; skipmissingval=true) .* mask
     # Clip roughness at a maximum of 500
     # rgh = Float32.(replace_missing(Rasters.aggregate(maximum, min.(roughness(replace_missing(dem_orig, 0)), 500)./ 500, aggfactor), NaN))
-    dem = Float32.(replace_missing(Rasters.aggregate(Rasters.Center(), dem_orig, aggfactor), 0))
-    lc_ag = Rasters.aggregate(mean, rebuild(lc_orig; missingval=nothing), (X(aggfactor), Y(aggfactor)))
+    dem = Float32.(replace_missing(Rasters.aggregate(Rasters.Center(), dem_orig, aggfactor; skipmissingval=true), 0))
+    lc_ag = Rasters.aggregate(mean, rebuild(lc_orig; missingval=nothing), (X(aggfactor), Y(aggfactor)); skipmissingval=true)
     lc_ag1 = Rasters.extend(lc_ag; to=(Ti(Sampled(1500:1:2020; sampling=Intervals(Start())))), missingval=false)
     map(DimensionalData.layers(lc_ag1)) do A
         broadcast_dims!(identity, view(A, Ti=1500..1600), view(A, Ti=At(1600)))
     end
     lc = map(CartesianIndices(first(lc_ag1))) do I
         Float32.(NV(lc_ag1[I]))
-    end
+    end .* mask
     (; mask, slope, dem, lc)
 end
 
@@ -261,7 +261,7 @@ function def_syms(
     response_keys = NamedTuple{keys(pred_response_raw)}(keys(pred_response_raw))
     pred_response = map(response_keys, pred_response_raw) do k, ps
         map(NamedTuple(ps[pred_keys]), NamedTuple{pred_keys}(pred_keys)) do val, label
-            Param(val; label=Symbol(k, :_, label))
+            Param(val; label=Symbol(k, :_, label), bounds=(0, 1))
         end
     end
 
@@ -422,7 +422,7 @@ function def_syms(
             cellsize=1.0f0,
         )
     end
-    pred_spread_rule = let demaux=Aux{:dem}(), aggfactor=aggfactor, pred_kernels=pred_kernels, carrycap=carrycap, slope_scalar=5.0 # Param(5.0, bounds=(1.0, 20.0))
+    pred_spread_rule = let demaux=Aux{:dem}(), aggfactor=aggfactor, pred_kernels=pred_kernels, carrycap=carrycap, slope_scalar=1.8#Param(1.8, bounds=(1.0, 20.0))
         SetNeighbors{Tuple{:pred_pop,:pred_carrycap}}(pred_kernels[1]) do data, hood, (Ns, _), I
             Ns === zero(Ns) && return nothing
             dem = get(data, demaux)
@@ -457,11 +457,11 @@ function def_syms(
                 # speed = (6ℯ.^(slopefactor .* (slope .+ distfactor)))
 
                 # slope_factor = 1 - min(slope, 1) # TODO needs cell size here
-                slope_factor = max(0, 1 - slope_scalar * (elev_center - e) / cellsize)
+                # slope_factor = max(0, 1 - slope_scalar * (elev_center - e) / cellsize)
                 # @show N  k  sp slope_factor one_individual
                 # propagules = N .* k .* sp .* slope_factor .+ ((rand(typeof(N)) .- 0.5) .* one_individual)
                 # propagules = Ns * sp * slope_factor .* kr .* rand(typeof(Ns))
-                propagules = trunc.(Float32.(Ns .* sp .* slope_factor .* rand(typeof(Ns)) .^ 3 .* ks .* 40))
+                propagules = trunc.(Float32.(Ns .* sp .* rand(typeof(Ns)) .^ 3 .* ks .* 40))
                 sum1 = sum + propagules
                 # If we run out of propagules
                 if any(sum1 .> Ns)
@@ -584,14 +584,6 @@ function def_syms(
     outputs = map(inits, outputs_kw) do init, kw
         ResultOutput(init; kw...)
     end
-    max_outputs = map(inits, outputs_kw) do init, kw
-        TransformedOutput(init; kw...) do f
-            presentces = Base.reduce(parent(parent(f.endemic_presence)); init=zero(eltype(f.endemic_presence))) do acc, xs
-                map(|, acc, xs)
-            end
-            mean(f.pred_pop)
-        end
-    end
     pred_outputs = map(pred_inits, outputs_kw) do init, kw
         if isnothing(replicates)
             trans_output = TransformedOutput(init; kw...) do f
@@ -609,9 +601,9 @@ function def_syms(
     end
 
     islands = map(
-        island_keys, inits, endemic_inits, pred_inits, outputs, max_outputs, endemic_outputs, pred_outputs, outputs_kw, auxs, island_mass_response, island_extinction_dates
-    ) do key, init, endemic_init, pred_init, output, max_output, endemic_output, pred_output, output_kw, aux, mass_response, extinction_dates
-        (; key, init, endemic_init, pred_init, output, max_output, endemic_output, pred_output, output_kw, aux, mass_response, extinction_dates)
+        island_keys, inits, endemic_inits, pred_inits, outputs, endemic_outputs, pred_outputs, outputs_kw, auxs, island_mass_response, island_extinction_dates
+    ) do key, init, endemic_init, pred_init, output, endemic_output, pred_output, output_kw, aux, mass_response, extinction_dates
+        (; key, init, endemic_init, pred_init, output, endemic_output, pred_output, output_kw, aux, mass_response, extinction_dates)
     end
 
     return (; ruleset, rules, pred_ruleset, endemic_ruleset, islands, pred_response)
@@ -638,3 +630,61 @@ function generate_predator_effect(f, pred_pop::Union{AbstractArray{<:Any,2},Abst
     end
     rebuild(pred_pop, xs)
 end
+
+function predict_timeline(endemic_ruleset::Ruleset, islands, pred_response; kw...)
+    map(islands) do island
+        _predict_timeline(endemic_ruleset, island, pred_response)
+    end
+end
+function _predict_timeline(endemic_ruleset::Ruleset, island, pred_response; kw...)
+    output_kw = island.output_kw
+    aux = output_kw.aux
+    pred_suscept = predator_suceptibility(pred_response, aux.endemic_traits)
+    (; pred_pop, pred_effect) = aux
+    generate_predator_effect!(tanh, pred_effect, pred_pop, pred_suscept)
+    output = TransformedOutput(island.endemic_init; output_kw...) do f
+        # Take the sum of each replicates slice
+        parent(ThreadsX.map(sum, eachslice(f.endemic_presence; dims=3)))
+    end
+    sim!(output, endemic_ruleset; kw..., proc=CPUGPU())
+    return output
+end
+
+function extinction_objective(x, p; kw...)
+    (; endemic_ruleset, islands, parameters, loss) = p
+    # Update
+    parameters[:val] = Float32.(x)
+    pred_response = stripparams(parameters)
+    island_timelines = predict_timeline(endemic_ruleset, islands, pred_response; kw...)
+    island_losses = map(island_timelines, islands) do timeline, island
+        dates = extinction_dates(timeline, island)
+        losses = loss.(island.extinction_dates, dates.mean)
+        q = quantile(losses, 0.9)
+        @show q
+        sum(losses) do l
+            l > q ? zero(l) : l
+        end
+    end
+    @show island_losses
+    return sum(island_losses)
+end
+
+function extinction_dates(timeline, island)
+    firstyear = first(island.output_kw.tspan)
+    years_present = sum(timeline) do slice
+        map(s -> s .> 0, slice)
+    end
+    extinction_years = map(yp -> yp .+ firstyear, years_present)
+    return (years=extinction_years, mean=mean(extinction_years), std=std(extinction_years))
+end
+
+function extinction_forward(x, p; kw...)
+    (; endemic_ruleset, islands, parameters, loss) = p
+    # Update
+    parameters[:val] = Float32.(x)
+    pred_response = stripparams(parameters)
+    timelines = predict_timeline(endemic_ruleset, islands, pred_response; kw...)
+    dates = map(extinction_dates, timelines, islands)
+    return map((dates, timelines) -> (; dates, timelines), dates, timelines)
+end
+

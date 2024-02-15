@@ -4,7 +4,7 @@ Makie.set_theme!(theme_light())
 
 const COLORMAPS = [:magma, :viridis, :cividis, :inferno, :delta, :seaborn_icefire_gradient, :seaborn_rocket_gradient, :hot]
 
-function mk(init, ruleset; maxpops, landcover, tspan, kw...)
+function mk(init, ruleset; maxpops=zero(eltype(init.pred_pop)), landcover, tspan, kw...)
     MakieOutput(init;
         kw...,
         tspan,
@@ -14,6 +14,7 @@ function mk(init, ruleset; maxpops, landcover, tspan, kw...)
         sim_kw=(; printframe=true),
     ) do (; layout, frame, time)
 
+        colorrange_obs = map(x -> Observable((zero(x), oneunit(x))), maxpops)
         # Landcover
         lc = lift(time) do i
             replace_missing(landcover[Ti(Near(tspan[i]))], NaN32)
@@ -36,13 +37,18 @@ function mk(init, ruleset; maxpops, landcover, tspan, kw...)
             Observable(rebuild(init.pred_pop, (x -> iszero(x) ? NaN : Float64(x)).(getindex.(frame[].pred_pop, i))))
         end
         on(frame) do f
+            foreach(maximum(f.pred_pop), colorrange_obs) do m, obs 
+                obs[] = (obs[][1], max(m, obs[][2]))
+                notify(obs)
+            end
             foreach(predators, 1:npreds) do pred, i
                 pred[] .= (x -> iszero(x) ? NaN : Float64(x)).(getindex.(frame[].pred_pop, i))
                 notify(pred)
             end
         end
-        foreach(pred_axes, predators, pred_keys, COLORMAPS[1:npreds], maxpops) do ax, pred, k, colormap, mp
-            Makie.image!(ax, pred; colormap=:navia, colorrange=(zero(mp), mp), interpolate=false)
+        foreach(2:ncols, pred_axes, predators, pred_keys, COLORMAPS[1:npreds], colorrange_obs) do i, ax, pred, k, colormap, cr
+            p = Makie.image!(ax, pred; colormap=:navia, colorrange=cr, interpolate=false)
+            Colorbar(layout[1, i, Right()], p)
         end
 
         # Endemics
@@ -85,7 +91,7 @@ function mk(init, ruleset; maxpops, landcover, tspan, kw...)
     end
 end
 
-function mk_pred(init, ruleset; maxpops, landcover, tspan, kw...)
+function mk_pred(init, ruleset; maxpops=zero(eltype(init.pred_pop)), landcover, tspan, kw...)
     MakieOutput(init;
         kw...,
         tspan,
@@ -95,6 +101,7 @@ function mk_pred(init, ruleset; maxpops, landcover, tspan, kw...)
         sim_kw=(; printframe=true),
     ) do (; layout, frame, time)
 
+        colorrange_obs = map(x -> Observable((zero(x), oneunit(x))), maxpops)
         # Landcover
         lc = lift(time) do i
             replace_missing(landcover[Ti(Near(tspan[i]))], NaN32)
@@ -118,12 +125,17 @@ function mk_pred(init, ruleset; maxpops, landcover, tspan, kw...)
         end
         on(frame) do f
             foreach(predators, 1:npreds) do  pred, i
-                pred[] .= (x -> iszero(x) ? NaN : Float64(x)).(getindex.(frame[].pred_pop, i))
+                foreach(maximum(f), colorrange_obs) do m, obs 
+                    obs[] = m
+                    notify(obs)
+                end
+                pred[] .= (x -> iszero(x) ? NaN : Float64(x)).(getindex.(f.pred_pop, i))
                 notify(pred)
             end
+
         end
-        foreach(pred_axes, predators, COLORMAPS[1:npreds], maxpops) do ax, pred, colormap, mp
-            Makie.image!(ax, pred; colormap=:navia, colorrange=(zero(mp), mp), interpolate=false)
+        foreach(pred_axes, predators, COLORMAPS[1:npreds], colorrange_obs) do ax, pred, colormap, cr
+            Makie.image!(ax, pred; colormap=:navia, colorrange=(zero(mp), cr), interpolate=false)
         end
 
         # Link
@@ -133,7 +145,7 @@ function mk_pred(init, ruleset; maxpops, landcover, tspan, kw...)
 end
 
 function mk_endemic(init, ruleset; 
-    maxpops = map(maximum, pred_pops_aux),
+    maxpops = zero(eltype(init.pred_pop)),
     landcover, pred_pop, tspan, kw...
 )
     MakieOutput(init;
@@ -145,7 +157,7 @@ function mk_endemic(init, ruleset;
         sim_kw=(; printframe=true),
     ) do (; layout, frame, time)
           
-
+        colorrange_obs = map(x -> Observable((zero(x), oneunit(x))), maxpops)
         # Landcover
         lc = lift(time) do i
             replace_missing(landcover[Ti(Near(tspan[i]))], NaN32)
@@ -169,14 +181,17 @@ function mk_endemic(init, ruleset;
             Observable(rebuild(pred_pop1, (x -> iszero(x) ? NaN : Float64(x)).(getindex.(pred_pop1, i))))
         end
         on(time) do t
-            foreach(predators, 1:npreds) do pred, i
+            foreach(predators, 1:npreds, colorrange_obs) do pred, i, cr_obs
                 pred_pop_t = view(pred_pop, Ti=t)
                 pred[] .= (x -> iszero(x) ? NaN : Float64(x)).(getindex.(pred_pop_t, i))
+                m = maximum(pred[])
+                cr_obs[] = (cr_obs[][1], max(m, cr_obs[][2]))
+                notify(cr_obs)
                 notify(pred)
             end
         end
-        foreach(pred_axes, predators, pred_keys, COLORMAPS[1:npreds], maxpops) do ax, pred, k, colormap, mp
-            Makie.image!(ax, pred; colormap=:navia, colorrange=(zero(mp), mp), interpolate=false)
+        foreach(pred_axes, predators, pred_keys, colorrange_obs) do ax, pred, k, colorrange
+            Makie.image!(ax, pred; colormap=:navia, colorrange, interpolate=false)
         end
 
         # Endemics
@@ -215,7 +230,6 @@ function mk_endemic(init, ruleset;
 
         # Link
         linkaxes!(pred_axes..., extinct_axes..., ax_lc)
-        return nothing
         return nothing
     end
 end

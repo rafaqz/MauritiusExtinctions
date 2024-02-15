@@ -67,11 +67,11 @@ lc_predictions = map(lc_predictions_paths) do path
         x -> rebuild(Rasters.modify(BitArray, x); missingval=false) |>
         x -> Rasters.set(x, Ti => Int.(maybeshiftlocus(Start(), dims(x, Ti), )))
 end
+Makie.plot(masks.rod)
+# Remove islands of rodrigues
+masks.rod[X=60 .. 63.33, Y=-19.775 .. -19.675] .= false
+masks.rod[X=63 .. 65, Y= -19.8 .. -19.775] .= false
 auxs = agg_aux(masks, slope_stacks, dems, lc_predictions, aggfactor)
-auxs.mus.lc
-lc = map(CartesianIndices(first(lc_ag1))) do I
-    Float32.(NV(lc_ag1[I]))
-end
 # Just for Makie, kind of merges the pixel colors...
 lc_all = map(auxs) do aux
     rebuild(map(aux.lc) do lcs
@@ -103,32 +103,31 @@ end
     replicates=2, pred_pops_aux
 );
 
+
+
 # Store so we don't have to run the above
 jldsave("sym_setup.jld2";
     pred_df, introductions_df, island_endemic_tables, auxs, aggfactor, pred_pops_aux, 
     ruleset, rules, pred_ruleset, endemic_ruleset, islands, pred_response
 );
 
-# (; output, max_output, endemic_output, pred_output, init, output_kw) = islands[k]
-# @time sim!(max_output, pred_ruleset; proc=SingleCPU(), printframe=true);
-# # maxpops = maximum(max_output)
+(; ruleset, rules, pred_ruleset, endemic_ruleset, islands) = def_syms(
+    pred_df, introductions_df, island_endemic_tables, auxs, aggfactor; 
+    replicates=nothing, pred_pops_aux
+);
+(; output, endemic_output, pred_output, init, output_kw) = islands[k]
 
-# (; ruleset, rules, pred_ruleset, endemic_ruleset, islands) = def_syms(
-#     pred_df, introductions_df, island_endemic_tables, auxs, aggfactor; 
-#     replicates=nothing, pred_pops_aux
-# );
-# (; output, max_output, endemic_output, pred_output, init, output_kw) = islands[k]
-# island = islands[k]
+@time sim!(endemic_output, endemic_ruleset; proc=SingleCPU(), printframe=true);
 
-# @time sim!(endemic_output, endemic_ruleset; proc=SingleCPU(), printframe=true);
-
-# mkoutput = mk_pred(init, pred_ruleset; maxpops, landcover=lc_all[k], output_kw...)
-# mkoutput = mk(init, ruleset; maxpops, landcover=lc_all[k], output_kw..., ncolumns=5)
+mkoutput = mk(init, ruleset; landcover=lc_all[k], output_kw..., ncolumns=5)
+mkoutput = mk_pred(init, pred_ruleset; landcover=lc_all[k], output_kw...)
+sim!(mkoutput, ruleset; proc=SingleCPU(), printframe=true);
+display(mkoutput)
 
 # k = :mus
 # k = :rod
 # k = :reu
-# (; output, max_output, endemic_output, pred_output, init, output_kw) = islands[k]
+# (; output, endemic_output, pred_output, init, output_kw) = islands[k]
 
 # p = Rasters.rplot(lc_all.mus[Ti=At(1700:2018)]; colorrange=(1, 6))
 # save("images/landcover_simulation.png", p)
@@ -141,7 +140,6 @@ cu_endemic_output = Adapt.adapt(CuArray, endemic_output)
 CUDA.@profile sim!(cu_endemic_output, endemic_ruleset; proc=CuGPU(), printframe=true)
 @time preds = predict_extinctions(endemic_ruleset, islands)
 # @time sim!(output, endemic_ruleset; proc=CPUGPU(), printframe=true);
-# @time sim!(max_output, ruleset; proc=SingleCPU(), printframe=true);
 sum(map(xs -> xs .> 10, preds.reu)) .+ first(DynamicGrids.tspan(output))
 
 # intercept = 0.085
