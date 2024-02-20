@@ -19,41 +19,16 @@ using JLD2
 
 # includet("optimisation.jl")
 include("species_rules.jl")
+include("species_tables.jl")
 include("raster_common.jl")
 include("makie.jl")
 
 uncleared = gpu_cleanup(Rasters.modify(BitArray, Raster("uncleared.nc")))
 # forested = gpu_cleanup(modify(BitArray, Raster("forested.nc")))
-
-# Import tabular data
-pred_df = CSV.read("tables/animals.csv", DataFrame)
-introductions_df = CSV.read("tables/introductions.csv", DataFrame)
-mascarene_species_csv = "tables/mascarene_species.csv"
-# @async run(`libreoffice $mascarene_species_csv`)
-all_species = CSV.read(mascarene_species_csv, DataFrame) |> 
-    x -> subset(x, :Species => ByRow(!ismissing))
-island_tables = map(island_keys) do key
-    df = DataFrame(subset(all_species, key => x -> .!ismissing.(x)))
-    df.extinct = map(df[!, "$(key)_extinct"]) do e
-        ismissing(e) ? missing : eval(Meta.parse(e))::UnitRange
-    end
-    df.introduced = map(df[!, "$(key)_introduced"]) do e
-        ismissing(e) ? missing : eval(Meta.parse(e))::UnitRange
-    end
-    df
-end
-island_endemic_tables = map(island_tables) do tbl
-    # TODO add missing mass rows and remove the missing Mass filter
-    DataFrame(subset(tbl, :Origin => ByRow(==("Endemic")), :Mass => ByRow(!ismissing); skipmissing=true))
-end
-get_species_names(table) = Tuple(Symbol.(replace.(skipmissing(table.Species), Ref(" " => "_"))))
-island_names = NamedTuple{keys(island_tables)}(keys(island_tables))
-island_endemic_names = map(island_tables, island_names) do table, name
-    get_species_names(subset(table, Symbol(name, "_extinct") => ByRow(!ismissing)))
-end
-
 # Set aggregation
 aggfactor = 8
+# And the last year of the simulation
+last_year = 2018
 
 # Build auxiliary rasters
 lc_predictions_paths = (
@@ -71,7 +46,7 @@ Makie.plot(masks.rod)
 # Remove islands of rodrigues
 masks.rod[X=60 .. 63.33, Y=-19.775 .. -19.675] .= false
 masks.rod[X=63 .. 65, Y= -19.8 .. -19.775] .= false
-auxs = agg_aux(masks, slope_stacks, dems, lc_predictions, aggfactor)
+auxs = agg_aux(masks, slope_stacks, dems, lc_predictions, aggfactor, last_year)
 # Just for Makie, kind of merges the pixel colors...
 lc_all = map(auxs) do aux
     rebuild(map(aux.lc) do lcs
@@ -89,7 +64,7 @@ pred_pops_aux = isdefined(Main, :pred_pops_aux) ? pred_pops_aux : map(_ -> nothi
     pred_df, introductions_df, island_endemic_tables, auxs, aggfactor; 
     replicates=nothing, pred_pops_aux
 );
-(; output, max_output, endemic_output, pred_output, init, output_kw) = islands[k]
+(; output, endemic_output, pred_output, init, output_kw) = islands[k]
 # @time sim!(output, ruleset; proc=SingleCPU(), printframe=true);
 # Optimisation
 pred_pops_aux = map(islands) do island

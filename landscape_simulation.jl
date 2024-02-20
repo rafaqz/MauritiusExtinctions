@@ -12,6 +12,8 @@ using NCDatasets, Rasters
 using GLMakie
 using Rasters.LookupArrays
 
+# Rodrigues 50% cleared 1874 , Lost land page 151
+
 # From woods and forests in Mauritius, p 40:40
 # 1880: 70,000 acres out of 300,000 remain
 # 35,000 were native (but "dilatipated and ruined?")
