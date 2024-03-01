@@ -12,7 +12,7 @@ using MapRasterization
 using GLMakie
 GLMakie.activate!()
 include("common.jl")
-include("map_file_list2.jl")
+include("map_file_list.jl")
 include("map_file_functions.jl")
 include("raster_common.jl")
 include("water.jl")
@@ -25,6 +25,11 @@ swap_ext(path, newext) = string(splitext(path)[1], newext)
 #     png = name * ".png" 
 #     run(`pdftoppm $pdf $png -png -r 300`)
 # end
+
+# img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/cb5989en.png-06.png"
+# img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/cb5989en.png-06_2.png"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/cb5989en.png-06_colored.png"
+run(`gimp $img_path`)
 
 img_path = "/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds/31.png-1.png"
 img_path = "/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds/9.png-1.png"
@@ -44,14 +49,16 @@ img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/rodrigues-mauritius
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/34.jpg"
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/Susman/Sussman and Tattersall - 2008 - Distribution, Abundance, and Putative Ecological S.png-06.png"
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/Susman/Sussman and Tattersall - 2008 - Distribution, Abundance, and Putative Ecological S.png-07.png"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page252_mauritius_kestrel.png"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page252_mauritius_kestrel_2001.png"
 
-# img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/cb5989en.png-06.png"
-# img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/cb5989en.png-06_2.png"
-img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/cb5989en.png-06_colored.png"
+
+musmask = resample(UInt.(masks.mus); crs=EPSG(3337))
+Makie.heatmap(musmask)
 
 img = load_image(img_path)
-cs = MapRasterization.CategorySelector(img)
 json_path = splitext(img_path)[1] * ".json"
+cs = MapRasterization.CategorySelector(img)
 output = JSON3.read(read(json_path), MapRasterization.MapSelection)
 cs = MapRasterization.CategorySelector(img, output)
 display(cs)
@@ -62,6 +69,21 @@ if isfile(json_path)
 end
 write(json_path, JSON3.write(output))
 
+
+for img_path in ("/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page166_mauritius_fodies_1975.png",
+        "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page166_mauritius_fodies_1993.png",
+        "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page166_mauritius_fodies_1999.png",
+        "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page166_mauritius_olive_whiteye_1975.png",
+        "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page166_mauritius_olive_whiteye_1993.png",
+        "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page166_mauritius_olive_whiteye_2001.png")
+    img = load_image(img_path)
+    json_path = splitext(img_path)[1] * ".json"
+    cs = MapRasterization.CategorySelector(img)
+    display(cs)
+    readline()
+    output = MapRasterization.MapSelection(cs)
+    write(json_path, JSON3.write(output))
+end
 
 # rast = polywarp(img_path, dems.mus)
 # Rasters.rplot(rast)
@@ -76,6 +98,30 @@ CSV.write(warp_path, warpselector.warper.point_table[])
 rs = warp_to_raster(img_path, dems.mus)
 # rs = warp_to_polygon(img_path, dems.reu)
 Makie.plot(rs)
+
+for img_path in (
+        "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page166_mauritius_fodies_1975.png",
+        "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page166_mauritius_fodies_1993.png",
+        "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page166_mauritius_fodies_1999.png",
+        "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page166_mauritius_olive_whiteye_1975.png",
+        "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page166_mauritius_olive_whiteye_1993.png",
+        "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page166_mauritius_olive_whiteye_2001.png")
+    img = load_image(img_path)
+    warp_path = splitext(img_path)[1] * ".csv"
+    @show warp_path
+    point_table = isfile(warp_path) ? CSV.read(warp_path, DataFrame) : nothing
+    @show point_table
+    warpselector = MapRasterization.WarpSelector(img; 
+        template=dems.mus, guide=(borders.mus, waterways_rivers), point_table, 
+    )
+    display(warpselector)
+    readline()
+    @show warpselector.warper.point_table[]
+    CSV.write(warp_path, warpselector.warper.point_table[])
+    @show "write polygon"
+end
+
+Raster("/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page166_mauritius_olive_whiteye_2001.tif") |> Makie.plot
 
 polygons = MapRasterization.warp(warpselector, img; )
 CSV.write(warp_path, warpselector.warper.point_table[])
@@ -283,3 +329,23 @@ canvas = MakieDraw.GeometryCanvas{Polygon}(canvas; #[Polygon([Point(1.0, 2.0), P
 )
 display(tyler.figure)
 GeoJSON.write("reunion_1790.json", canvas)
+
+using Mousetrap
+using GLMakie
+using MousetrapMakie
+
+Mousetrap.main() do app::Application
+    window = Mousetrap.Window(app)
+    canvas = GLMakieArea()
+    set_child!(window, canvas)
+    set_size_request!(canvas, Vector2f(200, 200))
+
+    screen = Ref{Union{Nothing, GLMakie.Screen{GLMakieArea}}}(nothing)
+    connect_signal_realize!(canvas) do self
+        screen[] = create_glmakie_screen(canvas)
+        @show "scattering"
+        display(screen[], scatter(rand(123)))
+        return nothing
+    end
+    present!(window)
+end

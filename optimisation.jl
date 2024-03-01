@@ -1,48 +1,23 @@
+include("species_common.jl")
+
 using LossFunctions
 using Optimization
 using OptimizationOptimJL
 using ThreadsX
-using ModelParameters
-using StaticArrays
-using DynamicGrids
-using Dispersal
-using LandscapeChange
-using CSV
-using DataFrames
-using XLSX
-using TerminalPager
-using Rasters
-using GLMakie
-using NCDatasets
-using Geomorphometry
-using Stencils
-using Statistics
-using Setfield
-using ConstructionBase
-using JLD2
-
-# includet("optimisation.jl")
-include("species_rules.jl")
-include("species_tables.jl")
-include("raster_common.jl")
-include("makie.jl")
 
 f = jldopen("sym_setup.jld2", "r")
-pred_df = f["pred_df"];
-introductions_df = copy(f["introductions_df"]);
-aggfactor = f["aggfactor"];
 pred_pops_aux = f["pred_pops_aux"];
-auxs = f["auxs"];
-pred_response = f["pred_response"];
+# pred_df = f["pred_df"];
+# introductions_df = copy(f["introductions_df"]);
+# aggfactor = f["aggfactor"];
+# auxs = f["auxs"];
+# pred_response = f["pred_response"];
 # Run the result visually
 (isnothing(pred_pops_aux) && error()); (; endemic_ruleset, islands) = def_syms(
     pred_df, introductions_df, island_endemic_tables, auxs, aggfactor;
     replicates=nothing, pred_pops_aux
 );
 (; output, endemic_output, pred_output, init, output_kw) = islands[k]
-
-last_year = 2018
-extant_extension = 200
 
 k = :mus
 k = :reu
@@ -54,12 +29,14 @@ map(island_endemic_tables) do table
 end;
 (isnothing(pred_pops_aux) && error()); (; endemic_ruleset, islands) = def_syms(
     pred_df, introductions_df, island_endemic_tables, auxs, aggfactor;
-    replicates=25, pred_pops_aux, last_year, extant_extension
+    replicates=25, pred_pops_aux, last_year, extant_extension,
+    extinction_dates,
 );
 (; output, endemic_output, pred_output, init, output_kw) = islands[k];
 
 @time predictions = predict_timeline(endemic_ruleset, islands, pred_response);
 
+mkoutput = mk(init, ruleset; landcover=lc_all[k], output_kw..., ncolumns=5)
 
 # Optimization
 p = (;
@@ -88,7 +65,6 @@ vals = collect(p.parameters[:val])
 labels = collect(p.parameters[:label])
 endemics = extinction_forward(x, p)
 jldsave("sol"; sol);
-
 
 
 e = jldopen("endemic.jld2", "r")

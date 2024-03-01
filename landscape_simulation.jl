@@ -63,18 +63,45 @@ npixels = prod(size(timeline[Ti=1]))
 
 x = lookup(timeline, Ti)
 y = parent(vec(uncertain)) ./ npixels
-Makie.lines(x, y;
-p = lines(x, y; color = :black, linewidth = 2, 
+p = Makie.lines(x, y; color = :black, linewidth = 2, 
     figure = (size=(600, 400), backgroundcolor="#a5b4b5"),
     axis=(xlabel="Year", ylabel="Uncertainty", backgroundcolor=:white, xlabelsize=22, ylabelsize=22),
 )
 save("images/uncertainty.png", p)
 
-p = Rasters.rplot(striped_raw.mus[Ti=2:17]; colorrange=(1, 6), size=(1000, 1000))
+nv_rasts.mus[Y=Contains(-20.202), X=Contains(57.500)] |> parent
+compiled = map(nv_rasts) do nv_rast
+    cross_validate_timeline(logic, nv_rast; simplify=true, cull=true)#, force)
+end
+compiled.mus.timeline[Y=Contains(-20.202), X=Contains(57.500)]
+
+expected = NV{keys(logic)}.([
+    (true, false, false, false, false, false)
+    (true, false, false, false, false, false)
+    (true, false, false, false, false, false)
+    (true, false, false, false, false, false)
+    (true, false, false, false, false, false)
+    (true, false, false, false, false, false)
+    (true, true, false, false, false, false)
+    (true, true, false, false, false, false)
+    (true, true, false, false, false, false)
+    (true, true, true, false, false, false)
+    (false, false, true, false, false, false)
+    (false, false, true, false, false, false)
+    (false, false, true, false, false, false)
+    (false, false, true, false, false, false)
+    (false, false, true, false, false, false)
+    (false, false, true, false, false, false)
+    (false, false, true, false, false, false)
+    (false, false, true, false, false, false)
+    (false, false, true, false, false, false)
+])
+
+p = Rasters.rplot(striped_raw.mus[Ti=1:16]; colorrange=(1, 6), size=(1000, 1000))
 save("images/striped_raw.png", p)
-p = Rasters.rplot(striped_compiled.mus[Ti=2:17]; colorrange=(1, 6), size=(1000, 1000))
+p = Rasters.rplot(striped_compiled.mus[Ti=1:16]; colorrange=(1, 6), size=(1000, 1000))
 save("images/striped_compiled.png", p)
-p = Rasters.rplot(striped_error.mus[Ti=2:17]; colorrange=(1, 6), size=(1000, 1000))
+p = Rasters.rplot(striped_error.mus[Ti=1:16]; colorrange=(1, 6), size=(1000, 1000))
 save("images/striped_error.png", p)
 Rasters.rplot(striped_raw.reu; colorrange=(1, 6))
 Rasters.rplot(striped_compiled.reu; colorrange=(1, 6))
@@ -345,5 +372,5 @@ end
 # a = NV{propertynames(transitions)}((false, false, true, false, true, false))
 # b = NV{propertynames(transitions)}((true, false, true, false, true, false))
 
-# LandscapeChange._merge_all(a, b, reversed, reversed_indirect, force)
+# LandscapeChange.merge_all(a, b, reversed, reversed_indirect, force)
 
