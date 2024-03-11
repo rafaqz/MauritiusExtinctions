@@ -53,6 +53,8 @@ img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page252
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page252_mauritius_kestrel_2001.png"
 
 
+img_path = ""
+
 musmask = resample(UInt.(masks.mus); crs=EPSG(3337))
 Makie.heatmap(musmask)
 

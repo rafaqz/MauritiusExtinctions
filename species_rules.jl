@@ -25,7 +25,13 @@ end
     data, rule::InteractiveCarryCap,
     populations::NamedVector{Keys}, I,
 ) where Keys
-    local_inputs = NamedTuple(get(data, rule.inputs, I)) relative_pop = NamedTuple(populations ./ rule.carrycap) # combine populations params = merge(relative_pop, local_inputs) scaling = map(rule.carrycap_scaling) do val_f f = DynamicGrids._unwrap(val_f) (oneunit(eltype(populations)) + f(params)::Float32)::Float32 end |> NamedVector # Carrycap cant be zero
+    local_inputs = NamedTuple(get(data, rule.inputs, I)) 
+    relative_pop = NamedTuple(populations ./ rule.carrycap) # combine populations 
+    params = merge(relative_pop, local_inputs) 
+    scaling = map(rule.carrycap_scaling) do val_f 
+        f = DynamicGrids._unwrap(val_f) 
+        (oneunit(eltype(populations)) + f(params)::Float32)::Float32 
+    end |> NamedVector # Carrycap cant be zero
     new_carrycaps = max.(oneunit(eltype(rule.carrycap)) .* 1f-10, rule.carrycap .* scaling)
     return new_carrycaps
 end
@@ -45,29 +51,27 @@ function ExtirpationRisks{R,W}(; f, stencil, traits, pred_response, pred_suscept
     ExtirpationRisks{R,W}(f, stencil, traits, pred_response, pred_suscept, pred_pop, pred_effect, stochastic_extirpation, recouperation_rates)
 end
 
-    # endemic_recouperation_rule = let recouperation_rate_aux=Aux{:recouperation_rate}()
-    #     Neighbors{:endemic_presence}(Moore(1)) do data, hood, prescences, I
-    #         # any(prescences) || return prescences
-    #         recouperation_rate = DG.get(data, recouperation_rate_aux)
-    #         nbr_sums = foldl(hood; init=Base.reinterpret.(UInt8, zero(first(hood)))) do x, y
-    #             Base.reinterpret(UInt8, x) + Base.reinterpret(UInt8, y)
-    #         end
-    #         map(prescences, nbr_sums, recouperation_rate) do p, n_nbrs, rr
-    #             if p
-    #                 true
-    #             elseif n_nbrs > 0
-    #                 rand(Float32) < (n_nbrs * rr / length(hood))
-    #             else
-    #                 false
-    #             end
-    #         end
-    #     end
-    # end
-
+# endemic_recouperation_rule = let recouperation_rate_aux=Aux{:recouperation_rate}()
+#     Neighbors{:endemic_presence}(Moore(1)) do data, hood, prescences, I
+#         # any(prescences) || return prescences
+#         recouperation_rate = DG.get(data, recouperation_rate_aux)
+#         nbr_sums = foldl(hood; init=Base.reinterpret.(UInt8, zero(first(hood)))) do x, y
+#             Base.reinterpret(UInt8, x) + Base.reinterpret(UInt8, y)
+#         end
+#         map(prescences, nbr_sums, recouperation_rate) do p, n_nbrs, rr
+#             if p
+#                 true
+#             elseif n_nbrs > 0
+#                 rand(Float32) < (n_nbrs * rr / length(hood))
+#             else
+#                 false
+#             end
+#         end
+#     end
+# end
 
 @inline function DynamicGrids.applyrule(data, rule::ExtirpationRisks, endemic_presence, I)
     # If they are all absent do nothing
-    any(endemic_presence) || return endemic_presence
     recouperation_rates = get(data, rule.recouperation_rates)
 
     # Get the effect of predators on each endemic
@@ -81,6 +85,7 @@ end
     end
 
     hood = stencil(rule)
+    # Count neighbors to UInt8. Otherwise we get Int64 and use a lot of registers
     n_neighbors = foldl(hood; init=Base.reinterpret.(UInt8, zero(first(hood)))) do x, y
         Base.reinterpret(UInt8, x) + Base.reinterpret(UInt8, y)
     end
@@ -88,7 +93,6 @@ end
     return map(endemic_presence, pred_effect, n_neighbors, recouperation_rates) do present, effect, n, rr
         if present
             rand(typeof(effect)) > (effect * ((length(hood) / 2) / (n + 1)) + rule.stochastic_extirpation)
-            # typeof(effect)(0.5) > effect
         elseif n > 0
             rand(typeof(effect)) < (n * rr / length(hood))
         else
@@ -327,12 +331,19 @@ function def_syms(
         end
     end
 
-    clearing_rule = let landcover=Aux{:landcover}(), native_needs=native_needs
+    clearing_rule = let landcover=Aux{:landcover}()
         Cell{:endemic_presence}() do data, presences, I
             lc = get(data, landcover, I)
-            presences .& map((lc, n) -> lc * n > rand(Float32), lc.native, native_needs)
+            presences .& (lc.native > 0.0f0)
         end
     end
+
+    # clearing_rule = let landcover=Aux{:landcover}(), native_needs=native_needs
+    #     Cell{:endemic_presence}() do data, presences, I
+    #         lc = get(data, landcover, I)
+    #         presences .& map((lc, n) -> lc * n > rand(Float32), lc.native, native_needs)
+    #     end
+    # end
 
     pred_kernels = map(spread_rate) do s
         DispersalKernel(
