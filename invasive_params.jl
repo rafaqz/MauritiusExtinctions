@@ -1,8 +1,8 @@
 using Graphs, GLMakie, GraphMakie, NetworkLayout, InvertedIndices
+using CSV, DataFrames
 
 # convenience functions
 # picks n random numbers between low and high, that are no more than a factor 2 apart
-
 function rejection_range(n, low = 0, high = 1, max_multiplier = 2)
     while true
         cont = false
@@ -23,7 +23,8 @@ function plot_interactions(mat, nodes)
     g = complete_digraph(5)
     f = Figure(size = (800, 800))
     graphplot(f[1,1], g, layout = Shell(), nlabels = nodes, edge_width = 3abs.(vals), edge_color = cols)
-    f
+
+    return f
 end
 
 # visualize an aggregate from a vector of interaction matrices
@@ -41,8 +42,8 @@ function plot_densities(mat, nodes)
 end
 
 # Metadata
-const nodes = ["cat", "black", "norway", "mouse", "pig"]
-const bodysizes = [4000, 184, 346, 35, 169000]
+# const nodes = ["cat", "black", "norway", "mouse", "pig"]
+# const bodysizes = [4000, 184, 346, 35, 169000]
 
 function interaction_matrix(bodysizes)
     # Create interaction matrix
@@ -51,6 +52,7 @@ function interaction_matrix(bodysizes)
     norway = 3
     mouse = 4
     pig = 5
+
     ints = zeros(5,5)
 
     # cats
@@ -64,13 +66,9 @@ function interaction_matrix(bodysizes)
     competition_to_predation_max = 0.3
     randvals = -rejection_range(6, 0, competition_to_predation_max*abs(ints[cat, black]), 2)
     for i in black:mouse, j in black:mouse
-
         if i != j
-
             ints[i, j] = pop!(randvals) * sqrt(bodysizes[i]) / sqrt(bodysizes[j])
-
         end
-
     end
 
     # pigs
@@ -83,11 +81,15 @@ function interaction_matrix(bodysizes)
     return ints
 end
 
+pred_df = CSV.read("tables/animals.csv", DataFrame)
+nodes = pred_df.name[1:5]
+bodymass = pred_df.mass[1:5]
+
 # one matrix
-ints = interaction_matrix(bodysizes)
+ints = interaction_matrix(bodymass)
 plot_interactions(ints, nodes)
 
 # multiple
-mat = map(_-> interaction_matrix(bodysizes), 1:100)
+mat = map(_-> interaction_matrix(bodymass), 1:100)
 plot_densities(mat, nodes)
 
