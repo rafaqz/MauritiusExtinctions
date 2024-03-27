@@ -74,8 +74,8 @@ function interaction_matrix(bodysizes)
     # pigs
     randpigs = -rejection_range(6, 0, minimum(abs(x) for x in ints if x!= 0), 2)
     for i in black:mouse
-        ints[i, 5] = pop!(randpigs) 
-        ints[5, i] = pop!(randpigs) 
+        ints[i, 5] = pop!(randpigs)
+        ints[5, i] = pop!(randpigs)
     end
 
     return ints
@@ -89,7 +89,15 @@ bodymass = pred_df.mass[1:5]
 ints = interaction_matrix(bodymass)
 plot_interactions(ints, nodes)
 
+pred_pops = NV{pred_keys,5}(rand(5)) .* 10
+pred_interactions = SMatrix{5,5}(interaction_matrix(bodymass))
+pred_interactions * pred_pops
+
 # multiple
 mat = map(_-> interaction_matrix(bodymass), 1:100)
 plot_densities(mat, nodes)
+map(1:100) do _
+    interaction_matrix(bodymass)
+
+end
 

@@ -37,6 +37,7 @@ img_path = "/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds/4
 img_path = "/home/raf/PhD/Mascarenes/maps/Mauritius/Studies_of_Mascarine_birds/49_2.png-1.png"
 
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/aec13048-fig-0001-m.jpg"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/aec13048-fig-0001-m.jpg"
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/aec13048-fig-0003-m.jpg"
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/atlas_ownership.jpg"
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/atlas_agriculture_1960_2.jpg"
@@ -51,16 +52,25 @@ img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/Susman/
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/Susman/Sussman and Tattersall - 2008 - Distribution, Abundance, and Putative Ecological S.png-07.png"
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page252_mauritius_kestrel.png"
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page252_mauritius_kestrel_2001.png"
-
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/Carte de l'Ile de la Réunion... par L. Maillard 1852 - gallica.png"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/Carte de l'Ile de la Réunion... par L. Maillard 1852 - gallica_cropped.png"
+lineless = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/Carte de l'Ile de la Réunion... par L. Maillard 1852 - gallica_cropped_lineless.png"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/Carte de l'Ile de la Réunion... par L. Maillard 1852 - gallica_cropped_lineless.png"
+run(`gimp $img_path`)
 
 img_path = ""
-
-musmask = resample(UInt.(masks.mus); crs=EPSG(3337))
-Makie.heatmap(musmask)
 
 img = load_image(img_path)
 json_path = splitext(img_path)[1] * ".json"
 cs = MapRasterization.CategorySelector(img)
+display(cs)
+mask = cs.maps.cleaned[] .== 0
+whitemasked = map(img, mask) do x, m
+    m ? x : oneunit(typeof(x))
+end
+Makie.heatmap(whitemasked)
+save(lineless, rotl90(whitemasked))
+img = whitemasked
 output = JSON3.read(read(json_path), MapRasterization.MapSelection)
 cs = MapRasterization.CategorySelector(img, output)
 display(cs)

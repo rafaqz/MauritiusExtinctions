@@ -12,7 +12,7 @@ roads_paths = (;
 # write(roads_paths.rod, rodroads)
 
 road_series = map(roads_paths, dems[keys(roads_paths)]) do path, dem
-    series = map(A -> Bool.(A), RasterSeries(path, Ti(Int; span=Irregular(1500, 2020), sampling=Intervals(End()))))
+    series = map(A -> reverse(Bool.(A); dims=Y()), RasterSeries(path, Ti(Int; span=Irregular(1500, 2020), sampling=Intervals(End()))))
     mask(series; with=dem, missingval=missing)
 end
 

@@ -158,7 +158,7 @@ function def_syms(
         pig =         (100.0, 100.0), # made up
         wolf_snake =  (9.0f0, 7.0), # Estimated from Fritts 1993
         macaque =     (100.0, 100.0), # made up
-    ),
+   )[pred_keys],
     island_mass_response = map(island_endemic_tables, EndemicNVs) do table, EndemicNV
         endemic_mass = EndemicNV(table.Mass)
         map(mean_prey_mass) do (mean, std)
@@ -173,6 +173,7 @@ function def_syms(
         Float32.(ones(EndemicNV) .* 0.05)
     end,
 )
+    pred_df = filter(r -> Symbol(r.name) in pred_keys, pred_df)
     aggscale = aggfactor^2
     moore = Moore{3}()
 
@@ -213,6 +214,18 @@ function def_syms(
         macaque =    p -> 1.0f0p.abandoned + 0.7f0p.forestry + 0.4f0p.native - 1.0f0p.urban - 0.8f0p.cleared
     )[pred_keys]
 
+    pred_funcs = (;
+        cat =        p -> 10f0p.urban + 2f0p.cleared,
+        black_rat  = p -> 0.5f0p.native + 0.3f0p.abandoned + 0.3f0p.forestry + 1p.urban,
+        norway_rat = p -> 1.5f0p.urban - 0.2f0p.native,
+        mouse =      p -> 0.8f0p.cleared + 1.5f0p.urban,
+        pig =        p -> 0.5f0p.native + 0.4f0p.abandoned - 2f0p.urban - 1.0f0p.cleared,
+        wolf_snake = p -> 0.5f0p.urban + 0.3f0p.native,
+        macaque =    p -> 1.0f0p.abandoned + 0.7f0p.forestry + 0.4f0p.native - 1.0f0p.urban - 0.8f0p.cleared
+    )[pred_keys]
+
+
+
     # These need to somewhat balance low growth rates. They are almost totally made up.
     # The units are in pixels - it needs fixing to the aggregation size.
     spread_rate = NV(;
@@ -223,7 +236,7 @@ function def_syms(
         pig =         15.0f0,
         wolf_snake =  1.0f0,
         macaque =     5.0f0,
-    )
+    )[pred_keys]
 
     island_endemic_traits = endemic_traits(island_endemic_tables, EndemicNVs)
     gecko_mass = 8 # estimated mean of multiple species
@@ -249,7 +262,6 @@ function def_syms(
         StencilArray(aux.dem, moore; padding=Halo{:out}())
     end
 
-    pred_keys = Tuple(Symbol.(pred_df.name))
     PredNV = NamedVector{pred_keys,length(pred_keys)}
     pred_names = PredNV(pred_keys)
     pred_indices = PredNV(ntuple(identity, length(pred_keys)))
@@ -261,7 +273,8 @@ function def_syms(
     end
 
     introductions = map(island_names) do key
-        island_df = filter(r -> r.island == string(key), introductions_df)
+        island_df = filter(r -> r.island == string(key) && Symbol(r.species) in pred_keys, introductions_df)
+        display(island_df)
         map(eachrow(island_df)) do r
             init = pred_init_nvs[Symbol(r.species)]
             (; year=r.year, geometry=(X=r.lon, Y=r.lat), init)
@@ -531,12 +544,13 @@ function gpu_cleanup(A)
 end
 
 function generate_predator_effect!(f, x, pred_pop, pred_suscept)
+    @show typeof(pred_suscept) eltype(pred_pop)
     ThreadsX.map!(x, pred_pop) do pop
         map(f, predator_effect(pop, pred_suscept))
-    end
-end
+    end end
 
 function generate_predator_effect(f, pred_pop::Union{AbstractArray{<:Any,2},AbstractArray{<:Any,3}}, pred_suscept)
+    @show typeof(pred_suscept) eltype(pred_pop)
     xs = ThreadsX.map(pred_pop) do pop
         map(f, predator_effect(pop, pred_suscept))
     end

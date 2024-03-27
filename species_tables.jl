@@ -1,5 +1,7 @@
+include("common.jl")
 using CSV
 using DataFrames
+using ConstructionBase
 
 # Import tabular data
 pred_df = CSV.read("tables/animals.csv", DataFrame)
@@ -8,6 +10,8 @@ mascarene_species_csv = "tables/mascarene_species.csv"
 # @async run(`libreoffice $mascarene_species_csv`)
 all_species = CSV.read(mascarene_species_csv, DataFrame) |> 
     x -> subset(x, :Species => ByRow(!ismissing))
+endemic_species = CSV.read(mascarene_species_csv, DataFrame) |> 
+    x -> subset(x, :Species => ByRow(!ismissing), :Origin => ByRow(==("Endemic")))
 island_tables = map(island_keys) do key
     df = DataFrame(subset(all_species, key => x -> .!ismissing.(x)))
     df.extinct = map(df[!, "$(key)_extinct"]) do e
@@ -43,3 +47,4 @@ nislandcounts = map(island_names, island_endemic_names) do k, names
     # Adjust out so current island is only endemics
     ConstructionBase.setproperties(out, NamedTuple{(k,)}((endemic,)))
 end
+

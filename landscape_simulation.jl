@@ -28,7 +28,8 @@ const P = RealParam
 const NV = NamedVector
 
 # to category from category
-logic = NV(
+transitions = NV(
+    # to        # from
     native    = NV(native=true,  cleared=false, abandoned=false, urban=false, forestry=false,  water=false),
     cleared   = NV(native=true,  cleared=true,  abandoned=true,  urban=false, forestry=false,  water=false),
     abandoned = NV(native=false, cleared=true,  abandoned=true,  urban=false,  forestry=false,  water=false),
@@ -38,77 +39,69 @@ logic = NV(
 )
 
 include("map_file_list.jl")
-slices = compile_timeline(define_map_files(), masks, keys(lc_categories))
-keys(slices)
-force = NV{propertynames(logic)}(map(x -> x in (:cleared, :urban, :water), propertynames(logic)))
-nv_rasts = map(slices) do island
+compiled = compile_timeline(define_map_files(), masks, keys(lc_categories))
+combined = map(compiled) do island
     Rasters.combine(namedvector_raster.(island.timeline))
 end
-striped_raw = map(nv_rasts) do nv_rast
-    stripe_raster(nv_rast, states)
+merged = map(combined) do A
+    cross_validate_timeline(A, transitions)
 end
-compiled = map(nv_rasts) do nv_rast
-    cross_validate_timeline(logic, nv_rast; simplify=true, cull=true)#, force)
+added = map(combined, merged) do raw, final
+    map(raw, final) do rs, fs
+    # We minimise forced values in the source throught its possible 
+    # transitions, they may resolve to one or two distinct timelines. 
+        if any(rs) # Ignore completely missing
+            map(rs, fs) do r, f
+                !r & f
+            end
+        else
+            rs
+        end
+    end
 end
-striped_compiled = map(compiled) do island
-    stripe_raster(island.timeline, states)
+filled = map(combined, merged) do raw, final
+    map(raw, final) do rs, fs
+        if any(rs)
+            zero(rs)
+        else
+            fs
+        end
+    end
 end
-striped_error = map(compiled) do island
-    stripe_raster(island.error, states)
+removed = map(combined, merged) do raw, final
+    map(raw, final) do rs, fs
+        map(rs, fs) do r, f
+            r & !f
+        end
+    end
+end
+uncertain = map(merged) do final
+    map(final) do fs
+        if count(fs) > 1
+            fs
+        else
+            zero(fs)
+        end
+    end
+end
+mixed_stats = (; combined, filled, uncertain, added, removed, merged)
+statistics = map(mixed_stats...) do args...
+    NamedTuple{keys(mixed_stats)}(args)
 end
 
-timeline = compiled.mus.timeline
-uncertain = sum(x -> sum(x) > 1, timeline; dims=(1, 2))
-npixels = prod(size(timeline[Ti=1]))
 
-x = lookup(timeline, Ti)
-y = parent(vec(uncertain)) ./ npixels
-p = Makie.lines(x, y; color = :black, linewidth = 2, 
-    figure = (size=(600, 400), backgroundcolor="#a5b4b5"),
-    axis=(xlabel="Year", ylabel="Uncertainty", backgroundcolor=:white, xlabelsize=22, ylabelsize=22),
-)
-save("images/uncertainty.png", p)
+striped_statistics = stripe_raster(statistics, states)
+Rasters.rplot(striped_statistics.reu.combined; colorrange=(1, 6))
 
-nv_rasts.mus[Y=Contains(-20.202), X=Contains(57.500)] |> parent
-compiled = map(nv_rasts) do nv_rast
-    cross_validate_timeline(logic, nv_rast; simplify=true, cull=true)#, force)
-end
-compiled.mus.timeline[Y=Contains(-20.202), X=Contains(57.500)]
 
-expected = NV{keys(logic)}.([
-    (true, false, false, false, false, false)
-    (true, false, false, false, false, false)
-    (true, false, false, false, false, false)
-    (true, false, false, false, false, false)
-    (true, false, false, false, false, false)
-    (true, false, false, false, false, false)
-    (true, true, false, false, false, false)
-    (true, true, false, false, false, false)
-    (true, true, false, false, false, false)
-    (true, true, true, false, false, false)
-    (false, false, true, false, false, false)
-    (false, false, true, false, false, false)
-    (false, false, true, false, false, false)
-    (false, false, true, false, false, false)
-    (false, false, true, false, false, false)
-    (false, false, true, false, false, false)
-    (false, false, true, false, false, false)
-    (false, false, true, false, false, false)
-    (false, false, true, false, false, false)
-])
 
-p = Rasters.rplot(striped_raw.mus[Ti=1:16]; colorrange=(1, 6), size=(1000, 1000))
-save("images/striped_raw.png", p)
-p = Rasters.rplot(striped_compiled.mus[Ti=1:16]; colorrange=(1, 6), size=(1000, 1000))
-save("images/striped_compiled.png", p)
-p = Rasters.rplot(striped_error.mus[Ti=1:16]; colorrange=(1, 6), size=(1000, 1000))
-save("images/striped_error.png", p)
-Rasters.rplot(striped_raw.reu; colorrange=(1, 6))
-Rasters.rplot(striped_compiled.reu; colorrange=(1, 6))
-Rasters.rplot(striped_raw.rod; colorrange=(1, 6))
-Rasters.rplot(striped_compiled.rod; colorrange=(1, 6))
-b = map(x -> x.cleared, compiled.rod.timeline)
-Rasters.rplot(b)
+
+
+
+
+
+
+
 
 cat_counts = let states=states
     map(human_pop_timelines, compiled) do human_pop, history
