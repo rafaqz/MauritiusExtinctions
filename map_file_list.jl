@@ -73,7 +73,7 @@ function define_map_files(;
             ],
         ),
         fraser_1835_from_gleadow = "$path/Data/Selected/Mauritius/Undigitised/1835_fraser_from_gleadow.jpg" => _get_categories => (;
-            abandoned=1835 => "forest",
+            # abandoned=1835 => "forest",
             native=1835 => "forest",
             cleared=1835 => (!, "forest"),
             # urban=1835 => (!, "forest"),

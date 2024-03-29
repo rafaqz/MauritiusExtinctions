@@ -1,56 +1,12 @@
 using Rasters, GLMakie, ColorSchemes, Extents
 using DBFTables
-using CairoMakie
-includet("raster_common.jl")
-mus_veg_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page33_mauritius_vegetation_colored.tif"
-reu_veg_path = "/home/raf/PhD/Mascarenes/Data/Dominique/Vegetation_Rasters/pastveg3.tif"
+# using CairoMakie
+GLMakie.activate!()
+include("landcover_compilation.jl")
 
-# Build auxiliary rasters
-# lc_predictions_paths = (
-#     mus="$outputdir/lc_predictions_mus.nc",
-#     reu="$outputdir/lc_predictions_reu.nc",
-#     rod="$outputdir/lc_predictions_rod.nc",
-# )
-# original_veg = (;
-#     mus=reorder(replace_missing(Raster(mus_veg_path), 0), lc_predictions.mus),
-#     reu=reorder(resample(replace_missing(Raster(reu_veg_path), 0); to=masks.reu), lc_predictions.reu),
-# )
-# # netcdf has the annoying center locus for time
-# lc_predictions = map(lc_predictions_paths) do path
-#     lc_predictions = RasterStack(path) |>
-#         x -> rebuild(Rasters.modify(BitArray, x); missingval=false) |>
-#         x -> Rasters.set(x, Ti => Int.(maybeshiftlocus(Start(), dims(x, Ti), )))
-# end
-# original_veg.mus
-# lc_predictions.mus
-
-# island_veg_change = map(lc_predictions[keys(original_veg)], original_veg) do p, v
-#     rebuild(UInt8.(broadcast_dims(*, p.native, v)); missingval=0)
-# end
-# p = Rasters.rplot(island_veg_change.mus[Ti=At(1700:2018)]; colormap=:viridis)
-# save("images/mus_original_veg.png", p)
-
-
-# habitat_sums = map(island_veg_change, island_habitat_names, nhabitats) do veg_change, habitat_names, nhabitat
-#     As = map(1:nhabitat) do habitat
-#         dropdims(sum(==(habitat), veg_change; dims=(X, Y)); dims=(X, Y))
-#     end
-#     cat(As...; dims=Dim{:habitat}(habitat_names))
-# end
-# k = :reu
-# k = :mus
-# cum = cumsum(habitat_sums[k]; dims=2)
-# x = lookup(habitat_sums[k], Ti)
-# fig = Figure()
-# ax = Axis(fig[1, 1])
-# for i in nhabitats[k]:-1:1
-#     y = parent(cum[habitat=i])
-#     Makie.lines!(x, y; color=:black)
-#     band!(x, fill(0, length(x)), y; label = "Label")
-# end
-# fig[1, 2] = Legend(fig, ax, habitat_names)
-
-function plot_habitats!(fig, data; colormap, nrows, ncols) 
+function plot_habitats!(fig, data; 
+    colormap, nrows, ncols, show_uncertain=true
+) 
     whites = [RGB(1), RGB(1)] 
     axs = map(axes(data.certain, Ti)) do i
         stripe = Makie.LinePattern(; 
@@ -63,24 +19,26 @@ function plot_habitats!(fig, data; colormap, nrows, ncols)
             # aspect=DataAspect(),
             autolimitaspect=1,
             title=string(lookup(data.certain, Ti)[i]),
+            titlesize=20,
         )
         tight_ticklabel_spacing!(ax)
-        uncertain = data.uncertain[Ti=i]
-        Makie.heatmap!(ax, uncertain; alpha=0.5, colormap)
-        stripemask = map(uncertain) do x
-            x > 0 ? missing : 1
+        if show_uncertain
+            uncertain = data.uncertain[Ti=i]
+            Makie.heatmap!(ax, uncertain; alpha=0.5, colormap)
+            stripemask = map(uncertain) do x
+                x > 0 ? missing : 1
+            end
+            bs = Rasters.bounds(stripemask)
+            rect = Polygon([
+                Point2f(bs[1][1], bs[2][1]), 
+                Point2f(bs[1][1], bs[2][2]), 
+                Point2f(bs[1][2], bs[2][2]), 
+                Point2f(bs[1][2], bs[2][1]), 
+                Point2f(bs[1][1], bs[2][1]), 
+            ])
+            poly!(ax, rect; color=stripe, strokewidth=0)
+            Makie.heatmap!(ax, stripemask; colormap=whites, colorrange=(0, 1))
         end
-        bs = Rasters.bounds(stripemask)
-        rect = Polygon([
-            Point2f(bs[1][1], bs[2][1]), 
-            Point2f(bs[1][1], bs[2][2]), 
-            Point2f(bs[1][2], bs[2][2]), 
-            Point2f(bs[1][2], bs[2][1]), 
-            Point2f(bs[1][1], bs[2][1]), 
-        ])
-        Makie.poly(rect)
-        poly!(ax, rect; color=stripe, strokewidth=0)
-        Makie.heatmap!(ax, stripemask; colormap=whites, colorrange=(0, 1))
         Makie.heatmap!(ax, data.certain[Ti=i]; colormap)
         hidedecorations!(ax)
         hidespines!(ax)
@@ -115,7 +73,7 @@ function plot_aggregate!(ax, data, habitat_colors)
         a = certain_agg[i] ./ npixels .+ base
         b = (certain_agg[i] .+ uncertain_agg[i]) ./ npixels .+ base
         l = parent(lookup(a, Ti))
-        lines!(ax, l, a; color)
+        lines!(ax, l, a; color, ticksize=14)
         band!(ax, l, base, a; color)
         pa = Point2f.(l, a)
         pb = Point2f.(l, b)
@@ -123,6 +81,21 @@ function plot_aggregate!(ax, data, habitat_colors)
         poly!(ax, polygon; color=stripe, strokewidth=0)#, alpha=0.5)
         base = b
     end
+end
+
+function _legend!(position, habitat_colors, habitat_names)
+    fig = position.layout.parent 
+    # Legend
+    habitat_elements = map(habitat_colors) do color
+        PolyElement(; color, strokewidth=0)
+    end
+    names = replace.(habitat_names, Ref('_' => ' '))
+    Legend(position, habitat_elements, names, "Habitat class"; 
+        titlesize=25,
+        framevisible=false,
+        labelsize=20,
+        patchsize=(40.0f0, 40.0f0)
+    )
 end
 
 certain_uncleared = map(statistics) do island
@@ -150,21 +123,18 @@ island_habitat_names = (;
 )
 nhabitats = map(length, island_habitat_names)
 
+
 # Mauritius
-fig = Figure(; size=(2000, 2400));
+fig = Figure(; size=(1700, 2000));
 data = uncleared.mus
 nrows = 5
 ncols = 4
 cmap = :tableau_20
 habitat_colors = map(x -> getproperty(ColorSchemes, cmap)[(x - 1) / 9 ], 1:nhabitats.mus) |> reverse
 # Heatmaps
-plot_habitats!(fig, data; colormap=habitat_colors, nrows, ncols) 
+plot_habitats!(fig, data; colormap=habitat_colors, nrows, ncols, show_uncertain=true) 
 # Legend
-habitat_elements = map(habitat_colors) do color
-    PolyElement(; color, strokewidth=0)
-end
-habitat_names = titlecase.(replace.(island_habitat_names.mus, Ref('_' => ' ')))
-fig[5, 4] = Legend(fig, habitat_elements, habitat_names, "Habitat classes"; framevisible=false)
+_legend!(fig[5, 4], habitat_colors, island_habitat_names.mus)
 # Area plot
 line_ax = Axis(fig[6, 1:4])
 plot_aggregate!(line_ax, data, habitat_colors)
@@ -172,28 +142,19 @@ plot_aggregate!(line_ax, data, habitat_colors)
 rowgap!(fig.layout, 5, 40)
 # Title
 fig[7, :] = Label(fig, "Mauritius Habitat Loss (striped/transparent areas uncertain)"; fontsize=30)
-display(fig)
 save("images/mauritius_habitat_loss.png", fig)
+# display(fig)
 
 # Reunion
-fig = Figure(; size=(2000, 2400));
+fig = Figure(; size=(1700, 2000));
 data = uncleared.reu
 nrows = 4
 ncols = 3
 cmap = :tableau_20
 habitat_colors = map(x -> getproperty(ColorSchemes, cmap)[(x - 1) / (nhabitats.reu - 1) ], 1:nhabitats.reu)
 # Heatmaps
-plot_habitats!(fig, data; colormap=habitat_colors, nrows, ncols);
-# Legend
-habitat_elements = map(habitat_colors) do color
-    PolyElement(; color, strokewidth=0)
-end
-habitat_names = replace.(island_habitat_names.reu, Ref('_' => ' '))
-fig[3:4, 3] = Legend(fig, habitat_elements, habitat_names, "Habitat classes"; 
-    framevisible=false,
-    labelsize=20,
-    patchsize=(30.0f0, 30.0f0)
-)
+plot_habitats!(fig, data; colormap=habitat_colors, nrows, ncols, show_uncertain=true);
+_legend!(fig[2:4, 3], habitat_colors, island_habitat_names.reu)
 # Area plot
 line_ax = Axis(fig[5, 1:3])
 plot_aggregate!(line_ax, data, habitat_colors)
@@ -201,5 +162,13 @@ plot_aggregate!(line_ax, data, habitat_colors)
 rowgap!(fig.layout, 4, 40)
 # Title
 fig[6, :] = Label(fig, "Reunion Habitat Loss (striped/transparent areas uncertain)"; fontsize=30)
-display(fig)
 save("images/reunion_habitat_loss.png", fig)
+# display(fig)
+
+p = Makie.heatmap(uncleared.mus.certain[Ti=End-2])
+Makie.heatmap!(p.axis, uncleared.mus.uncertain[Ti=End-2]; alpha=0.3)
+Makie.heatmap!(p.axis, native_veg.mus; alpha=0.7, colormap=:reds)
+
+p = Makie.heatmap(uncleared.reu.certain[Ti=End])
+Makie.heatmap!(p.axis, uncleared.reu.uncertain[Ti=End]; alph=0.5)
+Makie.heatmap!(p.axis, native_veg.reu; alpha=0.5, colormap=:reds)

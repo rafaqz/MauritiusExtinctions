@@ -29,6 +29,10 @@ layer_names = JSON3.read(ch_original_veg_json).settings.category_name
 
 #############################################################################3
 # Mauritius vegetation
+mus_native_veg_tif_path = "/home/raf/PhD/Mascarenes/Data/Generated/mus_native_veg.tif"
+reu_native_veg_tif_path = "/home/raf/PhD/Mascarenes/Data/Generated/reu_all_natives.tif"
+mus_native_veg = Raster(mus_native_veg_tif_path)
+reu_native_veg = Raster(reu_native_veg_tif_path)
 
 mus_native_veg_df = DataFrame(mus_native_veg_poly)
 mus_native_veg_df.geometry = GeoInterface.convert.(GeometryBasics.Polygon, mus_native_veg_df.geometry)

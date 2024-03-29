@@ -1,6 +1,7 @@
 include("species_tables.jl")
 include("raster_common.jl")
 using GLMakie, TerminalPager
+GLMakie.activate!()
 
 # Retreive all data from GBIF
 # using GBIF2
@@ -22,7 +23,12 @@ occ_dfs = map(endemic_species.GBIFSpecies, endemic_species.Common_name) do name,
     ocs = filter(df) do r
         lat = r.decimalLatitude
         lon = r.decimalLongitude
-        !ismissing(lon) && !ismissing(lat) && lon in 50 .. 60 && lat in -25 .. -15
+        # Not missing
+        !ismissing(lon) && !ismissing(lat) && 
+        # In the mascarenes
+        lon in 50 .. 60 && lat in -25 .. -15 &&
+        # Has more than 2 decimal places
+        !(round(lon * 100) / 100 ≈ lon || round(lat * 100) / 100 ≈ lat)
     end
     nrow(ocs) > 0 ? common => ocs : missing
 end |> skipmissing |> Dict
@@ -33,8 +39,10 @@ function plot_ocs(common, ocs)
     points = map(p -> Float64.(p), points)
     fig = Figure()
     ax = Axis(fig[1, 1]; aspect=DataAspect(), title=common)
-    p = Makie.heatmap!(ax, dems.mus)
+    Makie.heatmap!(ax, dems.mus)
+    Makie.heatmap!(ax, native_veg.mus; colormap=:reds)
     Makie.heatmap!(ax, dems.reu)
+    Makie.heatmap!(ax, native_veg.reu; colormap=:reds)
     # Makie.heatmap!(ax, dems.rod)
     s = Makie.scatter!(ax, points; 
         colormap=:thermal, 
@@ -46,9 +54,8 @@ function plot_ocs(common, ocs)
 end
 
 occ_dfs["Mauritius Olive White-eye"].year
-occ_dfs["Mauritius Olive White-eye"] |> plot_ocs
-sort(collect(keys(occ_dfs)))
-
+occ_dfs["Mascarene Free-tailed Bat"]
+sort(collect(keys(occ_dfs)))[1:20]
 
 for (common, ocs) in occ_dfs 
     ocs = filter(r -> !ismissing(r.year), ocs)
@@ -57,9 +64,8 @@ for (common, ocs) in occ_dfs
     nrow(ocs) > 0 || continue
     fig = plot_ocs(common, ocs)
     makie = display(fig) 
-    while makie.window_open[] 
-        sleep(0.1)
-    end
+    save("images/gbif/$common.png", fig)
+    # while makie.window_open[] sleep(0.1) end
 end
 
 for (common, ocs) in occ_dfs 

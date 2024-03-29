@@ -70,7 +70,18 @@ slope_stacks = map(dems) do dem
 end
 
 mus_native_veg_tif_path = "/home/raf/PhD/Mascarenes/Data/Generated/mus_native_veg.tif"
-mus_native_veg_1999 = Raster(mus_native_veg_tif_path)
+reu_native_veg_tif_path = "/home/raf/PhD/Mascarenes/Data/Generated/reu_all_natives.tif"
+native_veg = (;
+    mus=Raster(mus_native_veg_tif_path) ,
+    reu=Raster(reu_native_veg_tif_path),
+)
+
+mus_veg_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/page33_mauritius_vegetation_colored.tif"
+reu_veg_path = "/home/raf/PhD/Mascarenes/Data/Dominique/Vegetation_Rasters/pastveg3.tif"
+original_veg = (;
+    mus=reorder(replace_missing(Raster(mus_veg_path), 0), masks.mus),
+    reu=reorder(resample(replace_missing(Raster(reu_veg_path), 0); to=masks.reu), masks.reu),
+)
 
 using Rasters, Plots, ArchGDAL, Extents
 mus_rod_pop_density = Raster("/home/raf/PhD/Mascarenes/Data/Population/raster/population_mus_2018-10-01.tif"; lazy=true)
