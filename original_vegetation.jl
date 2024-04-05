@@ -91,10 +91,10 @@ function _legend!(position, habitat_colors, habitat_names)
     end
     names = replace.(habitat_names, Ref('_' => ' '))
     Legend(position, habitat_elements, names, "Habitat class"; 
-        titlesize=25,
+        titlesize=22,
         framevisible=false,
-        labelsize=20,
-        patchsize=(40.0f0, 40.0f0)
+        labelsize=16,
+        patchsize=(30.0f0, 30.0f0)
     )
 end
 
@@ -154,12 +154,12 @@ cmap = :tableau_20
 habitat_colors = map(x -> getproperty(ColorSchemes, cmap)[(x - 1) / (nhabitats.reu - 1) ], 1:nhabitats.reu)
 # Heatmaps
 plot_habitats!(fig, data; colormap=habitat_colors, nrows, ncols, show_uncertain=true);
-_legend!(fig[2:4, 3], habitat_colors, island_habitat_names.reu)
+_legend!(fig[3:4, 3], habitat_colors, island_habitat_names.reu)
 # Area plot
 line_ax = Axis(fig[5, 1:3])
 plot_aggregate!(line_ax, data, habitat_colors)
 # Pad the line plot little
-rowgap!(fig.layout, 4, 40)
+rowgap!(fig.layout, 4, 100)
 # Title
 fig[6, :] = Label(fig, "Reunion Habitat Loss (striped/transparent areas uncertain)"; fontsize=30)
 save("images/reunion_habitat_loss.png", fig)

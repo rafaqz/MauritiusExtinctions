@@ -15,7 +15,7 @@ const HOMI_CLASSES = [
 const HOMI = HOMI_CLASSES => (;
     native=2017 => ["Forest", "Shrub_vegetation"],
     cleared=2017 => ["Barren_Land", "Sugarcane", "Pasture", "Other_cropland"],
-    abandoned=2017 => ["Forest", "Shrub_vegetation", "Barren_Land", "Herbaceaous_vegetation"],
+    abandoned=2017 => ["Forest", "Shrub_vegetation", "Barren_Land"],# "Herbaceaous_vegetation"], # Herbaceaous_vegetation is too noisy
     urban=2017 => ["Continuous_urban", "Discontinuous_urban"],
     forestry=2017 => "Forest",
     water=2017 => "Water",
@@ -272,7 +272,7 @@ function define_map_files(;
         #     forestry=1960 => "National_forest_office",
         #     urban=1960 => "Habitat",
         # ),
-        # homiisland = "$path/Data/Generated/Landcover/reu_landcover.tif" => HOMI,
+        homiisland = "$path/Data/Generated/Landcover/reu_landcover.tif" => HOMI,
         # natpark = "$path/Data/Generated/NationalParks/reu.tiff" => ["national park"] => (;
         #     native=2021 => "national park"
         # )
@@ -299,12 +299,12 @@ function define_map_files(;
             cleared=1985 => ["cultivated", "grazing", "fallow_or_settled"],
             urban=1985 => "fallow_or_settled", # Unclear how large the "fallow" part is
         ),
-        # homiisland = "$path/Data/Generated/Landcover/rod_landcover.tif" => HOMI_CLASSES => (;
-        #         native=2017 => ["Forest"],
-        #         cleared=2017 => ["Barren_Land", "Pasture", "Shrub_vegetation", "Sugarcane", "Herbaceaous_vegetation", "Other_cropland"],
-        #         abandoned=2017 => ["Barren_Land", "Pasture", "Shrub_vegetation", "Forest", "Herbaceaous_vegetation"],
-        #         urban=2017 => ["Continuous_urban", "Discontinuous_urban"],
-        #     ),
+        homiisland = "$path/Data/Generated/Landcover/rod_landcover.tif" => HOMI_CLASSES => (;
+                native=2017 => ["Forest"],
+                cleared=2017 => ["Barren_Land", "Pasture", "Shrub_vegetation", "Sugarcane", "Other_cropland"],
+                abandoned=2017 => ["Barren_Land", "Pasture", "Shrub_vegetation", "Forest"],
+                urban=2017 => ["Continuous_urban", "Discontinuous_urban"],
+            ),
         rural_development_planning = "/home/raf/PhD/Mascarenes/Data/Selected/Rodrigues/cb5989en.png-06_colored.png" => _get_categories => (;
             native=2021 => ["nature_reserve", "forest", "riparian_vegetation"],
             abandoned=2021 => ["nature_reserve", "forest", "riparian_vegetation"], 
