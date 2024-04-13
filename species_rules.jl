@@ -52,13 +52,13 @@ function ExtirpationRisks{R,W}(; f, stencil, traits, pred_response, pred_suscept
 end
 
 # endemic_recouperation_rule = let recouperation_rate_aux=Aux{:recouperation_rate}()
-#     Neighbors{:endemic_presence}(Moore(1)) do data, hood, prescences, I
-#         # any(prescences) || return prescences
+#     Neighbors{:endemic_presence}(Moore(1)) do data, hood, presences, I
+#         # any(presences) || return presences
 #         recouperation_rate = DG.get(data, recouperation_rate_aux)
 #         nbr_sums = foldl(hood; init=Base.reinterpret.(UInt8, zero(first(hood)))) do x, y
 #             Base.reinterpret(UInt8, x) + Base.reinterpret(UInt8, y)
 #         end
-#         map(prescences, nbr_sums, recouperation_rate) do p, n_nbrs, rr
+#         map(presences, nbr_sums, recouperation_rate) do p, n_nbrs, rr
 #             if p
 #                 true
 #             elseif n_nbrs > 0
@@ -511,7 +511,7 @@ function def_syms(
     end
     pred_outputs = map(pred_inits, outputs_kw) do init, kw
         if isnothing(replicates)
-            trans_output = TransformedOutput(init; kw...) do f
+            trans_output = TransformedOutput(init; kw...) do f, t
                 Array(f.pred_pop)
             end
         else
@@ -544,13 +544,11 @@ function gpu_cleanup(A)
 end
 
 function generate_predator_effect!(f, x, pred_pop, pred_suscept)
-    @show typeof(pred_suscept) eltype(pred_pop)
     ThreadsX.map!(x, pred_pop) do pop
         map(f, predator_effect(pop, pred_suscept))
     end end
 
 function generate_predator_effect(f, pred_pop::Union{AbstractArray{<:Any,2},AbstractArray{<:Any,3}}, pred_suscept)
-    @show typeof(pred_suscept) eltype(pred_pop)
     xs = ThreadsX.map(pred_pop) do pop
         map(f, predator_effect(pop, pred_suscept))
     end
@@ -568,16 +566,28 @@ function _predict_timeline(endemic_ruleset::Ruleset, island, pred_response; kw..
     pred_suscept = predator_suceptibility(pred_response, aux.endemic_traits)
     (; pred_pop, pred_effect) = aux
     generate_predator_effect!(tanh, pred_effect, pred_pop, pred_suscept)
-    output = TransformedOutput(island.endemic_init; output_kw...) do f
+    output = TransformedOutput(island.endemic_init; output_kw...) do f, (i, t)
         # Take the sum of each replicates slice
-        parent(ThreadsX.map(sum, eachslice(f.endemic_presence; dims=3)))
+        presence_sums = parent(ThreadsX.map(sum, eachslice(f.endemic_presence; dims=3)))
+        range_sums = if t in lookup(island.ranges, Ti)
+            known_ranges = island.ranges[At(t)].endemic_presence
+            # Count the number of matching presence/absence in each replicate
+            map(eachslice(f.endemic_presence; dims=3)) do replicate
+                @show size(known_ranges)
+                @show size(replicate) 
+                mapreduce(.==, +, replicate, known_ranges)
+            end
+        else
+            missing
+        end
+        presence_sums, range_sums
     end
     sim!(output, endemic_ruleset; kw..., proc=CPUGPU())
     return output
 end
 
 function extinction_objective(x, p; kw...)
-    (; last_year, extant_extension, endemic_ruleset, islands, parameters, loss) = p
+    (; ranges, last_year, extant_extension, endemic_ruleset, islands, parameters, loss) = p
     # Update parameter values
     parameters[:val] = Float32.(x)
     pred_response = stripparams(parameters)
@@ -590,20 +600,16 @@ function extinction_objective(x, p; kw...)
             k = known >= last_year ? known + extant_extension : known
             loss(k, predicted)
         end
-        # q = quantile(losses, 0.9)
-        # @show q
-        # sum(losses) do l
-            # l > q ? zero(l) : l
-        # end
         return sum(losses)
     end
     @show island_losses
     return sum(island_losses)
 end
 
+
 function extinction_dates(timeline, island; last_year=2018, extant_extension=200)
     firstyear = first(island.output_kw.tspan)
-    years_present = sum(timeline) do slice
+    years_present = sum(timeline) do (slice, _)
         map(s -> s .> 0, slice)
     end
     extinction_years = map(years_present) do yp

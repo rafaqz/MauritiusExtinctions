@@ -42,7 +42,7 @@ function plot_timeline(timeline_counts, striped, npixels; show=keys(timeline_cou
         end
         hidespines!(line_axis)
         for (i, k) in enumerate(classnames)
-            if statistic == :merged
+            if statistic :merged
                 y = timeline_counts[:merged][k] ./ npixels
                 z = (timeline_counts[:merged][k] .- timeline_counts[:uncertain][k]) ./ npixels
                 Makie.band!(line_axis, x, y, z; color=batlow[i], alpha=0.4)
@@ -61,7 +61,7 @@ function plot_timeline(timeline_counts, striped, npixels; show=keys(timeline_cou
     return fig
 end
 
-timeline_counts = map(statistics) do s
+timeline_counts = map(landcover_statistics) do s
     (c, f, u, a, re, m) = s
     combined = sum(+, c; dims=(X, Y)) |> _nt_vecs
     filled = sum(+, f; dims=(X, Y)) |> _nt_vecs
@@ -69,9 +69,9 @@ timeline_counts = map(statistics) do s
     added = sum(+, a; dims=(X, Y)) |> _nt_vecs
     removed = sum(+, re; dims=(X, Y)) |> _nt_vecs
     merged = sum(+, m; dims=(X, Y)) |> _nt_vecs
-    (; combined, filled, uncertain, added, removed, merged)
+    (; combined, filled, added, removed, uncertain, merged)
 end
-striped_statistics = stripe_raster(statistics, states)
+striped_statistics = stripe_raster(landcover_statistics, states)
 classnames = keys(timeline_counts.mus.combined)
 npixels = map(count, masks)
 
@@ -82,7 +82,7 @@ fig = plot_timeline(timeline_counts.rod, striped_statistics.rod, npixels.rod; sh
 fig = plot_timeline(timeline_counts.reu, striped_statistics.reu, npixels.reu; show=(:merged,))
 fig = plot_timeline(timeline_counts.mus, striped_statistics.mus, npixels.mus; show=(:merged,))
 
-# save("images/mus_map_timeline.png", fig)
+save("images/mus_map_timeline.png", fig)
 # display(fig)
 
 

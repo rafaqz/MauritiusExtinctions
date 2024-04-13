@@ -1,5 +1,6 @@
 include("species_tables.jl")
 include("raster_common.jl")
+using TableView
 using GLMakie, TerminalPager
 GLMakie.activate!()
 
@@ -51,6 +52,13 @@ function plot_ocs(common, ocs)
     )
     Colorbar(fig[1, 2], s)
     return fig
+end
+
+sp = "Grey Tomb Bat"
+sort(occ_dfs[sp], :year) |> pager
+
+for (k, df) in occ_dfs
+    @show any(!=("PRESENT"), df.occurrenceStatus)
 end
 
 occ_dfs["Mauritius Olive White-eye"].year

@@ -21,8 +21,8 @@ using Rasters.LookupArrays
 include("landcover_compilation.jl")
 
 cat_counts = let states=states
-    map(human_pop_timelines, compiled) do human_pop, history
-        map(slice(history.timeline[Ti=1600..2017], Ti)) do slice
+    map(human_pop_timelines, landcover_statistics) do human_pop, lc
+        map(slice(lc.merged, Ti)) do slice
             total_counts = zeros(Int, size(first(slice)))
             known_counts = zeros(Int, size(first(slice)))
             for categories in slice
@@ -32,30 +32,31 @@ cat_counts = let states=states
                 end
             end
             vals = ntuple(length(states)) do i
-                known = known_counts[i]
-                total = total_counts[i]
+                low = known_counts[i]
+                high = total_counts[i]
                 year = first(refdims(slice, Ti))
                 pop = human_pop[Near(year)]
-                (; total, known, ratio=known/total, meancount=(known + total) / 2, year, pop)
+                (; low, high, mean=mean((low, high)), ratio=low/high, year, pop)
             end
-            nv = NamedVector{propertynames(states)}(vals)
+            NamedVector{propertynames(states)}(vals)
         end
     end
 end
 
-high_certainty = map(cat_counts) do cc
+ratios = map(cat_counts) do cc
     map(category_names) do k
         vals = map(cc) do val
             val[k]
         end
-        filter(v -> v.ratio > 0.3, vals)
+        filter(v -> v.ratio > 0.0, vals)
     end
 end
+ratios.mus.abandoned
 
 # Cleared land is used for urbanisation by 1992, so don't use it in the model
 lc_targets = map(high_certainty[(:mus,)]) do hc
-    cleared_model = lm(@formula(meancount ~ pop^2 + pop), DataFrame(hc.cleared))
-    urban_model = lm(@formula(meancount ~ pop^2), DataFrame(hc.urban))
+    cleared_model = lm(@formula(mean ~ pop^2 + pop), DataFrame(hc.cleared))
+    urban_model = lm(@formula(mean ~ pop^2), DataFrame(hc.urban))
     ti = dims(human_pop_timelines.mus, Ti)
     pops = map(pop -> (; pop), human_pop_timelines.mus)
     cleared_pred = DimArray(predict(cleared_model, parent(pops)), ti)
@@ -205,7 +206,7 @@ output = MakieOutput(getproperty(init_states, k);
 ) do (; layout, frame, time)
     axis1 = Axis(layout[1, 1])
     axis2 = Axis(layout[1, 2])
-    axis3 = Axis(layout[1, 3])
+    axis3 = Axis(layout[1, 3])cat_counts
     linkaxes!(axis1, axis2)
     landcover = Observable(frame[].landcover)
     native_fraction = Observable(frame[].native_fraction)

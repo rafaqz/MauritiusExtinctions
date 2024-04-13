@@ -1,5 +1,3 @@
-using LandscapeChange
-
 # Rodrigues 50% cleared 1874 , Lost land page 151
 
 # From woods and forests in Mauritius, p 40:40
@@ -9,21 +7,7 @@ using LandscapeChange
 include("travel_cost.jl")
 include("tabular_data.jl")
 include("map_file_functions.jl")
-
-states = NamedVector(lc_categories)
-
-const P = RealParam
-const NV = NamedVector
-
-# to category from category
-transitions = NV(
-    native    = NV(native=true,  cleared=false, abandoned=false, urban=false, forestry=false,  water=false),
-    cleared   = NV(native=true,  cleared=true,  abandoned=true,  urban=false, forestry=false,  water=false),
-    abandoned = NV(native=false, cleared=true,  abandoned=true,  urban=false,  forestry=false,  water=false),
-    urban     = NV(native=false,  cleared=true,  abandoned=true,  urban=true,  forestry=false,  water=false),
-    forestry  = NV(native=false,  cleared=true,  abandoned=true,  urban=false, forestry=true,   water=false),
-    water     = NV(native=false,  cleared=true,  abandoned=true,  urban=true,  forestry=true,  water=true),
-)
+include("landcover_shared.jl")
 
 include("map_file_list.jl")
 compiled = compile_timeline(define_map_files(), masks, keys(lc_categories))
@@ -73,6 +57,6 @@ uncertain = map(merged) do final
     end
 end
 mixed_stats = (; combined, filled, uncertain, added, removed, merged)
-statistics = map(mixed_stats...) do args...
+landcover_statistics = map(mixed_stats...) do args...
     NamedTuple{keys(mixed_stats)}(args)
 end

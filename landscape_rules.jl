@@ -2,7 +2,7 @@ pn(x, d) = Distributions.pdf(x, d) ./ Distributions.pdf(x, 0)
 
 # The amount of influence neighbors have
 b = (; bounds=(-2.0, 2.0))
-transitions = let empty = (native=0.0, cleared=0.0, abandoned=0.0, urban=0.0, forestry=0.0, water=0.0,),
+transition_probability = let empty = (native=0.0, cleared=0.0, abandoned=0.0, urban=0.0, forestry=0.0, water=0.0,),
                   k = Exponential(P(2.0; bounds=(0.00001, 5.0), label="kernel")),
                   cn = P(0.1; b..., label="cleared from native"),
                   cc = P(1.0; b..., label="cleared from cleared"),
@@ -41,7 +41,6 @@ transitions = let empty = (native=0.0, cleared=0.0, abandoned=0.0, urban=0.0, fo
         water = empty,
     )
 end
-map(==(keys(first(transitions))) ∘ keys, transitions)
 
 # The logic of sequential category change - can a transition happen at all
 # Human Population and species introduction events
@@ -123,11 +122,10 @@ precursors = (
 
 staterule = BottomUp{:landcover}(;
     stencil=Moore(2),
-    states,
+    states ,
     inertia=P(1.0),
-    transitions,
-    logic=(; direct=logic, indirect=LandscapeChange.indirect_transitions(logic)),
-    pressure,
+    logic=LandscapeChange.all_transitions(transitions),
+    transitions=transition_probability,
     suitability=map(_ -> 1, states), #Aux{:suitability}(),
     history=Aux{:history}(),
     fixed=false,
@@ -158,4 +156,3 @@ degradationrule = let states=states,
 end
 
 ruleset = Ruleset(staterule, eventrule; proc=CPUGPU());
-

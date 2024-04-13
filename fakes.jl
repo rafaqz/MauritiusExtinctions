@@ -70,22 +70,36 @@ island_extinction_dates = isdefined(Main, :island_extinction_dates) ? island_ext
 );
 (; output, endemic_output, pred_output, init, output_kw) = islands[k];
 
-
 # Calculate extinction dates for these parameters
 
-parameters = Model(predator_response_params(pred_keys))
 # Assign random parameter values 0.0 .. 0.25, with low values more common
-randparams!(parameters) = parameters[:val] = Float32.((rand(length(parameters[:val])) ./ 5) .^ 2)
+parameters = Model(predator_response_params(pred_keys))
+randparams!(parameters) = parameters[:val] = Float32.((rand(length(parameters[:val])) ./ 5.5) .^ 2)
 randparams!(parameters)
 pred_response = parent(parameters)
-# We don't know the dates yet
 x0 = collect(parameters[:val])
 lb = map(x0 -> zero(x0), x0)
 ub = map(x0 -> oneunit(x0), x0)
 
+# Run simulations to get extinction dates and 1970 ranges
 p = (; endemic_ruleset, islands, last_year, extant_extension, loss=HuberLoss(), parameters);
-endemics = extinction_forward(x0, p)
-island_extinction_dates = map(e -> e.dates.mean, endemics)
+island_range_outputs = map(islands) do island
+    output = ArrayOutput(island.init; island.output_kw..., replicates=nothing)
+    sim!(output, endemic_ruleset)
+    return output[At([1970])]
+end
+islands = map(islands, island_range_outputs) do island, ranges
+    merge(island, (; ranges))
+end;
+endemics = extinction_forward(x0, p);
+island_extinction_dates = map(e -> e.dates.mean, endemics);
+
+sort(filter(propertynames(first(island_range_outputs.mus.endemic_presence)) .=> sum(island_range_outputs.mus.endemic_presence)) do x
+    x[2] > 0
+end; by=last)
+Makie.plot(getproperty.(islands[k].init.endemic_presence, :sp93))
+Makie.plot(getproperty.(island_range_outputs.mus.endemic_presence, :sp49))
+
 # tspan = islands.mus.output_kw.tspan
 # species = collect(propertynames(first(endemics.mus.dates.years)))
 # m = DimMatrix(reduce(hcat, endemics.mus.dates.years), (; species, replicates=1:nreplicates))
@@ -99,12 +113,14 @@ island_extinction_dates = map(e -> e.dates.mean, endemics)
     pred_keys, pred_response, EndemicNVs, # Other fake bits
     island_extinction_dates, island_mass_response = map(_ -> nothing, EndemicNVs),
 );
+
 # New random parameters
 x_original = collect(p.parameters[:val])
 randparams!(p.parameters)
 x0 = collect(p.parameters[:val])
 p = (; endemic_ruleset, islands, last_year, extant_extension, loss=HuberLoss(), parameters);
 @time extinction_objective(x0, p)
+@time range_objective(x0, p)
 ub = fill(1.0, 35)
 lb = fill(0.0, 35)
 x0 = rand(35)
@@ -166,7 +182,6 @@ include("species_rules.jl")
 (; output, endemic_output, pred_output, init, output_kw) = islands[k];
 k = :mus
 mk_endemic(init, endemic_ruleset; landcover=lc_all[k], pred_pop=pred_pops_aux[k], tspan, ncolumns=5, islands[k].output_kw...)
- 
 
 using Optim
 

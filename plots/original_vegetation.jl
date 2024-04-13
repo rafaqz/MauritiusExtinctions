@@ -15,7 +15,7 @@ function plot_habitats!(fig, data;
         )
         n = length(axes(data.certain, Ti))
         r = rem(n, i)
-        ax = Axis(fig[reverse(fldmod1(i, nrows))...]; 
+        ax = Axis(fig[fldmod1(i, ncols)...]; 
             # aspect=DataAspect(),
             autolimitaspect=1,
             title=string(lookup(data.certain, Ti)[i]),
@@ -93,17 +93,17 @@ function _legend!(position, habitat_colors, habitat_names)
     Legend(position, habitat_elements, names, "Habitat class"; 
         titlesize=22,
         framevisible=false,
-        labelsize=16,
+        labelsize=18,
         patchsize=(30.0f0, 30.0f0)
     )
 end
 
-certain_uncleared = map(statistics) do island
+certain_uncleared = map(landcover_statistics) do island
     map(island.merged) do xs
         count(xs) == 1 && xs.native
     end
 end
-uncertain_uncleared = map(statistics) do island
+uncertain_uncleared = map(landcover_statistics) do island
     map(island.merged) do xs
         count(xs) > 1 && xs.native
     end
@@ -125,45 +125,51 @@ nhabitats = map(length, island_habitat_names)
 
 
 # Mauritius
-fig = Figure(; size=(1700, 2000));
+# fig = Figure(; size=(1700, 2000));
+# nrows = 5
+# ncols = 4
+fig = Figure(; size=(2400, 1700));
+nrows = 3
+ncols = 6
 data = uncleared.mus
-nrows = 5
-ncols = 4
 cmap = :tableau_20
 habitat_colors = map(x -> getproperty(ColorSchemes, cmap)[(x - 1) / 9 ], 1:nhabitats.mus) |> reverse
 # Heatmaps
 plot_habitats!(fig, data; colormap=habitat_colors, nrows, ncols, show_uncertain=true) 
 # Legend
-_legend!(fig[5, 4], habitat_colors, island_habitat_names.mus)
+_legend!(fig[4, 6], habitat_colors, island_habitat_names.mus)
 # Area plot
-line_ax = Axis(fig[6, 1:4])
+line_ax = Axis(fig[4, 1:5])
 plot_aggregate!(line_ax, data, habitat_colors)
 # Pad the line plot little
-rowgap!(fig.layout, 5, 40)
+# rowgap!(fig.layout, 5, 40)
 # Title
-fig[7, :] = Label(fig, "Mauritius Habitat Loss (striped/transparent areas uncertain)"; fontsize=30)
+fig[5, :] = Label(fig, "Mauritius Habitat Loss (striped/transparent areas uncertain)"; fontsize=30)
 save("images/mauritius_habitat_loss.png", fig)
-# display(fig)
+display(fig)
 
 # Reunion
-fig = Figure(; size=(1700, 2000));
+# fig = Figure(; size=(1700, 2000));
+# nrows = 4
+# ncols = 3
+fig = Figure(; size=(2400, 1700));
+nrows = 2
+ncols = 5
 data = uncleared.reu
-nrows = 4
-ncols = 3
 cmap = :tableau_20
 habitat_colors = map(x -> getproperty(ColorSchemes, cmap)[(x - 1) / (nhabitats.reu - 1) ], 1:nhabitats.reu)
 # Heatmaps
 plot_habitats!(fig, data; colormap=habitat_colors, nrows, ncols, show_uncertain=true);
-_legend!(fig[3:4, 3], habitat_colors, island_habitat_names.reu)
+_legend!(fig[1:3, 6], habitat_colors, island_habitat_names.reu)
 # Area plot
-line_ax = Axis(fig[5, 1:3])
+line_ax = Axis(fig[3, 1:5])
 plot_aggregate!(line_ax, data, habitat_colors)
 # Pad the line plot little
-rowgap!(fig.layout, 4, 100)
+# rowgap!(fig.layout, 4, 100)
 # Title
-fig[6, :] = Label(fig, "Reunion Habitat Loss (striped/transparent areas uncertain)"; fontsize=30)
+fig[4, :] = Label(fig, "Reunion Habitat Loss (striped/transparent areas uncertain)"; fontsize=30)
 save("images/reunion_habitat_loss.png", fig)
-# display(fig)
+display(fig)
 
 p = Makie.heatmap(uncleared.mus.certain[Ti=End-2])
 Makie.heatmap!(p.axis, uncleared.mus.uncertain[Ti=End-2]; alpha=0.3)
