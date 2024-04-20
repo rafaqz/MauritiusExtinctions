@@ -557,10 +557,10 @@ end
 
 function predict_timeline(endemic_ruleset::Ruleset, islands, pred_response; kw...)
     map(islands) do island
-        _predict_timeline(endemic_ruleset, island, pred_response)
+        _predict_timeline(endemic_ruleset, island, pred_response; kw...)
     end
 end
-function _predict_timeline(endemic_ruleset::Ruleset, island, pred_response; kw...)
+function _predict_timeline(endemic_ruleset::Ruleset, island, pred_response; range_times, kw...)
     output_kw = island.output_kw
     aux = output_kw.aux
     pred_suscept = predator_suceptibility(pred_response, aux.endemic_traits)
@@ -568,46 +568,89 @@ function _predict_timeline(endemic_ruleset::Ruleset, island, pred_response; kw..
     generate_predator_effect!(tanh, pred_effect, pred_pop, pred_suscept)
     output = TransformedOutput(island.endemic_init; output_kw...) do f, (i, t)
         # Take the sum of each replicates slice
-        presence_sums = parent(ThreadsX.map(sum, eachslice(f.endemic_presence; dims=3)))
-        range_sums = if t in lookup(island.ranges, Ti)
-            known_ranges = island.ranges[At(t)].endemic_presence
-            # Count the number of matching presence/absence in each replicate
-            map(eachslice(f.endemic_presence; dims=3)) do replicate
-                @show size(known_ranges)
-                @show size(replicate) 
-                mapreduce(.==, +, replicate, known_ranges)
-            end
+        replicates = eachslice(f.endemic_presence; dims=3)
+        presence_sums = parent(ThreadsX.map(sum, replicates))
+        ranges = if t in range_times
+            copy(f.endemic_presence)
         else
             missing
         end
-        presence_sums, range_sums
+        (; presence_sums, ranges)
     end
     sim!(output, endemic_ruleset; kw..., proc=CPUGPU())
     return output
 end
 
 function extinction_objective(x, p; kw...)
-    (; ranges, last_year, extant_extension, endemic_ruleset, islands, parameters, loss) = p
+    (; last_year, extant_extension, endemic_ruleset, islands, parameters, loss, range_times, island_ranges, loss_history, plot_obs, params_obs, loss_obs) = p
     # Update parameter values
     parameters[:val] = Float32.(x)
     pred_response = stripparams(parameters)
     # Run the simulations
-    island_timelines = predict_timeline(endemic_ruleset, islands, pred_response; kw...)
+    island_timelines = predict_timeline(endemic_ruleset, islands, pred_response; range_times, kw...)
     # Calculate lossq
-    island_losses = map(island_timelines, islands) do timeline, island
-        dates = extinction_dates(timeline, island; last_year, extant_extension)
-        losses = map(island.extinction_dates, dates.mean) do known, predicted
+    params_obs[] .= x
+    notify(params_obs)
+    island_losses = map(island_timelines, island_ranges, islands, plot_obs) do timeline, ranges, island, obs
+        dates = extinction_dates(timeline, island, obs; last_year, extant_extension)
+        range_loss = sum_extinction_ranges(timeline, ranges, obs) |> sum
+        date_loss = map(island.extinction_dates, dates.mean) do known, predicted
             k = known >= last_year ? known + extant_extension : known
             loss(k, predicted)
-        end
-        return sum(losses)
+        end |> sum
+        (; date_loss, range_loss)
     end
-    @show island_losses
-    return sum(island_losses)
+    push!(loss_history, island_losses)
+    scaling = if length(loss_history) > 5
+        # date_mean = mean(loss_history) do slice
+        #     sum(first, slice)
+        # end
+        # range_mean = mean(loss_history) do slice
+        #     sum(last, slice)
+        # end
+        date_std = map(loss_history) do slice
+            sum(first, slice)
+        end |> std
+        range_std = map(loss_history) do slice
+            sum(last, slice)
+        end |> std
+        @show date_std range_std
+        date_std / range_std
+    else
+        1.0
+    end
+    loss =  sum(island_losses) do l
+        # Just add losses. its not perfect but its stable
+        # And these objectives are highly correlated, not opposing
+        l.date_loss# + l.range_loss
+    end
+    loss_obs[] = string("loss: ", loss)
+    return loss
 end
 
+function sum_extinction_ranges(timeline, ranges, obs=nothing)
+    mapreduce(+, lookup(ranges, Ti)) do t
+        known = ranges[At(t)].endemic_presence
+        predicted = timeline[At(t)].ranges
+        replicates = eachslice(predicted; dims=3)
+        if obs isa NamedTuple
+            div = obs.diversity_obs
+            div[] .= mean(sum, predicted; dims=3)
+            div[] .= (x -> x == 0.0 ? NaN : x).(div[])
+            notify(div)
+        end
+        # Count the number of matching presence/absence in each replicate
+        ntotal = length(islands.mus.aux.mask)
+        @show size(replicates[1]) size(known)
+        ThreadsX.map(replicates) do predicted
+            ntotal .- mapreduce(.!=, +, predicted, known)
+        end |> mean
+    end |> sum
+end
 
-function extinction_dates(timeline, island; last_year=2018, extant_extension=200)
+function extinction_dates(timeline, island, obs=nothing; 
+    last_year=2018, extant_extension=200
+)
     firstyear = first(island.output_kw.tspan)
     years_present = sum(timeline) do (slice, _)
         map(s -> s .> 0, slice)
@@ -619,22 +662,28 @@ function extinction_dates(timeline, island; last_year=2018, extant_extension=200
             y1 >= last_year ? y1 + extant_extension : y1
         end
     end
-    return (years=extinction_years, mean=mean(extinction_years), std=std(extinction_years))
+    ext_mean = mean(extinction_years)
+    ext_std = std(extinction_years)
+    if obs isa NamedTuple
+        dates = obs.dates_obs
+        dates[] .= ext_mean
+        notify(dates)
+    end
+    return (years=extinction_years, mean=ext_mean, std=ext_std)
 end
 
 function extinction_forward(x, p; kw...)
-    (; endemic_ruleset, islands, parameters, loss) = p
+    (; endemic_ruleset, islands, parameters, loss, range_times) = p
     # Update
     parameters[:val] = Float32.(x)
     pred_response = stripparams(parameters)
-    timelines = predict_timeline(endemic_ruleset, islands, pred_response; kw...)
+    timelines = predict_timeline(endemic_ruleset, islands, pred_response; range_times, kw...)
     dates = map(extinction_dates, timelines, islands)
     return map((dates, timelines) -> (; dates, timelines), dates, timelines)
 end
 
 
 function endemic_traits(tables::NamedTuple, NVs)
-    @show keys(tables) map(nrow, tables) NVs
     map(tables, NVs) do table, NV
         endemic_traits(table, NV)
     end

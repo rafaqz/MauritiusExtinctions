@@ -1,16 +1,10 @@
-include("species_common.jl")
-
 using LossFunctions
 using Optimization
 using OptimizationOptimJL
 using ThreadsX
 
-# Load predator data
-
-f = jldopen("sym_setup.jld2", "r")
-pred_pops_aux = f["pred_pops_aux"];
-pred_response = f["pred_response"];
-auxs = f["auxs"];
+include("species_common.jl")
+include("species_rules.jl")
 
 # Generate fakes
 
@@ -18,8 +12,14 @@ function generate_fakes(island_keys, nspecies, nislandcounts; extant_extension=2
     fake_keys = Symbol.(Ref("sp"), 1:nspecies)
     n = length(fake_keys)
     Group = rand(["mammal", "bird", "reptile"], n)
-    Ground_nesting = rand(Bool, n)
-    Flight_capacity = rand(Bool, n)
+    # Mammals don't nest
+    Ground_nesting = map(Group) do g
+        g == "mammal" ? false : rand(Bool)
+    end
+    # Reptiles don't fly
+    Flight_capacity = map(Group) do g
+        g == "reptile" ? false : rand(Bool)
+    end
     fake_table = DataFrame(; Keys=fake_keys, Group, Ground_nesting, Flight_capacity) 
 
     no_replace_keys = copy(fake_keys)
@@ -52,15 +52,31 @@ function generate_fakes(island_keys, nspecies, nislandcounts; extant_extension=2
     end
     (; fake_keys, island_fake_species, island_fake_tables, EndemicNVs)
 end
-
 (; fake_keys, island_fake_species, island_fake_tables, EndemicNVs) = generate_fakes(island_keys, nspecies, nislandcounts; extant_extension)
+island_fake_tables.mus
 
 # Define the response parameters
-pred_keys = (:cat, :black_rat, :norway_rat, :mouse, :pig, :wolf_snake, :macaque)
-
+# pred_keys = (:cat, :black_rat, :norway_rat, :mouse, :pig, :wolf_snake, :macaque)
+pred_keys = (:cat, :black_rat, :norway_rat, :pig, :wolf_snake)
+range_times = [1970]
 k = :mus
-include("species_rules.jl")
 nreplicates = 25
+
+# Load predator data
+f = jldopen("sym_setup.jld2", "r")
+auxs = f["auxs"];
+pred_pops_aux = map(f["pred_pops_aux"]) do pp
+    map(p -> p[pred_keys], pp)
+end;
+
+randparams!(parameters) = parameters[:val] = Float32.((rand(length(parameters[:val])) ./ 5.0) .^ 2)
+
+# Assign random parameter values 0.0 .. 0.25, with low values more common
+parameters = Model(predator_response_params(pred_keys))
+randparams!(parameters)
+pred_response = parent(parameters)
+x0 = collect(parameters[:val])
+
 island_extinction_dates = isdefined(Main, :island_extinction_dates) ? island_extinction_dates : map(_ -> nothing, EndemicNVs)
 (isnothing(pred_pops_aux) && error()); (; rules, endemic_ruleset, islands) = def_syms(
     pred_df, introductions_df, island_fake_tables, auxs, aggfactor;
@@ -70,43 +86,39 @@ island_extinction_dates = isdefined(Main, :island_extinction_dates) ? island_ext
 );
 (; output, endemic_output, pred_output, init, output_kw) = islands[k];
 
-# Calculate extinction dates for these parameters
-
-# Assign random parameter values 0.0 .. 0.25, with low values more common
-parameters = Model(predator_response_params(pred_keys))
-randparams!(parameters) = parameters[:val] = Float32.((rand(length(parameters[:val])) ./ 5.5) .^ 2)
-randparams!(parameters)
-pred_response = parent(parameters)
-x0 = collect(parameters[:val])
-lb = map(x0 -> zero(x0), x0)
-ub = map(x0 -> oneunit(x0), x0)
-
-# Run simulations to get extinction dates and 1970 ranges
-p = (; endemic_ruleset, islands, last_year, extant_extension, loss=HuberLoss(), parameters);
-island_range_outputs = map(islands) do island
+# Calculate extinction ranges for these parameters
+island_ranges = map(islands) do island
     output = ArrayOutput(island.init; island.output_kw..., replicates=nothing)
     sim!(output, endemic_ruleset)
     return output[At([1970])]
-end
-islands = map(islands, island_range_outputs) do island, ranges
-    merge(island, (; ranges))
 end;
+# rngs = island_ranges.mus[1].endemic_presence;
+# map(propertynames(rngs[1])) do pn
+#     pn => getproperty.(rngs, (pn,)) |> count
+# end |> x -> sum(a -> last(a) > 0, x) => sum(last, x)  
+
+# Calculate extinction dates for these parameters
+loss_history = typeof(map(x -> (; date_loss=0.0, range_loss=0.0), island_ranges))[]
+p = (; endemic_ruleset, islands, last_year, extant_extension, loss=HuberLoss(), parameters, range_times, loss_history);
 endemics = extinction_forward(x0, p);
 island_extinction_dates = map(e -> e.dates.mean, endemics);
 
-sort(filter(propertynames(first(island_range_outputs.mus.endemic_presence)) .=> sum(island_range_outputs.mus.endemic_presence)) do x
-    x[2] > 0
-end; by=last)
-Makie.plot(getproperty.(islands[k].init.endemic_presence, :sp93))
-Makie.plot(getproperty.(island_range_outputs.mus.endemic_presence, :sp49))
-
-# tspan = islands.mus.output_kw.tspan
-# species = collect(propertynames(first(endemics.mus.dates.years)))
-# m = DimMatrix(reduce(hcat, endemics.mus.dates.years), (; species, replicates=1:nreplicates))
+# Calculate extinction ranges for these parameters
+(isnothing(pred_pops_aux) && error()); (; rules, endemic_ruleset, islands) = def_syms(
+    pred_df, introductions_df, island_fake_tables, auxs, aggfactor;
+    replicates=nreplicates, pred_pops_aux, last_year, extant_extension,
+    pred_keys, pred_response, EndemicNVs, # Other fake bits
+    island_extinction_dates, island_mass_response = map(_ -> nothing, EndemicNVs),
+);
+p = (; endemic_ruleset, islands, last_year, extant_extension, loss=HuberLoss(), parameters, range_times, loss_history, island_ranges);
+island_ranges = map(islands) do island
+    output = ArrayOutput(island.init; island.output_kw..., replicates=nothing)
+    sim!(output, endemic_ruleset)
+    return output[At([1970])]
+end;
 
 
 # Optimization 
-
 (isnothing(pred_pops_aux) && error()); (; rules, endemic_ruleset, islands) = def_syms(
     pred_df, introductions_df, island_fake_tables, auxs, aggfactor;
     replicates=nreplicates, pred_pops_aux, last_year, extant_extension,
@@ -114,18 +126,58 @@ Makie.plot(getproperty.(island_range_outputs.mus.endemic_presence, :sp49))
     island_extinction_dates, island_mass_response = map(_ -> nothing, EndemicNVs),
 );
 
-# New random parameters
+# Save the original parameters
 x_original = collect(p.parameters[:val])
+# p.parameters[:val] = x_original
+
+# Plot the know ranges and make observables for predicted ranges
+fig = Makie.Figure()
+plot_obs = map(enumerate(island_ranges), island_extinction_dates) do (i, ranges), dates
+    ax = Axis(fig[1, i]; ylabel="Target")
+    obs_ax = Axis(fig[2, i]; ylabel="Predicted")
+    dates_ax = Axis(fig[3, i]; ylabel="Extinction year", xzoomlock=true)
+    dates = collect(dates)
+    dates_obs = Observable(dates)
+    endemics = ranges[1].endemic_presence
+    diversity = Float64.(sum.(endemics))
+    diversity_obs = Observable(diversity)
+    colorrange = 0, length(first(endemics))
+    image!(ax, diversity; colormap=:viridis, interpolate=false, colorrange)
+    image!(obs_ax, diversity_obs; colormap=:viridis, interpolate=false, colorrange)
+    bp1 = Makie.barplot!(dates_ax, dates)
+    bp2 = Makie.barplot!(dates_ax, dates_obs)
+    Makie.ylims!(dates_ax; low=1500, high=2200)
+    return (; diversity_obs, dates_obs)
+end |> NamedTuple{keys(islands)}
+loss_obs = Observable("loss")
+params_obs = Observable(collect(p.parameters[:val]))
+params_ax = Axis(fig[4, 1:3];
+    xticks=axes(collect(p.parameters[:val]), 1),
+    xtickformat=I -> map(string, collect(p.parameters[:label])[map(Int, I)]),
+    xticklabelrotation=45.0,
+    xlabel=loss_obs,
+    ylabel="Parameter val",
+    xzoomlock=true,
+)
+Makie.barplot!(params_ax, x_original)
+Makie.barplot!(params_ax, params_obs)
+
+
+# Define new random parameters
 randparams!(p.parameters)
 x0 = collect(p.parameters[:val])
-p = (; endemic_ruleset, islands, last_year, extant_extension, loss=HuberLoss(), parameters);
-@time extinction_objective(x0, p)
-@time range_objective(x0, p)
-ub = fill(1.0, 35)
-lb = fill(0.0, 35)
-x0 = rand(35)
+lb = map(x0 -> zero(x0), x0)
+ub = map(x0 -> 0.05oneunit(x0), x0)
+extinction_objective(x0, p);
+# Burn in std
+p = (; endemic_ruleset, islands, last_year, extant_extension, loss=HuberLoss(), parameters, range_times, loss_history, island_ranges, plot_obs, params_obs, loss_obs);
 prob = OptimizationProblem(extinction_objective, x0, p; lb, ub)
-@time sol = solve(prob, NelderMead())
+t = @task solve(prob, SAMIN())
+schedule(t)
+# Kill
+# ex = InterruptException()
+# Base.throwto(t, ex)
+
 
 using Pkg; Pkg.status(; mode = PKGMODE_MANIFEST)
 
@@ -183,8 +235,8 @@ include("species_rules.jl")
 k = :mus
 mk_endemic(init, endemic_ruleset; landcover=lc_all[k], pred_pop=pred_pops_aux[k], tspan, ncolumns=5, islands[k].output_kw...)
 
-using Optim
 
+# MWE of Optimization bug
 rosenbrock(x, p) = (p[1] - x[1])^2 + p[2] * (x[2] - x[1]^2)^2
 x0 = zeros(2)
 lb = fill(-1.0, 2)
@@ -192,5 +244,5 @@ ub = fill(200.0, 2)
 _p = [1.0, 100.0]
 
 l1 = rosenbrock(x0, _p)
-prob = OptimizationProblem(rosenbrock, x0, _p; lb, ub)
+prob = OptimizationProblem(OptimizationFunction(rosenbrock, SciMLBase.NoAD()), x0, _p; lb, ub)
 solve(prob, NelderMead())

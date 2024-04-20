@@ -56,9 +56,12 @@ img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/Carte de 
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/Carte de l'Ile de la Réunion... par L. Maillard 1852 - gallica_cropped.png"
 lineless = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/Carte de l'Ile de la Réunion... par L. Maillard 1852 - gallica_cropped_lineless.png"
 img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Reunion/Undigitised/Carte de l'Ile de la Réunion... par L. Maillard 1852 - gallica_cropped_lineless.png"
-run(`gimp $img_path`)
-
-img_path = ""
+# Birds
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/Studies_of_Mascarine_birds/8.png"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/Studies_of_Mascarine_birds/7.png"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/Studies_of_Mascarine_birds/72.png"
+img_path = "/home/raf/PhD/Mascarenes/Data/Selected/Mauritius/Undigitised/Studies_of_Mascarine_birds/44.pdf"
+# run(`gimp $img_path`)
 
 img = load_image(img_path)
 json_path = splitext(img_path)[1] * ".json"
