@@ -4,7 +4,7 @@ Makie.set_theme!(theme_light())
 
 const COLORMAPS = [:magma, :viridis, :cividis, :inferno, :delta, :seaborn_icefire_gradient, :seaborn_rocket_gradient, :hot]
 
-function mk(init, ruleset; maxpops=zero(eltype(init.pred_pop)), landcover, tspan, kw...)
+function mk(init, ruleset; maxpops=zero(eltype(init.pred_pop)), landcover=nothing, tspan, kw...)
     MakieOutput(init;
         kw...,
         tspan,
@@ -15,14 +15,16 @@ function mk(init, ruleset; maxpops=zero(eltype(init.pred_pop)), landcover, tspan
     ) do (; layout, frame, time)
 
         colorrange_obs = map(x -> Observable((zero(x), oneunit(x))), maxpops)
-        # Landcover
-        lc = lift(time) do i
-            replace_missing(landcover[Ti(Near(tspan[i]))], NaN32)
-        end
         ax_lc = Axis(layout[1, 1]; title="Landcover")
-        # hidexdecorations!(ax_lc; grid=false)
-        # hideydecorations!(ax_lc; grid=false)
-        Makie.image!(ax_lc, lc; colormap=:batlow, colorrange=(0, 6), interpolate=false)
+        if !isnothing(landcover)
+            # Landcover
+            lc = lift(time) do i
+                replace_missing(landcover[Ti(Near(tspan[i]))], NaN32)
+            end
+            # hidexdecorations!(ax_lc; grid=false)
+            # hideydecorations!(ax_lc; grid=false)
+            Makie.image!(ax_lc, lc; colormap=:batlow, colorrange=(0, 6), interpolate=false)
+        end
 
         # Predators
         pred_keys = propertynames(frame[].pred_pop[1])
@@ -91,7 +93,7 @@ function mk(init, ruleset; maxpops=zero(eltype(init.pred_pop)), landcover, tspan
     end
 end
 
-function mk_pred(init, ruleset; maxpops=zero(eltype(init.pred_pop)), landcover, tspan, kw...)
+function mk_pred(init, ruleset; maxpops=zero(eltype(init.pred_pop)), landcover=nothing, tspan, kw...)
     MakieOutput(init;
         kw...,
         tspan,
@@ -103,13 +105,15 @@ function mk_pred(init, ruleset; maxpops=zero(eltype(init.pred_pop)), landcover, 
 
         colorrange_obs = map(x -> Observable((zero(x), oneunit(x))), maxpops)
         # Landcover
-        lc = lift(time) do i
-            replace_missing(landcover[Ti(Near(tspan[i]))], NaN32)
-        end
         ax_lc = Axis(layout[1, 1]; title="Landcover")
-        hidexdecorations!(ax_lc; grid=false)
-        hideydecorations!(ax_lc; grid=false)
-        Makie.image!(ax_lc, lc; colormap=:batlow, colorrange=(0, 6), interpolate=false)
+        if !isnothing(landcover)
+            lc = lift(time) do i
+                replace_missing(landcover[Ti(Near(tspan[i]))], NaN32)
+            end
+            hidexdecorations!(ax_lc; grid=false)
+            hideydecorations!(ax_lc; grid=false)
+            Makie.image!(ax_lc, lc; colormap=:batlow, colorrange=(0, 6), interpolate=false)
+        end
 
         # Predators
         pred_keys = propertynames(frame[].pred_pop[1])
@@ -145,9 +149,11 @@ function mk_pred(init, ruleset; maxpops=zero(eltype(init.pred_pop)), landcover, 
 end
 
 function mk_endemic(init, ruleset; 
-    maxpops = zero(eltype(init.pred_pop)),
-    landcover, pred_pop, tspan, kw...
+    landcover=nothing, pred_pop, tspan,
+    maxpops=map(i -> maximum(getindex.(pred_pops_aux.mus, i)), 1:length(first(pred_pop))),
+    kw...
 )
+    @show maxpops
     MakieOutput(init;
         kw...,
         tspan,
@@ -157,15 +163,16 @@ function mk_endemic(init, ruleset;
         sim_kw=(; printframe=true),
     ) do (; layout, frame, time)
           
-        colorrange_obs = map(x -> Observable((zero(x), oneunit(x))), maxpops)
-        # Landcover
-        lc = lift(time) do i
-            replace_missing(landcover[Ti(Near(tspan[i]))], NaN32)
-        end
         ax_lc = Axis(layout[1, 1]; title="Landcover")
-        # hidexdecorations!(ax_lc; grid=false)
-        # hideydecorations!(ax_lc; grid=false)
-        Makie.image!(ax_lc, lc; colormap=:batlow, colorrange=(0, 6), interpolate=false)
+        # Landcover
+        if !isnothing(landcover)
+            lc = lift(time) do i
+                replace_missing(landcover[Ti(Near(tspan[i]))], NaN32)
+            end
+            # hidexdecorations!(ax_lc; grid=false)
+            # hideydecorations!(ax_lc; grid=false)
+            Makie.image!(ax_lc, lc; colormap=:batlow, colorrange=(0, 6), interpolate=false)
+        end
 
         # Predators
         pred_keys = propertynames(pred_pop[1])
@@ -177,21 +184,19 @@ function mk_endemic(init, ruleset;
         hidexdecorations!.(pred_axes; grid=false)
         hideydecorations!.(pred_axes; grid=false)
         pred_pop1 = view(pred_pop, Ti=1)
-        predators = map(1:npreds) do i
-            Observable(rebuild(pred_pop1, (x -> iszero(x) ? NaN : Float64(x)).(getindex.(pred_pop1, i))))
+        predator_obs = map(1:npreds) do i
+            Observable(rebuild(pred_pop1, (x -> iszero(x) ? NaN32 : Float32(x)).(getindex.(pred_pop1, i))))
         end
         on(time) do t
-            foreach(predators, 1:npreds, colorrange_obs) do pred, i, cr_obs
+            foreach(predator_obs, 1:npreds) do pred, i
                 pred_pop_t = view(pred_pop, Ti=t)
-                pred[] .= (x -> iszero(x) ? NaN : Float64(x)).(getindex.(pred_pop_t, i))
-                m = maximum(pred[])
-                cr_obs[] = (cr_obs[][1], max(m, cr_obs[][2]))
-                notify(cr_obs)
+                pred[] .= (x -> iszero(x) ? NaN32 : Float32(x)).(getindex.(pred_pop_t, i))
                 notify(pred)
             end
         end
-        foreach(pred_axes, predators, pred_keys, colorrange_obs) do ax, pred, k, colorrange
-            Makie.image!(ax, pred; colormap=:navia, colorrange, interpolate=false)
+        foreach(2:ncols, pred_axes, predator_obs, pred_keys, maxpops) do i, ax, pred, k, maxpop
+            p = Makie.image!(ax, pred; colormap=:navia, colorrange=(0, maxpop), interpolate=false)
+            Colorbar(layout[1, i, Right()], p)
         end
 
         # Endemics

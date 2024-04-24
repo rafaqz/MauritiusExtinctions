@@ -101,6 +101,17 @@ end
     end
 end
 
+@inline function DynamicGrids.modifyrule(rule::ExtirpationRisks, data::AbstractSimData)
+    if isnothing(rule.pred_effect)
+        pred_response = get(data, rule.pred_response)
+        # mass_response = get(data, rule.mass_response)
+        traits = get(data, rule.traits)
+        @set! rule.pred_suscept = predator_suceptibility(pred_response, traits)
+    end
+    @set! rule.traits = nothing # Simplify for GPU argument size
+    @set rule.pred_response = nothing # Simplify for GPU argument size
+end
+
 Base.@assume_effects :foldable function predator_effect(pred_pop, pred_suscept)
     mapreduce(+, pred_suscept, pred_pop) do ps, pp
          map(xs -> map(Float32 ∘ *, xs, pp), ps)
@@ -123,24 +134,13 @@ function predator_suceptibility(pred_response, traits)
     end ./ (32 * 8^2)
 end
 
-@inline function DynamicGrids.modifyrule(rule::ExtirpationRisks, data::AbstractSimData)
-    if isnothing(rule.pred_effect)
-        pred_response = get(data, rule.pred_response)
-        # mass_response = get(data, rule.mass_response)
-        traits = get(data, rule.traits)
-        @set! rule.pred_suscept = predator_suceptibility(pred_response, traits)
-    end
-    @set! rule.traits = nothing # Simplify for GPU argument size
-    @set rule.pred_response = nothing # Simplify for GPU argument size
-end
-
 function def_syms(
     pred_df, introductions_df, island_endemic_tables, auxs, aggfactor;
     replicates=nothing, 
     pred_pops_aux,
     island_keys = NamedTuple{keys(island_endemic_tables)}(keys(island_endemic_tables)),
-    last_year=2018,
-    extant_extension=200,
+    last_year,
+    extant_extension,
     pred_keys=(:cat, :black_rat, :norway_rat, :mouse, :pig, :wolf_snake, :macaque),
     pred_response=predator_response_params(pred_keys),
     EndemicNVs = begin
@@ -149,7 +149,7 @@ function def_syms(
             NamedVector{ek,length(ek)}
         end
     end,
-    island_extinction_dates = get_extinction_dates(island_endemic_tables, EndemicNVs, island_keys, extant_extension),
+    island_extinction_dates = extinction_dates_from_tables(island_endemic_tables, EndemicNVs, island_keys, extant_extension),
     mean_prey_mass = (;
         cat =         (41.0, 51.0), # Pearre and Maaas 1998
         black_rat =   (10.0, 10.0), # made up
@@ -581,50 +581,38 @@ function _predict_timeline(endemic_ruleset::Ruleset, island, pred_response; rang
     return output
 end
 
+scale_params(x, cc) = Float32.(x ./ sqrt.(cc) .* minimum(sqrt, cc))
+
 function extinction_objective(x, p; kw...)
-    (; last_year, extant_extension, endemic_ruleset, islands, parameters, loss, range_times, island_ranges, loss_history, plot_obs, params_obs, loss_obs) = p
-    # Update parameter values
-    parameters[:val] = Float32.(x)
+    (; last_year, extant_extension, endemic_ruleset, islands, parameters, loss, range_times, pred_carrycap, island_ranges, obs) = p
+    (; plot_obs, params_obs, loss_obs, throwit) = obs
+    throwit[] && error()
+    # Update parameter values scaled for predator carrycap
+    parameters[:val] = scale_params(x, pred_carrycap)
     pred_response = stripparams(parameters)
     # Run the simulations
     island_timelines = predict_timeline(endemic_ruleset, islands, pred_response; range_times, kw...)
-    # Calculate lossq
+
+    # Update plot
     params_obs[] .= x
     notify(params_obs)
+    # Calculate loss
     island_losses = map(island_timelines, island_ranges, islands, plot_obs) do timeline, ranges, island, obs
-        dates = extinction_dates(timeline, island, obs; last_year, extant_extension)
+        dates = extinction_dates_from_sim(timeline, island, obs; last_year, extant_extension)
         range_loss = sum_extinction_ranges(timeline, ranges, obs) |> sum
-        date_loss = map(island.extinction_dates, dates.mean) do known, predicted
-            k = known >= last_year ? known + extant_extension : known
-            loss(k, predicted)
-        end |> sum
+        date_loss = map(loss, island.extinction_dates, dates.mean) |> sum
         (; date_loss, range_loss)
     end
-    push!(loss_history, island_losses)
-    scaling = if length(loss_history) > 5
-        # date_mean = mean(loss_history) do slice
-        #     sum(first, slice)
-        # end
-        # range_mean = mean(loss_history) do slice
-        #     sum(last, slice)
-        # end
-        date_std = map(loss_history) do slice
-            sum(first, slice)
-        end |> std
-        range_std = map(loss_history) do slice
-            sum(last, slice)
-        end |> std
-        @show date_std range_std
-        date_std / range_std
-    else
-        1.0
-    end
-    loss =  sum(island_losses) do l
+    loss = sum(island_losses) do l
+        @show l
         # Just add losses. its not perfect but its stable
         # And these objectives are highly correlated, not opposing
-        l.date_loss# + l.range_loss
+        l.date_loss + 2l.range_loss
     end
-    loss_obs[] = string("loss: ", loss)
+    @show loss
+    loss_obs[] = "loss: $loss"
+    notify(loss_obs)
+
     return loss
 end
 
@@ -641,15 +629,14 @@ function sum_extinction_ranges(timeline, ranges, obs=nothing)
         end
         # Count the number of matching presence/absence in each replicate
         ntotal = length(islands.mus.aux.mask)
-        @show size(replicates[1]) size(known)
-        ThreadsX.map(replicates) do predicted
-            ntotal .- mapreduce(.!=, +, predicted, known)
+        x = ThreadsX.map(replicates) do predicted
+            mapreduce(.!=, +, predicted, known)
         end |> mean
-    end |> sum
+    end |> mean
 end
 
-function extinction_dates(timeline, island, obs=nothing; 
-    last_year=2018, extant_extension=200
+function extinction_dates_from_sim(timeline, island, obs=nothing; 
+    last_year, extant_extension,
 )
     firstyear = first(island.output_kw.tspan)
     years_present = sum(timeline) do (slice, _)
@@ -672,13 +659,30 @@ function extinction_dates(timeline, island, obs=nothing;
     return (years=extinction_years, mean=ext_mean, std=ext_std)
 end
 
+function extinction_dates_from_tables(tables, EndemicNVs, island_keys, extant_extension)
+    # Extract extinction dates
+    map(tables, EndemicNVs, island_keys) do table, EndemicNV, key
+        map(table[!, Symbol(key, :_extinct)]) do x
+            if ismissing(x)
+                # use the last year of the simulation + extan_extinction as the "not extinct yet" extinction date
+                last_year + extant_extension
+            else
+                parse(Int, first(split(x, ':')))
+            end
+        end |> EndemicNV
+    end
+end
+
 function extinction_forward(x, p; kw...)
-    (; endemic_ruleset, islands, parameters, loss, range_times) = p
+    (; endemic_ruleset, extant_extension, islands, parameters, last_year, loss, range_times, pred_carrycap) = p
     # Update
-    parameters[:val] = Float32.(x)
+    parameters[:val] = scale_params(x, pred_carrycap)
     pred_response = stripparams(parameters)
+    @show pred_response
     timelines = predict_timeline(endemic_ruleset, islands, pred_response; range_times, kw...)
-    dates = map(extinction_dates, timelines, islands)
+    dates = map(timelines, islands) do t, i
+        extinction_dates_from_sim(t, i; last_year, extant_extension)
+    end
     return map((dates, timelines) -> (; dates, timelines), dates, timelines)
 end
 
@@ -730,15 +734,15 @@ function predator_response_params(pred_keys)
             wolf_snake =  0.02,
             macaque =     0.02,
         ),
-        isgroundnesting = (;
-            cat =         0.2,
-            black_rat =   0.01,
-            norway_rat =  0.02,
-            mouse =       0.01,
-            pig =         0.05,
-            wolf_snake =  0.0,
-            macaque =     0.0,
-        ),
+        # isgroundnesting = (;
+        #     cat =         0.2,
+        #     black_rat =   0.01,
+        #     norway_rat =  0.02,
+        #     mouse =       0.01,
+        #     pig =         0.05,
+        #     wolf_snake =  0.0,
+        #     macaque =     0.0,
+        # ),
         flightlessness = (;
             cat =         0.2,
             black_rat =   0.01,
@@ -755,20 +759,6 @@ function predator_response_params(pred_keys)
         map(NamedTuple(ps[pred_keys]), NamedTuple{pred_keys}(pred_keys)) do val, label
             Param(val; label=Symbol(k, :_, label), bounds=(0, 1))
         end
-    end
-end
-
-function get_extinction_dates(tables, EndemicNVs, island_keys, extant_extension)
-    # Extract extinction dates
-    map(tables, EndemicNVs, island_keys) do table, EndemicNV, key
-        map(table[!, Symbol(key, :_extinct)]) do x
-            if ismissing(x)
-                # use the last year of the simulation + extan_extinction as the "not extinct yet" extinction date
-                last_year + extant_extension
-            else
-                parse(Int, first(split(x, ':')))
-            end
-        end |> EndemicNV
     end
 end
 

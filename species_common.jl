@@ -24,8 +24,9 @@ include("makie.jl")
 # Set aggregation
 aggfactor = 8
 # And the last year of the simulation
+first_year = 1550
 last_year = 2018
-extant_extension = 200
+extant_extension = 0
 
 f = jldopen("sym_setup.jld2", "r")
 pred_pops_aux = f["pred_pops_aux"];

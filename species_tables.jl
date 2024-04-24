@@ -1,7 +1,8 @@
-include("common.jl")
 using CSV
 using DataFrames
 using ConstructionBase
+
+include("common.jl")
 
 # Import tabular data
 pred_df = CSV.read("tables/animals.csv", DataFrame)

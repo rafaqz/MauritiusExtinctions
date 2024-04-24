@@ -1,7 +1,5 @@
 include("species_common.jl")
 
-uncleared = gpu_cleanup(Rasters.modify(BitArray, Raster("uncleared.nc")))
-
 # Build auxiliary rasters
 lc_predictions_paths = (
     mus="$outputdir/lc_predictions_mus.nc",
@@ -14,6 +12,7 @@ k = :reu
 k = :rod
 k = :mus
 pred_keys = (:cat, :black_rat, :norway_rat, :mouse, :pig)
+pred_keys = (:cat, :black_rat, :norway_rat, :pig)
 
 include("species_rules.jl")
 pred_pops_aux = isdefined(Main, :pred_pops_aux) ? pred_pops_aux : map(_ -> nothing, dems)
