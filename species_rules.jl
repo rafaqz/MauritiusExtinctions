@@ -25,14 +25,16 @@ end
     data, rule::InteractiveCarryCap,
     populations::NamedVector{Keys}, I,
 ) where Keys
-    local_inputs = NamedTuple(get(data, rule.inputs, I)) 
-    relative_pop = NamedTuple(populations ./ rule.carrycap) # combine populations 
-    params = merge(relative_pop, local_inputs) 
-    scaling = map(rule.carrycap_scaling) do val_f 
-        f = DynamicGrids._unwrap(val_f) 
-        (oneunit(eltype(populations)) + f(params)::Float32)::Float32 
-    end |> NamedVector # Carrycap cant be zero
-    new_carrycaps = max.(oneunit(eltype(rule.carrycap)) .* 1f-10, rule.carrycap .* scaling)
+    local_inputs = NamedTuple(get(data, rule.inputs, I))
+    relative_pop = NamedTuple(populations ./ rule.carrycap) # combine populations
+    params = merge(relative_pop, local_inputs)
+    scaling = map(rule.carrycap_scaling) do val_f
+        f = DynamicGrids._unwrap(val_f)
+        (oneunit(eltype(populations)) + f(params)::Float32)::Float32
+    end |> NamedVector 
+    # Carrycap cant be zero for numerical reasons, but make the minimum very small
+    absolute_min_carrycap = oneunit(eltype(rule.carrycap)) .* 1f-10
+    new_carrycaps = max.(absolute_min_carrycap, rule.carrycap .* scaling)
     return new_carrycaps
 end
 
@@ -136,10 +138,11 @@ end
 
 function def_syms(
     pred_df, introductions_df, island_endemic_tables, auxs, aggfactor;
-    replicates=nothing, 
+    aggscale = aggfactor^2,
+    replicates=nothing,
     pred_pops_aux,
     island_keys = NamedTuple{keys(island_endemic_tables)}(keys(island_endemic_tables)),
-    last_year,
+    first_year, last_year,
     extant_extension,
     pred_keys=(:cat, :black_rat, :norway_rat, :mouse, :pig, :wolf_snake, :macaque),
     pred_response=predator_response_params(pred_keys),
@@ -157,7 +160,7 @@ function def_syms(
         mouse =       (3.0f0, 5.0), # made up
         pig =         (100.0, 100.0), # made up
         wolf_snake =  (9.0f0, 7.0), # Estimated from Fritts 1993
-        macaque =     (100.0, 100.0), # made up
+        macaque =     (40.0, 40.0), # made up
    )[pred_keys],
     island_mass_response = map(island_endemic_tables, EndemicNVs) do table, EndemicNV
         endemic_mass = EndemicNV(table.Mass)
@@ -169,12 +172,40 @@ function def_syms(
             end
         end
     end,
+    # TODO: This is made up
     island_recouperation_rates = map(EndemicNVs) do EndemicNV
         Float32.(ones(EndemicNV) .* 0.05)
     end,
+    # These are taken from the literature in contexts where it seems also applicable to the Mascarenes
+    carrycap = Float32.(NV(;
+        cat =        0.02,
+        black_rat =  30.0, # This may be up to 100/ha? See Harper & Bunbury 2015.
+        norway_rat = 15.0, # This one is more of a guess
+        mouse =      52.0,
+        pig =        0.02, # Tuned to have ~600 total in mauritius in 2009 (actually 714, more significant digits are not justifiable).
+        wolf_snake = 10.0, # As is this one
+        macaque =    0.5,
+    ) .* aggscale)[pred_keys],
+    spread_rate = NV(;
+        cat =         30.0f0,
+        black_rat =   1.0f0,
+        norway_rat =  1.0f0,
+        mouse =       0.5f0,
+        pig =         100.0f0,
+        wolf_snake =  1.0f0,
+        macaque =     5.0f0,
+    )[pred_keys],
+    pred_funcs = (;
+        cat =        p -> 1.0f0p.black_rat + 0.3f0p.norway_rat + 1.0f0p.mouse + 10f0p.urban + 2f0p.cleared,
+        black_rat  = p -> -0.2f0p.cat - 0.1f0p.norway_rat - 0.1f0p.mouse + 0.5f0p.native + 0.3f0p.abandoned + 0.3f0p.forestry + 1p.urban,
+        norway_rat = p -> -0.1f0p.cat - 0.1f0p.black_rat - 0.1f0p.mouse + 1.5f0p.urban - 0.2f0p.native,
+        mouse =      p -> -0.3f0p.cat - 0.2f0p.black_rat - 0.2f0p.norway_rat + 0.8f0p.cleared + 1.5f0p.urban,
+        pig =        p -> 0.0f0p.native - 0.0f3p.abandoned - 2f0p.urban - 1.0f0p.cleared,
+        wolf_snake = p -> -0.2f0p.cat + 0.2f0p.black_rat + 0.3f0p.mouse - 0.5f0p.urban + 0.3f0p.native,
+        macaque =    p -> 1.0f0p.abandoned + 0.7f0p.forestry + 0.4f0p.native - 1.0f0p.urban - 0.8f0p.cleared
+    )[pred_keys],
 )
     pred_df = filter(r -> Symbol(r.name) in pred_keys, pred_df)
-    aggscale = aggfactor^2
     moore = Moore{3}()
 
     #= Assumptions
@@ -187,62 +218,34 @@ function def_syms(
     =#
 
     # Parameters
-    
 
-    # These are taken from the literature in contexts where it seems also applicable to the Mascarenes
-    carrycap = Float32.(NV(;
-        cat =        0.02,
-        black_rat =  30.0,
-        norway_rat = 15.0, # This one is more of a guess
-        mouse =      52.0,
-        pig =        0.3,
-        wolf_snake = 20.0, # As is this one
-        macaque =    1.0,
-    ) .* aggscale)[pred_keys]
+
 
     # These are parametries from reading qualitative literature and quantitative literature without
     # enough context to really use the number.
     # Maybe we should fit them to some observations in specific points at specific times.
     # Refs: Smucker et al 2000 - Hawaiii cats, rats, mice
-    pred_funcs = (;
-        cat =        p -> 1.0f0p.black_rat + 0.3f0p.norway_rat + 1.0f0p.mouse + 10f0p.urban + 2f0p.cleared,
-        black_rat  = p -> -0.2f0p.cat - 0.1f0p.norway_rat - 0.1f0p.mouse + 0.5f0p.native + 0.3f0p.abandoned + 0.3f0p.forestry + 1p.urban,
-        norway_rat = p -> -0.1f0p.cat - 0.1f0p.black_rat - 0.1f0p.mouse + 1.5f0p.urban - 0.2f0p.native,
-        mouse =      p -> -0.3f0p.cat - 0.2f0p.black_rat - 0.2f0p.norway_rat + 0.8f0p.cleared + 1.5f0p.urban,
-        pig =        p -> 0.5f0p.native + 0.4f0p.abandoned - 2f0p.urban - 1.0f0p.cleared,
-        wolf_snake = p -> -0.2f0p.cat + 0.2f0p.black_rat + 0.3f0p.mouse - 0.5f0p.urban + 0.3f0p.native,
-        macaque =    p -> 1.0f0p.abandoned + 0.7f0p.forestry + 0.4f0p.native - 1.0f0p.urban - 0.8f0p.cleared
-    )[pred_keys]
 
-    pred_funcs = (;
-        cat =        p -> 10f0p.urban + 2f0p.cleared,
-        black_rat  = p -> 0.5f0p.native + 0.3f0p.abandoned + 0.3f0p.forestry + 1p.urban,
-        norway_rat = p -> 1.5f0p.urban - 0.2f0p.native,
-        mouse =      p -> 0.8f0p.cleared + 1.5f0p.urban,
-        pig =        p -> 0.5f0p.native + 0.4f0p.abandoned - 2f0p.urban - 1.0f0p.cleared,
-        wolf_snake = p -> 0.5f0p.urban + 0.3f0p.native,
-        macaque =    p -> 1.0f0p.abandoned + 0.7f0p.forestry + 0.4f0p.native - 1.0f0p.urban - 0.8f0p.cleared
-    )[pred_keys]
+    # pred_funcs = (;
+    #     cat =        p -> 10f0p.urban + 2f0p.cleared,
+    #     black_rat  = p -> 0.5f0p.native + 0.3f0p.abandoned + 0.3f0p.forestry + 1p.urban,
+    #     norway_rat = p -> 1.5f0p.urban - 0.2f0p.native,
+    #     mouse =      p -> 0.8f0p.cleared + 1.5f0p.urban,
+    #     pig =        p -> 0.5f0p.native + 0.4f0p.abandoned - 2f0p.urban - 1.0f0p.cleared,
+    #     wolf_snake = p -> 0.5f0p.urban + 0.3f0p.native,
+    #     macaque =    p -> 1.0f0p.abandoned + 0.7f0p.forestry + 0.4f0p.native - 1.0f0p.urban - 0.8f0p.cleared
+    # )[pred_keys]
 
 
 
     # These need to somewhat balance low growth rates. They are almost totally made up.
     # The units are in pixels - it needs fixing to the aggregation size.
-    spread_rate = NV(;
-        cat =         30.0f0,
-        black_rat =   1.0f0,
-        norway_rat =  1.0f0,
-        mouse =       0.5f0,
-        pig =         15.0f0,
-        wolf_snake =  1.0f0,
-        macaque =     5.0f0,
-    )[pred_keys]
 
     island_endemic_traits = endemic_traits(island_endemic_tables, EndemicNVs)
-    gecko_mass = 8 # estimated mean of multiple species
-    skink_mass = 3 # estimated mean of multiple species
-    mouse_mass = 16.25
-    wolf_snake_pre_mass = round(0.48gecko_mass + 0.30mouse_mass + 0.22skink_mass)
+    # gecko_mass = 8 # estimated mean of multiple species
+    # skink_mass = 3 # estimated mean of multiple species
+    # mouse_mass = 16.25
+    # wolf_snake_pre_mass = round(0.48gecko_mass + 0.30mouse_mass + 0.22skink_mass)
 
     # How much these species are supported outside of this system
     # populations = NV(cat=0.01, black_rat=25.0, norway_rat=10.0, pig=0.3)
@@ -446,8 +449,7 @@ function def_syms(
     )
 
     tspans = map(introductions) do intros
-        # t1 = minimum(x -> x.year, intros) - 2
-        1549:last_year
+        first_year:last_year
     end
     inits = map(pred_pops, pred_carrycaps, endemic_presences) do pred_pop, pred_carrycap, endemic_presence
         (; pred_pop, pred_carrycap, endemic_presence)
@@ -581,7 +583,7 @@ function _predict_timeline(endemic_ruleset::Ruleset, island, pred_response; rang
     return output
 end
 
-scale_params(x, cc) = Float32.(x ./ sqrt.(cc) .* minimum(sqrt, cc))
+scale_params(x, cc) = Float32.(x ./ cc .* minimum(cc))
 
 function extinction_objective(x, p; kw...)
     (; last_year, extant_extension, endemic_ruleset, islands, parameters, loss, range_times, pred_carrycap, island_ranges, obs) = p
@@ -635,7 +637,7 @@ function sum_extinction_ranges(timeline, ranges, obs=nothing)
     end |> mean
 end
 
-function extinction_dates_from_sim(timeline, island, obs=nothing; 
+function extinction_dates_from_sim(timeline, island, obs=nothing;
     last_year, extant_extension,
 )
     firstyear = first(island.output_kw.tspan)
@@ -697,8 +699,8 @@ function endemic_traits(table, NV)
     ismammal = NV(table.Group .== "mammal")
     isbird = NV(table.Group .== "bird")
     isreptile = NV(table.Group .== "reptile")
-    isgroundnesting = NV(table.Ground_nesting)
-    flightlessness = NV(Float32.(1 .- table.Flight_capacity))
+    isgroundnesting = NV(Float32.(table.Ground_nesting))
+    flightlessness = NV(Float32.(table.Flightlessness))
     return (; ismammal, isbird, isreptile, isgroundnesting, flightlessness)#, hunting_preference)
 end
 
@@ -776,11 +778,11 @@ function agg_aux(mask_orig::AbstractArray, slope_orig, dem_orig, lc_orig, aggfac
     dem = Float32.(replace_missing(Rasters.aggregate(Rasters.Center(), dem_orig, aggfactor; skipmissingval=true), 0)) .* mask
     lc_ag = Rasters.aggregate(mean, rebuild(lc_orig; missingval=nothing), (X(aggfactor), Y(aggfactor)); skipmissingval=true)
     lc_ag1 = Rasters.extend(lc_ag; to=(Ti(Sampled(1500:1:2020; sampling=Intervals(Start())))), missingval=false)
-    map(DimensionalData.layers(lc_ag1)) do A
+    map(layers(lc_ag1)) do A
         broadcast_dims!(identity, view(A, Ti=1500..1600), view(A, Ti=At(1600)))
     end
-    lc = map(CartesianIndices(first(lc_ag1))) do I
-        Float32.(NV(lc_ag1[I]))
+    lc = map(layers(lc_ag1)...) do xs...
+        Float32.(NV{keys(lc_orig),length(keys(lc_orig))}(xs))
     end .* mask
     (; mask, slope, dem, lc)
 end

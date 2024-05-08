@@ -38,13 +38,13 @@ function mk(init, ruleset; maxpops=zero(eltype(init.pred_pop)), landcover=nothin
         predators = map(1:npreds) do i
             Observable(rebuild(init.pred_pop, (x -> iszero(x) ? NaN : Float64(x)).(getindex.(frame[].pred_pop, i))))
         end
-        on(frame) do f
-            foreach(maximum(f.pred_pop), colorrange_obs) do m, obs 
+        on(frame.pred_pop) do pred_pop
+            foreach(maximum(pred_pop), colorrange_obs) do m, obs 
                 obs[] = (obs[][1], max(m, obs[][2]))
                 notify(obs)
             end
             foreach(predators, 1:npreds) do pred, i
-                pred[] .= (x -> iszero(x) ? NaN : Float64(x)).(getindex.(frame[].pred_pop, i))
+                pred[] .= (x -> iszero(x) ? NaN : Float64(x)).(getindex.(pred_pop, i))
                 notify(pred)
             end
         end
@@ -119,27 +119,34 @@ function mk_pred(init, ruleset; maxpops=zero(eltype(init.pred_pop)), landcover=n
         pred_keys = propertynames(frame[].pred_pop[1])
         npreds = length(pred_keys)
         ncols = npreds + 1
-        pred_axes = map(enumerate(CartesianIndices((2, ncols ÷ 2))[2:end])) do (i, I)
-            Axis(layout[Tuple(I)...]; title=_title(pred_keys[i]))
+        pred_axis_inds = CartesianIndices((2, ncols ÷ 2))[2:end]
+        pred_sums = map(1:npreds) do _
+            Observable("")
         end
-        hidexdecorations!.(pred_axes; grid=false)
+        pred_axes = map(enumerate(pred_axis_inds), pred_sums) do (i, I), xlabel
+            Axis(layout[Tuple(I)...]; title=_title(pred_keys[i]), xlabel)
+        end
+        # hidexdecorations!.(pred_axes; grid=false)
         hideydecorations!.(pred_axes; grid=false)
-        predators = map(1:npreds) do i
+        pred_obs = map(1:npreds) do i
             Observable(rebuild(init.pred_pop, (x -> iszero(x) ? NaN : Float64(x)).(getindex.(frame[].pred_pop, i))))
         end
-        on(frame) do f
-            foreach(predators, 1:npreds) do  pred, i
-                foreach(maximum(f), colorrange_obs) do m, obs 
-                    obs[] = m
-                    notify(obs)
-                end
-                pred[] .= (x -> iszero(x) ? NaN : Float64(x)).(getindex.(f.pred_pop, i))
-                notify(pred)
+        on(frame.pred_pop) do pred_pop
+            foreach(maximum(pred_pop), colorrange_obs) do m, obs 
+                obs[] = (obs[][1], max(m, obs[][2]))
+                notify(obs)
             end
-
+            foreach(pred_obs, 1:npreds) do pred, i
+                pred[] .= (x -> iszero(x) ? NaN : Float64(x)).(getindex.(pred_pop, i))
+                pred_sums[i][] = string(sum(x -> x[i], pred_pop))
+                notify(pred)
+                notify(pred_sums[i])
+            end
         end
-        foreach(pred_axes, predators, COLORMAPS[1:npreds], colorrange_obs) do ax, pred, colormap, cr
-            Makie.image!(ax, pred; colormap=:navia, colorrange=(zero(mp), cr), interpolate=false)
+        foreach(pred_axis_inds, pred_axes, pred_obs, COLORMAPS[1:npreds], colorrange_obs) do i, ax, pred, colormap, cr
+            @show size(pred[])
+            p = Makie.image!(ax, pred; colormap=:navia, colorrange=cr, interpolate=false)
+            Colorbar(layout[Tuple(i)..., Right()], p)
         end
 
         # Link
@@ -153,7 +160,6 @@ function mk_endemic(init, ruleset;
     maxpops=map(i -> maximum(getindex.(pred_pops_aux.mus, i)), 1:length(first(pred_pop))),
     kw...
 )
-    @show maxpops
     MakieOutput(init;
         kw...,
         tspan,

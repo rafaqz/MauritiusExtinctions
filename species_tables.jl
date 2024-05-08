@@ -10,9 +10,9 @@ introductions_df = CSV.read("tables/introductions.csv", DataFrame)
 mascarene_species_csv = "tables/mascarene_species.csv"
 # @async run(`libreoffice $mascarene_species_csv`)
 all_species = CSV.read(mascarene_species_csv, DataFrame) |> 
-    x -> subset(x, :Species => ByRow(!ismissing))
+    x -> subset(x, :Species => ByRow(!ismissing); skipmissing=true)
 endemic_species = CSV.read(mascarene_species_csv, DataFrame) |> 
-    x -> subset(x, :Species => ByRow(!ismissing), :Origin => ByRow(==("Endemic")))
+    x -> subset(x, :Origin => ByRow(==("Endemic")); skipmissing=true)
 island_tables = map(island_keys) do key
     df = DataFrame(subset(all_species, key => x -> .!ismissing.(x)))
     df.extinct = map(df[!, "$(key)_extinct"]) do e

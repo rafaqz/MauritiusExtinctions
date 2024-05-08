@@ -62,8 +62,7 @@ elevation = map(d -> d .* u"m", dems)
 # mauritius_proj_dem = Raster("/home/raf/PhD/Mascarenes/Data/Norder/LS factor/DEM/DEM100x100_Resample.img"; crs=EPSG(3337))
 # mauritius_proj_dem = rebuild(mauritius_proj_dem; missingval=minimum(mauritius_proj_dem))
 
-masks = map(boolmask, dems)
-masks.mus
+masks = map(d -> rebuild(boolmask(d); name=:mask), dems)
 println("Calculating slope...")
 slope_stacks = map(dems) do dem
     slopeaspect(dem, FD3Linear(); cellsize=111.0)
