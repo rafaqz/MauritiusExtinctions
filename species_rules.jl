@@ -301,7 +301,7 @@ function def_syms(
 
     pred_growth_rule = LogisticGrowth{:pred_pop}(;
         rate=pred_rmax,
-        carrycap=Grid{:pred_carrycap}(),
+        carrycap=DynamicGrids.Grid{:pred_carrycap}(),
         timestep=1,
         nsteps_type=Float32,
     )
