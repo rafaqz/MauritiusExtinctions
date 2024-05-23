@@ -25,16 +25,21 @@ end
     data, rule::InteractiveCarryCap,
     populations::NamedVector{Keys}, I,
 ) where Keys
-    local_inputs = NamedTuple(get(data, rule.inputs, I))
-    relative_pop = NamedTuple(populations ./ rule.carrycap) # combine populations
-    params = merge(relative_pop, local_inputs)
-    scaling = map(rule.carrycap_scaling) do val_f
+    local_inputs = get(data, rule.inputs, I)
+    return calc_carrycaps(local_inputs, populations, rule.carrycap, rule.carrycap_scaling)
+end
+
+function calc_carrycaps(local_inputs, populations, carrycap, carrycap_scaling)
+    relative_pop = NamedTuple(populations ./ carrycap) # combine populations
+    params = merge(relative_pop, NamedTuple(local_inputs))
+    scaling = map(carrycap_scaling) do val_f
         f = DynamicGrids._unwrap(val_f)
-        (oneunit(eltype(populations)) + f(params)::Float32)::Float32
+        (oneunit(eltype(populations)) + f(params))
     end |> NamedVector 
     # Carrycap cant be zero for numerical reasons, but make the minimum very small
-    absolute_min_carrycap = oneunit(eltype(rule.carrycap)) .* 1f-10
-    new_carrycaps = max.(absolute_min_carrycap, rule.carrycap .* scaling)
+    absolute_min_carrycap = oneunit(eltype(carrycap)) .* 1f-10
+    new_carrycaps = max.(absolute_min_carrycap, carrycap .* scaling)
+
     return new_carrycaps
 end
 
@@ -72,8 +77,7 @@ end
 #     end
 # end
 
-@inline function DynamicGrids.applyrule(data, rule::ExtirpationRisks, endemic_presence, I)
-    # If they are all absent do nothing
+@inline function DynamicGrids.applyrule(data, rule::ExtirpationRisks, endemic_presences, I)
     recouperation_rates = get(data, rule.recouperation_rates)
 
     # Get the effect of predators on each endemic
@@ -92,15 +96,59 @@ end
         Base.reinterpret(UInt8, x) + Base.reinterpret(UInt8, y)
     end
 
-    return map(endemic_presence, pred_effect, n_neighbors, recouperation_rates) do present, effect, n, rr
+    updated_presence = map(endemic_presences, pred_effect, n_neighbors, recouperation_rates) do present, effect, n_neighbor, rr
         if present
-            rand(typeof(effect)) > (effect * ((length(hood) / 2) / (n + 1)) + rule.stochastic_extirpation)
+            rand(typeof(effect)) > (effect * ((length(hood) / 2) / (n_neighbor + 1)) + rule.stochastic_extirpation)
         elseif n > 0
-            rand(typeof(effect)) < (n * rr / length(hood))
+            rand(typeof(effect)) < (n_neighbor * rr / length(hood))
         else
             false
         end
     end
+    return updated_presence
+end
+
+@inline function DynamicGrids.applyrule(data, rule::ExtirpationRisks{Grids,Grids}, (endemic_presences, causes), I) where Grids<:Tuple
+    recouperation_rates = get(data, rule.recouperation_rates)
+
+    hood = stencil(rule)
+    # Count neighbors to UInt8. Otherwise we get Int64 and use a lot of registers
+    n_neighbors = foldl(hood; init=Base.reinterpret.(UInt8, zero(first(hood)))) do x, y
+        Base.reinterpret(UInt8, x) + Base.reinterpret(UInt8, y)
+    end
+
+    # Get the effect of predators on each endemic
+    pred_pop = get(data, rule.pred_pop, I)
+    pred_suscept = get(data, rule.pred_suscept)
+    pred_effects = predator_effects(pred_pop, pred_suscept)
+
+    results = map(endemic_presences, pred_effects, n_neighbors, recouperation_rates, causes) do present, effects, n_neighbor, rr, cs
+        if present
+            effect = rule.f(sum(effects))
+            extirpation_probability = effect * (length(hood) / 12) / (n_neighbor + 1) + rule.stochastic_extirpation
+            still_present = rand(typeof(first(pred_pop))) > extirpation_probability
+            updated_causes = if still_present 
+                cs
+            else
+                effects
+            end
+        elseif n_neighbor > 0
+            still_present = rand(typeof(first(pred_pop))) < (n_neighbor * rr / length(hood))
+            updated_causes = if still_present
+                zero(cs)
+            else
+                cs
+            end
+        else
+            still_present = false
+            updated_causes = cs
+        end
+        still_present, updated_causes
+    end
+    updated_presence = map(first, results)
+    updated_causes = map(last, results)
+
+    return updated_presence, updated_causes
 end
 
 @inline function DynamicGrids.modifyrule(rule::ExtirpationRisks, data::AbstractSimData)
@@ -114,6 +162,14 @@ end
     @set rule.pred_response = nothing # Simplify for GPU argument size
 end
 
+Base.@assume_effects :foldable function predator_effects(pred_pop, pred_suscept)
+    is = ntuple(identity, length(first(pred_suscept)))
+    map(is) do i
+        map(pred_suscept, pred_pop) do ps, pp
+            Float32(ps[i] * pp)
+        end
+    end |> NamedVector{propertynames(first(pred_suscept))}
+end
 Base.@assume_effects :foldable function predator_effect(pred_pop, pred_suscept)
     mapreduce(+, pred_suscept, pred_pop) do ps, pp
          map(xs -> map(Float32 ∘ *, xs, pp), ps)
@@ -207,6 +263,7 @@ function def_syms(
 )
     pred_df = filter(r -> Symbol(r.name) in pred_keys, pred_df)
     moore = Moore{3}()
+    @show pred_keys
 
     #= Assumptions
     1. cats suppress rodents to some extent, black rats more than norway rats (size selection - norway rats are above 250g)
@@ -229,7 +286,7 @@ function def_syms(
     # pred_funcs = (;
     #     cat =        p -> 10f0p.urban + 2f0p.cleared,
     #     black_rat  = p -> 0.5f0p.native + 0.3f0p.abandoned + 0.3f0p.forestry + 1p.urban,
-    #     norway_rat = p -> 1.5f0p.urban - 0.2f0p.native,
+    #     norway_rat = p -> 1spec .5f0p.urban - 0.2f0p.native,
     #     mouse =      p -> 0.8f0p.cleared + 1.5f0p.urban,
     #     pig =        p -> 0.5f0p.native + 0.4f0p.abandoned - 2f0p.urban - 1.0f0p.cleared,
     #     wolf_snake = p -> 0.5f0p.urban + 0.3f0p.native,
@@ -310,6 +367,11 @@ function def_syms(
     endemic_presences = map(auxs, island_endemic_traits) do aux, traits
         map(aux.mask) do m
             map(_ -> m, traits.ismammal) # traits.mammal is just as a map source, not used
+        end
+    end
+    island_causes = map(auxs, island_endemic_traits) do aux, traits
+        map(aux.mask) do m
+            map(_ -> zero(pred_rmax), traits.ismammal) # traits.mammal is just as a map source, not used
         end
     end
 
@@ -424,7 +486,7 @@ function def_syms(
         end
     end # let
 
-    risks_rule = ExtirpationRisks{:endemic_presence}(;
+    risks_rule = ExtirpationRisks{Tuple{:endemic_presence,:causes}}(;
         f=tanh,
         stencil=Moore(1),
         traits=Aux{:endemic_traits}(),
@@ -436,7 +498,7 @@ function def_syms(
         recouperation_rates=Aux{:recouperation_rates}(),
     )
 
-    aux_pred_risks_rule = ExtirpationRisks{:endemic_presence}(;
+    aux_pred_risks_rule = ExtirpationRisks{:endemic_presence,:causes}(;
         f=tanh,
         stencil=Moore(1),
         traits=Aux{:endemic_traits}(),
@@ -447,12 +509,11 @@ function def_syms(
         stochastic_extirpation=0.005f0/aggfactor,
         recouperation_rates=Aux{:recouperation_rates}(),
     )
-
     tspans = map(introductions) do intros
         first_year:last_year
     end
-    inits = map(pred_pops, pred_carrycaps, endemic_presences) do pred_pop, pred_carrycap, endemic_presence
-        (; pred_pop, pred_carrycap, endemic_presence)
+    inits = map(pred_pops, pred_carrycaps, endemic_presences, island_causes) do pred_pop, pred_carrycap, endemic_presence, causes
+        (; pred_pop, pred_carrycap, endemic_presence, causes)
     end
     pred_inits = map(pred_pops, pred_carrycaps) do pred_pop, pred_carrycap
         (; pred_pop, pred_carrycap)

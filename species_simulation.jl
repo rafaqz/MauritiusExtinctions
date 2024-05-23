@@ -7,19 +7,17 @@ k = :reu
 k = :rod
 k = :mus
 # pred_keys = (:cat, :black_rat, :norway_rat, :mouse, :pig, :macaque)
-pred_keys = (:cat, :black_rat, :norway_rat, :pig, :mouse)
+# pred_keys = (:cat, :black_rat, :norway_rat, :pig, :mouse)
+pred_keys = (:cat, :black_rat, :norway_rat)
 
 include("makie.jl")
 include("species_rules.jl")
 
 pred_funcs = (;
-    cat =        p -> 2.0f0p.black_rat + 0.5f0p.norway_rat + 2.0f0p.mouse + 10f0p.urban + 2f0p.cleared,
-    black_rat  = p -> -0.2f0p.cat - 0.1f0p.norway_rat - 0.1f0p.mouse + 0.5f0p.native + 0.3f0p.abandoned + 0.3f0p.forestry + 1p.urban,
-    norway_rat = p -> -0.1f0p.cat - 0.1f0p.black_rat - 0.1f0p.mouse + 1.5f0p.urban - 0.2f0p.native,
+    cat =        p -> 2.0f0p.black_rat + 0.5f0p.norway_rat + 10f0p.urban + 2f0p.cleared,
+    black_rat  = p -> -0.2f0p.cat - 0.1f0p.norway_rat + 0.5f0p.native + 0.3f0p.abandoned + 0.3f0p.forestry + 1p.urban,
+    norway_rat = p -> -0.1f0p.cat - 0.1f0p.black_rat + 1.5f0p.urban - 0.2f0p.native,
     mouse =      p -> -0.3f0p.cat - 0.2f0p.black_rat - 0.2f0p.norway_rat + 0.8f0p.cleared + 1.5f0p.urban,
-    pig =        p -> 0.0f0p.native - 0.0f3p.abandoned - 2f0p.urban - 1.0f0p.cleared,
-    # wolf_snake = p -> -0.2f0p.cat + 0.2f0p.black_rat + 0.3f0p.mouse - 0.5f0p.urban + 0.3f0p.native,
-    # macaque =    p -> 1.0f0p.abandoned + 0.7f0p.forestry + 0.4f0p.native - 1.0f0p.urban - 0.8f0p.cleared
 )[pred_keys]
 # pred_pops_aux = isdefined(Main, :pred_pops_aux) ? pred_pops_aux : map(_ -> nothing, dems)
 (; ruleset, rules, pred_ruleset, endemic_ruleset, islands, pred_response) = def_syms(
@@ -59,15 +57,19 @@ jldsave("sym_setup2_$aggfactor.jld2";
 (; ruleset, rules, pred_ruleset, endemic_ruleset, islands) = def_syms(
     pred_df, introductions_df, island_endemic_tables, auxs, aggfactor; 
     replicates=nothing, first_year, last_year, extant_extension,
-    pred_pops_aux = map(_ -> nothing, dems)
+    pred_pops_aux=map(_ -> nothing, dems),
+    pred_keys,
 );
 k = :rod
-(; output, endemic_output, pred_output, init, output_kw) = islands[k]
+k = :mus
+(; output, endemic_output, pred_output, init, output_kw) = islands[k];
 # @time sim!(endemic_output, endemic_ruleset; proc=SingleCPU(), printframe=true);
 
+@time sim!(output, ruleset; proc=SingleCPU(), printframe=true);
 mkoutput = mk_pred(init, pred_ruleset; landcover=lc_all[k], output_kw...)
-mkoutput = mk(init, ruleset; landcover=lc_all[k], output_kw..., ncolumns=5)
+mkoutput = mk(init, ruleset; landcover=lc_all[k], output_kw..., ncolumns=3)
 display(mkoutput)
+maximum(output[end].causes)
 
 # k = :mus
 # k = :rod

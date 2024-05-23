@@ -39,7 +39,7 @@ lc_predictions_paths = (
     rod="$outputdir/lc_predictions_rod.nc",
 )
 
-# # netcdf has the annoying center locus for time
+# netcdf has the annoying center locus for time
 # lc_predictions = map(lc_predictions_paths) do path
 #     lc_predictions = RasterStack(path) |>
 #         x -> maybeshiftlocus(Start(), x) |>
@@ -55,7 +55,7 @@ lc_predictions_paths = (
 # auxs = agg_aux(masks, slope_stacks, dems, lc_predictions, aggfactor, last_year)
 # # auxs = agg_aux(masks.rod, slope_stacks.rod, dems.rod, lc_predictions.rod, aggfactor, last_year)
 # jldsave("sym_setup2_$aggfactor.jld2";
-#     auxs, pred_pops_aux, pred_response
+#     auxs, pred_pops_aux,
 # );
 
 # just for makie, kind of merges the pixel colors...
