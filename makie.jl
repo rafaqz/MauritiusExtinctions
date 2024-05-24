@@ -2,7 +2,7 @@ using ColorSchemes
 
 Makie.set_theme!(theme_light())
 
-const COLORMAPS = [:magma, :viridis, :cividis, :inferno, :delta, :seaborn_icefire_gradient, :seaborn_rocket_gradient, :hot]
+const COLORMAPS = [:reds, :blues, :greens, :magma, :viridis, :cividis, :inferno, :delta, :seaborn_icefire_gradient, :seaborn_rocket_gradient, :hot]
 
 function mk(init, ruleset; maxpops=zero(eltype(init.pred_pop)), landcover=nothing, tspan, kw...)
     MakieOutput(init;
@@ -49,7 +49,7 @@ function mk(init, ruleset; maxpops=zero(eltype(init.pred_pop)), landcover=nothin
             end
         end
         foreach(2:ncols, pred_axes, predators, pred_keys, COLORMAPS[1:npreds], colorrange_obs) do i, ax, pred, k, colormap, cr
-            p = Makie.image!(ax, pred; colormap=:navia, colorrange=cr, interpolate=false)
+            p = Makie.image!(ax, pred; colormap, colorrange=cr, interpolate=false)
             Colorbar(layout[1, i, Right()], p)
         end
 
@@ -81,9 +81,9 @@ function mk(init, ruleset; maxpops=zero(eltype(init.pred_pop)), landcover=nothin
                 extinct[] .= replace(Float32.(getindex.(frame.endemic_presence[], i)), 0.0f0 => NaN32)
                 function to_rgba(x, i)
                     sp = x[i]
-                    pred_causes = (sp.black_rat, sp.cat, sp.norway_rat)
+                    pred_causes = (sp.cat, sp.norway_rat, sp.black_rat)
                     if any(map(>(0), pred_causes))
-                        RGBA(min.(1.0, pred_causes ./ sum(pred_causes))..., 1.0f0)
+                        RGBA(min.(1.0, pred_causes ./ sum(pred_causes) .* 0.7)..., 1.0f0)
                     else
                         RGBA(pred_causes..., 0.0f0)
                     end
@@ -98,7 +98,7 @@ function mk(init, ruleset; maxpops=zero(eltype(init.pred_pop)), landcover=nothin
             cgrad(ColorScheme([RGB{Float64}(0.0, 0.0, 0.0), RGB{Float64}(i, 0.1i, 1/i)]), 2, categorical=true)
         end
         foreach(extinct_axes, extincts, causes, endemic_cmaps) do ax, extinct, cause, colormap
-            Makie.image!(ax, extinct; colorrange=(0.0, 1.0), colormap=:Greys_3, interpolate=false)
+            Makie.image!(ax, extinct; colorrange=(0.0, 1.0), colormap=:solar, interpolate=false)
             Makie.image!(ax, cause; interpolate=false)
         end
 
@@ -159,7 +159,7 @@ function mk_pred(init, ruleset; maxpops=zero(eltype(init.pred_pop)), landcover=n
             end
         end
         foreach(pred_axis_inds, pred_axes, pred_obs, COLORMAPS[1:npreds], colorrange_obs) do i, ax, pred, colormap, cr
-            p = Makie.image!(ax, pred; colormap=:navia, colorrange=cr, interpolate=false)
+            p = Makie.image!(ax, pred; colormap, colorrange=cr, interpolate=false)
             Colorbar(layout[Tuple(i)..., Right()], p)
         end
 

@@ -43,19 +43,20 @@ function calc_carrycaps(local_inputs, populations, carrycap, carrycap_scaling)
     return new_carrycaps
 end
 
-struct ExtirpationRisks{R,W,F,S,T,PR,PS,PP,E,SE,RR} <: DynamicGrids.NeighborhoodRule{R,W}
+struct ExtirpationRisks{R,W,F,S,T,PR,PS,PP,PC,E,SE,RR} <: DynamicGrids.NeighborhoodRule{R,W}
     f::F
     stencil::S
     traits::T
     pred_response::PR
     pred_suscept::PS
     pred_pop::PP
+    pred_carrycap::PC
     pred_effect::E
     stochastic_extirpation::SE
     recouperation_rates::RR
 end
-function ExtirpationRisks{R,W}(; f, stencil, traits, pred_response, pred_suscept, pred_pop, pred_effect, stochastic_extirpation, recouperation_rates) where {R,W}
-    ExtirpationRisks{R,W}(f, stencil, traits, pred_response, pred_suscept, pred_pop, pred_effect, stochastic_extirpation, recouperation_rates)
+function ExtirpationRisks{R,W}(; f, stencil, traits, pred_response, pred_suscept, pred_pop, pred_carrycap, pred_effect, stochastic_extirpation, recouperation_rates) where {R,W}
+    ExtirpationRisks{R,W}(f, stencil, traits, pred_response, pred_suscept, pred_pop, pred_carrycap, pred_effect, stochastic_extirpation, recouperation_rates)
 end
 
 # endemic_recouperation_rule = let recouperation_rate_aux=Aux{:recouperation_rate}()
@@ -82,9 +83,9 @@ end
 
     # Get the effect of predators on each endemic
     pred_effect = if isnothing(rule.pred_effect)
-        pred_pop = get(data, rule.pred_pop, I)
+        pred_relative_pop = get(data, rule.pred_pop, I) ./ rule.pred_carrycap
         pred_suscept = get(data, rule.pred_suscept)
-        map(rule.f, predator_effect(pred_pop, pred_suscept))
+        map(rule.f, predator_effect(pred_relative_pop, pred_suscept))
     else
         # We have already precalculated the effect
         get(data, rule.pred_effect, I)
@@ -118,22 +119,22 @@ end
     end
 
     # Get the effect of predators on each endemic
-    pred_pop = get(data, rule.pred_pop, I)
+    pred_relative_pop = get(data, rule.pred_pop, I) ./ rule.pred_carrycap .* 32
     pred_suscept = get(data, rule.pred_suscept)
-    pred_effects = predator_effects(pred_pop, pred_suscept)
+    pred_effects = predator_effects(pred_relative_pop, pred_suscept)
 
     results = map(endemic_presences, pred_effects, n_neighbors, recouperation_rates, causes) do present, effects, n_neighbor, rr, cs
         if present
             effect = rule.f(sum(effects))
-            extirpation_probability = effect * (length(hood) / 12) / (n_neighbor + 1) + rule.stochastic_extirpation
-            still_present = rand(typeof(first(pred_pop))) > extirpation_probability
+            extirpation_probability = effect * length(hood) / (n_neighbor + 1) + rule.stochastic_extirpation
+            still_present = rand(typeof(first(pred_relative_pop))) > extirpation_probability
             updated_causes = if still_present 
                 cs
             else
                 effects
             end
         elseif n_neighbor > 0
-            still_present = rand(typeof(first(pred_pop))) < (n_neighbor * rr / length(hood))
+            still_present = rand(typeof(first(pred_relative_pop))) < (n_neighbor * rr / length(hood))
             updated_causes = if still_present
                 zero(cs)
             else
@@ -230,7 +231,7 @@ function def_syms(
     end,
     # TODO: This is made up
     island_recouperation_rates = map(EndemicNVs) do EndemicNV
-        Float32.(ones(EndemicNV) .* 0.05)
+        Float32.(ones(EndemicNV) .* 1.0)
     end,
     # These are taken from the literature in contexts where it seems also applicable to the Mascarenes
     carrycap = Float32.(NV(;
@@ -251,19 +252,24 @@ function def_syms(
         wolf_snake =  1.0f0,
         macaque =     5.0f0,
     )[pred_keys],
+    # pred_funcs = (;
+    #     cat =        p -> 1.0f0p.black_rat + 0.3f0p.norway_rat + 1.0f0p.mouse + 10f0p.urban + 2f0p.cleared,
+    #     black_rat  = p -> -0.2f0p.cat - 0.1f0p.norway_rat - 0.1f0p.mouse + 0.5f0p.native + 0.3f0p.abandoned + 0.3f0p.forestry + 1p.urban,
+    #     norway_rat = p -> -0.1f0p.cat - 0.1f0p.black_rat - 0.1f0p.mouse + 1.5f0p.urban - 0.2f0p.native,
+    #     mouse =      p -> -0.3f0p.cat - 0.2f0p.black_rat - 0.2f0p.norway_rat + 0.8f0p.cleared + 1.5f0p.urban,
+    #     pig =        p -> 0.0f0p.native - 0.0f3p.abandoned - 2f0p.urban - 1.0f0p.cleared,
+    #     wolf_snake = p -> -0.2f0p.cat + 0.2f0p.black_rat + 0.3f0p.mouse - 0.5f0p.urban + 0.3f0p.native,
+    #     macaque =    p -> 1.0f0p.abandoned + 0.7f0p.forestry + 0.4f0p.native - 1.0f0p.urban - 0.8f0p.cleared
+    # )[pred_keys],
     pred_funcs = (;
-        cat =        p -> 1.0f0p.black_rat + 0.3f0p.norway_rat + 1.0f0p.mouse + 10f0p.urban + 2f0p.cleared,
-        black_rat  = p -> -0.2f0p.cat - 0.1f0p.norway_rat - 0.1f0p.mouse + 0.5f0p.native + 0.3f0p.abandoned + 0.3f0p.forestry + 1p.urban,
-        norway_rat = p -> -0.1f0p.cat - 0.1f0p.black_rat - 0.1f0p.mouse + 1.5f0p.urban - 0.2f0p.native,
+        cat =        p -> 2.0f0p.black_rat + 0.5f0p.norway_rat + 10f0p.urban + 2f0p.cleared,
+        black_rat  = p -> -0.2f0p.cat - 0.1f0p.norway_rat + 0.5f0p.native + 0.3f0p.abandoned + 0.3f0p.forestry + 1p.urban,
+        norway_rat = p -> -0.1f0p.cat - 0.1f0p.black_rat + 1.5f0p.urban - 0.2f0p.native,
         mouse =      p -> -0.3f0p.cat - 0.2f0p.black_rat - 0.2f0p.norway_rat + 0.8f0p.cleared + 1.5f0p.urban,
-        pig =        p -> 0.0f0p.native - 0.0f3p.abandoned - 2f0p.urban - 1.0f0p.cleared,
-        wolf_snake = p -> -0.2f0p.cat + 0.2f0p.black_rat + 0.3f0p.mouse - 0.5f0p.urban + 0.3f0p.native,
-        macaque =    p -> 1.0f0p.abandoned + 0.7f0p.forestry + 0.4f0p.native - 1.0f0p.urban - 0.8f0p.cleared
-    )[pred_keys],
+    )[pred_keys]
 )
     pred_df = filter(r -> Symbol(r.name) in pred_keys, pred_df)
     moore = Moore{3}()
-    @show pred_keys
 
     #= Assumptions
     1. cats suppress rodents to some extent, black rats more than norway rats (size selection - norway rats are above 250g)
@@ -412,7 +418,7 @@ function def_syms(
     clearing_rule = let landcover=Aux{:landcover}()
         Cell{:endemic_presence}() do data, presences, I
             lc = get(data, landcover, I)
-            presences .& (lc.native > 0.0f0)
+            presences .& (lc.native > 0.2f0)
         end
     end
 
@@ -494,6 +500,7 @@ function def_syms(
         pred_suscept=nothing,
         pred_effect=nothing,
         pred_pop=Grid{:pred_pop}(),
+        pred_carrycap=carrycap,
         stochastic_extirpation=0.005f0/aggfactor,
         recouperation_rates=Aux{:recouperation_rates}(),
     )
@@ -506,6 +513,7 @@ function def_syms(
         pred_suscept=nothing,
         pred_effect=Aux{:pred_effect}(),
         pred_pop=nothing,
+        pred_carrycap=carrycap,
         stochastic_extirpation=0.005f0/aggfactor,
         recouperation_rates=Aux{:recouperation_rates}(),
     )
@@ -772,30 +780,30 @@ function predator_response_params(pred_keys)
     pred_response_raw = (;
         ismammal = (;
             cat =         0.1,
-            black_rat =   0.02,
-            norway_rat =  0.02,
-            mouse =       0.00,
-            pig =         0.04,
-            wolf_snake =  0.02,
-            macaque =     0.02,
+            black_rat =   0.1,
+            norway_rat =  0.1,
+            mouse =       0.1,
+            pig =         0.1,
+            wolf_snake =  0.1,
+            macaque =     0.1,
         ),
         isbird = (;
             cat =         0.1,
-            black_rat =   0.03,
-            norway_rat =  0.03,
-            mouse =       0.02,
-            pig =         0.01,
-            wolf_snake =  0.03,
-            macaque =     0.01,
+            black_rat =   0.1,
+            norway_rat =  0.1,
+            mouse =       0.1,
+            pig =         0.1,
+            wolf_snake =  0.1,
+            macaque =     0.1,
         ),
         isreptile = (;
-            cat =         0.2,
-            black_rat =   0.02,
-            norway_rat =  0.02,
-            mouse =       0.01,
-            pig =         0.02,
-            wolf_snake =  0.02,
-            macaque =     0.02,
+            cat =         0.1,
+            black_rat =   0.1,
+            norway_rat =  0.1,
+            mouse =       0.1,
+            pig =         0.1,
+            wolf_snake =  0.1,
+            macaque =     0.1,
         ),
         # isgroundnesting = (;
         #     cat =         0.2,
@@ -807,13 +815,13 @@ function predator_response_params(pred_keys)
         #     macaque =     0.0,
         # ),
         flightlessness = (;
-            cat =         0.2,
-            black_rat =   0.01,
-            norway_rat =  0.02,
-            mouse =       0.01,
-            pig =         0.05,
-            wolf_snake =  0.01,
-            macaque =     0.0,
+            cat =         0.1,
+            black_rat =   0.1,
+            norway_rat =  0.1,
+            mouse =       0.1,
+            pig =         0.1,
+            wolf_snake =  0.1,
+            macaque =     0.1,
         ),
     )
 
