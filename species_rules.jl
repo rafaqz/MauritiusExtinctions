@@ -211,13 +211,13 @@ function def_syms(
     end,
     island_extinction_dates = extinction_dates_from_tables(island_endemic_tables, EndemicNVs, island_keys, extant_extension),
     mean_prey_mass = (;
-        cat =         (41.0, 51.0), # Pearre and Maaas 1998
-        black_rat =   (10.0, 10.0), # made up
-        norway_rat =  (8.0f0, 8.0), # made up
-        mouse =       (3.0f0, 5.0), # made up
-        pig =         (100.0, 100.0), # made up
-        wolf_snake =  (9.0f0, 7.0), # Estimated from Fritts 1993
-        macaque =     (40.0, 40.0), # made up
+        cat =        (41.0, 51.0), # Pearre and Maaas 1998
+        black_rat =  (10.0, 10.0), # made up
+        norway_rat = (8.0f0, 8.0), # made up
+        mouse =      (3.0f0, 5.0), # made up
+        pig =        (100.0, 100.0), # made up
+        wolf_snake = (9.0f0, 7.0), # Estimated from Fritts 1993
+        macaque =    (40.0, 40.0), # made up
    )[pred_keys],
     island_mass_response = map(island_endemic_tables, EndemicNVs) do table, EndemicNV
         endemic_mass = EndemicNV(table.Mass)
@@ -235,7 +235,7 @@ function def_syms(
     end,
     # These are taken from the literature in contexts where it seems also applicable to the Mascarenes
     carrycap = Float32.(NV(;
-        cat =        0.02,
+        cat =        0.01,
         black_rat =  30.0, # This may be up to 100/ha? See Harper & Bunbury 2015.
         norway_rat = 15.0, # This one is more of a guess
         mouse =      52.0,
@@ -244,7 +244,7 @@ function def_syms(
         macaque =    0.5,
     ) .* aggscale)[pred_keys],
     spread_rate = NV(;
-        cat =         30.0f0,
+        cat =         20.0f0,
         black_rat =   1.0f0,
         norway_rat =  1.0f0,
         mouse =       0.5f0,

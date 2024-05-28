@@ -265,16 +265,9 @@ stochastic_rates = map((0.0:0.2:1.5).^2) do std
         (; k=k[rodent], rt=rt[rodent], replicates=25, fixed_take=false, nsteps, years, std, seasonality, fraction_eaten)
     end
     optimise_hunting(rodent_params)
-end |> DataFrame
-# stochastic_rates1 = stochastic_rates
-stochastic_rates2 = stochastic_rates
+end
 stochastic_rates
-
-stochastic_rates1
-stochastic_rates2
 max_yield_fraction = Tuple(stochastic_rates[1, 3:5])
-stochastic_rates
-rt
 # Why is this relationship slightly under 1
 max_yield_fraction ./ (takes[1] / ustrip(rt[1]))
 
@@ -385,12 +378,12 @@ get_pref(x0, p)
 prob = OptimizationProblem(prey_size, x0, p)
 sol = solve(prob, NelderMead())
 
+cat_preference = LogNormal(log(50), 0.8);
 x0 = [0.1]
 p = (; cat_mean_prey_sizes)
 prey_size(x0, p)
 prob = OptimizationProblem(prey_size, x0, p)
 sol = solve(prob, NelderMead(); )
-cat_preference = LogNormal(log(50), 0.8);
 Makie.hist!(cat_mean_prey_sizes)
 p = Makie.plot(cat_preference)
 xlims!(p.axis, (0, 300))
@@ -504,65 +497,64 @@ Demonstration: island with or without rabbits and only rats
 - forests will not show mesopredator release
 =#
 
-using DynamicGrids, Dispersal
+# using DynamicGrids, Dispersal
 
-space = 8, 8
-bird_colony = rand(space...) .> 0.95
-landcover = rand(1:3, space...)
-rodents = fill(rodent_carrycap .* u"ha", space...)
-cats = fill(0.01, space...)
-init = (; cats, rodents)
-tspan = 1:100
-rodent_growth = LogisticGrowth(; carrycap=rodent_carrycap * u"ha", timestep=1u"yr")
-cat_growth = let max_yield_fraction=max_yield_fraction
-    Cell{Tuple{:cat,:rodents}}() do data, (cat, rodents), I
-        max_yield = rodent .* max_yield_fraction
-        max_supported_cats = sum(net_energy_per_rodent .*  max_yield)
-        if max_supported_cats < cat
-            (N * k) / (N + (k - N) * exp(-rt))
-        else
-            N * exp(rt)
-        end
-        reduced_rodents = rodents .- take
-        (grown_cat, reduced_rodents)
-    end
-end
+# space = 8, 8
+# bird_colony = rand(space...) .> 0.95
+# landcover = rand(1:3, space...)
+# rodents = fill(rodent_carrycap .* u"ha", space...)
+# cats = fill(0.01, space...)
+# init = (; cats, rodents)
+# tspan = 1:100
+# rodent_growth = LogisticGrowth(; carrycap=rodent_carrycap * u"ha", timestep=1u"yr")
+# cat_growth = let max_yield_fraction=max_yield_fraction
+#     Cell{Tuple{:cat,:rodents}}() do data, (cat, rodents), I
+#         max_yield = rodent .* max_yield_fraction
+#         max_supported_cats = sum(net_energy_per_rodent .*  max_yield)
+#         if max_supported_cats < cat
+#             (N * k) / (N + (k - N) * exp(-rt))
+#         else
+#             N * exp(rt)
+#         end
+#         reduced_rodents = rodents .- take
+#         (grown_cat, reduced_rodents)
+#     end
+# end
 
-ruleset = Ruleset(cat_growth, rodent_growth; boundary=Wrap())
+# ruleset = Ruleset(cat_growth, rodent_growth; boundary=Wrap())
 
-output = MakieOutput(init;
-    ruleset,
-    tspan,
-    aux = (; black_rat_predation_rate, landcover),
-)
+# output = MakieOutput(init;
+#     ruleset,
+#     tspan,
+#     aux = (; black_rat_predation_rate, landcover),
+# )
 
 
 rodent_keys = Tuple(rodent_names)
-pred_funcs = (;
-    black_rat  = p -> -0.1f0p.norway_rat - 0.1f0p.mouse + 0.5f0p.native + 0.3f0p.abandoned + 0.3f0p.forestry + 1p.urban,
-    norway_rat = p -> -0.1f0p.black_rat - 0.1f0p.mouse + 1.5f0p.urban - 0.2f0p.native,
-    mouse =      p -> -0.2f0p.black_rat - 0.2f0p.norway_rat + 0.8f0p.cleared + 1.5f0p.urban,
-    pig =        p -> 0.0f0p.native - 0.0f3p.abandoned - 2f0p.urban - 1.0f0p.cleared,
-    wolf_snake = p -> -0.2f0p.black_rat + 0.3f0p.mouse - 0.5f0p.urban + 0.3f0p.native,
-    macaque =    p -> 1.0f0p.abandoned + 0.7f0p.forestry + 0.4f0p.native - 1.0f0p.urban - 0.8f0p.cleared
-)[rodent_keys]
+# pred_funcs = (;
+#     black_rat  = p -> -0.1f0p.norway_rat - 0.1f0p.mouse + 0.5f0p.native + 0.3f0p.abandoned + 0.3f0p.forestry + 1p.urban,
+#     norway_rat = p -> -0.1f0p.black_rat - 0.1f0p.mouse + 1.5f0p.urban - 0.2f0p.native,
+#     mouse =      p -> -0.2f0p.black_rat - 0.2f0p.norway_rat + 0.8f0p.cleared + 1.5f0p.urban,
+#     pig =        p -> 0.0f0p.native - 0.0f3p.abandoned - 2f0p.urban - 1.0f0p.cleared,
+#     wolf_snake = p -> -0.2f0p.black_rat + 0.3f0p.mouse - 0.5f0p.urban + 0.3f0p.native,
+#     macaque =    p -> 1.0f0p.abandoned + 0.7f0p.forestry + 0.4f0p.native - 1.0f0p.urban - 0.8f0p.cleared
+# )[rodent_keys]
 
-carrycap = NamedVector(;
-    cat =        0.02,
-    black_rat =  30.0, # This may be up to 100/ha? See Harper & Bunbury 2015.
-    norway_rat = 15.0, # This one is more of a guess
-    mouse =      52.0,
-    pig =        0.02, # Tuned to have ~600 total in mauritius in 2009 (actually 714, more significant digits are not justifiable).
-    wolf_snake = 10.0, # As is this one
-    macaque =    0.5,
-)[rodent_keys]
+# carrycap = NamedVector(;
+#     cat =        0.02,
+#     black_rat =  30.0, # This may be up to 100/ha? See Harper & Bunbury 2015.
+#     norway_rat = 15.0, # This one is more of a guess
+#     mouse =      52.0,
+#     pig =        0.02, # Tuned to have ~600 total in mauritius in 2009 (actually 714, more significant digits are not justifiable).
+#     wolf_snake = 10.0, # As is this one
+#     macaque =    0.5,
+# )[rodent_keys]
 
-populations = carrycap ./ 2
-local_inputs = NamedVector(native=1.0, cleared=0.0, abandoned=0.0, urban=0.0, forestry=0.0)
-calc_carrycaps(local_inputs, populations, carrycap, pred_funcs)
+# populations = carrycap ./ 2
+# local_inputs = NamedVector(native=1.0, cleared=0.0, abandoned=0.0, urban=0.0, forestry=0.0)
+# calc_carrycaps(local_inputs, populations, carrycap, pred_funcs)
 
 predator_fr_half_saturation = NamedVector(norway_rat=3, black_rat=5, mouse=8)
-
 ks = Tuple(rodent_carrycap .* u"ha")
 Ns = Tuple(rodent_carrycap .* u"ha") ./ 5
 Ds = Tuple(predator_fr_half_saturation)
@@ -594,38 +586,39 @@ function hanski_predation(N::Number, β::Number, c::Number, P::Number, D_Nβs::N
     # Multi-prey weighted predation
     c * P * β * N / D_Nβs
 end
-function hanski_growth(N::Number, k::Number, r::Number, Ns_x, αs_x, t)
+function hanski_growth(N::Number, k::Number, r::Number, Ns_x, αs_x)
     r * N * (1 - (N + sum(αs_x .* Ns_x)) / k)
 end
-function hanski_multi(P::Number, Ns::NTuple{I}, Ds, αs, ks, cs, rs, t) where I
+function hanski_multi(P::Number, Ns::NTuple{I}, Ds, Es, ys, αs, ks, cs, rs, d_high, t) where I
     βs = Ds[1] ./ Ds
     Nβs = sum(βs .* Ns)
     D_Nβs = Ds[1] + Nβs
     is = ntuple(identity, Val{I}())
     return map(is) do i
+        N = Ns[i]
         others = Tuple([j for j in is if j != i])
         αs_x = map(j -> αs[i, j], others)
         Ns_x = map(j -> Ns[j], others)
-        growth = hanski_growth(Ns[i], ks[i], rs[i], Ns_x, αs_x, t)
-        pred = hanski_predation(P, v, q, e, d_high, Ns[i], βs[i], cs[i], P, D_Nβs)
-        N1 = max(0.0, N + (growth - predation) * t)
-        P1 = max(0.0, P + hanski_pred_growth(P, pred) * t)
-        return P1, N1
+        growth = hanski_growth(Ns[i], ks[i], rs[i], Ns_x, αs_x)
+        predated = hanski_predation(Ns[i], βs[i], cs[i], P, D_Nβs)
+        @show predated P
+        N1 = max(zero(N), N + (growth - predated) * t)
+        return N1
     end
 end
-
-function hanski_predation(P::Number, v::Number, q::Number, e::Number, d_high::Number, Ns, ys, Es, Ds, t)
+function hanski_pred(P::Number, v::Number, e::Number, d_high::Number, Ns, ys, Es, Ds, cs, t)
     βs = Ds[1] ./ Ds
     Nβs = sum(Ns .* βs)
     q = convert(typeof(P), sum(Ns .* ys .* Es) / e)
-    @show q
     Preproduction = 1.5P # ??
     # If prey are above the breeding threshold
-    if q > Preproduction # Use supportable population as the threshold rather than Ncrit
+    P1 = if q > Preproduction # Use supportable population as the threshold rather than Ncrit
         max(zero(P), P + v * P * (1 - q * P / Nβs) * t)
     else
         max(zero(P), P + -d_high * P * t)
     end
+    @show P1
+    P1
 end
 
 using Test
@@ -633,11 +626,8 @@ N1, N2 = Ns
 k1, k2 = ks
 N1_ref = max(0.0, N1 + (r1 * N1 * (1 - (N1 + α12 * N2) / k1)) * 1u"yr" / 12  - ((c1 * P * β1 * N1 / (D1 + β1 * N1 + β2 * N2))) * 1u"yr"/12)
 N2_ref = max(0.0, N2 + (r2 * N2 * (1 - (N2 + α21 * N1) / k2)) * 1u"yr" / 12  - ((c2 * P * β2 * N2 / (D1 + β1 * N1 + β2 * N2))) * 1u"yr"/12)
-all(
-    hanski_multi(P, Ns[1:2], Ds[1:2], αs, ks[1:2], cs[1:2], rt[1:2], t)
-          .≈ (N1_ref, N2_ref))
-hanski_multi(P, Ns[1:2], Ds[1:2], βs[1:2], αs, ks[1:2], cs[1:2], rt[1:2], t)
-# cs = Tuple(max_yield_fraction) ./ t
+
+cs = Tuple(max_yield_fraction) ./ t
 cat_pr0ference = LogNormal(log(50), 0.8)
 ys = max_yield_fraction ./ t
 ks = (25, 40, 100)
@@ -650,19 +640,9 @@ ks = (25, 40, 100)
 # αs = (x -> 1.0).(αs)
 αs = @SMatrix [0.0 α12 α13; α21 0.0 α13; α31 α32 0.0]
 
-P = 0.00001
 # cs = individuals_per_cat
-cs = map(x -> individuals_per_cat[2], individuals_per_cat)
 # Use relative predation rates for D ratios
 # Ds = predation_rates ./ predation_rates[1]
-
-Ds = (1.0, 1.0, 1.0)
-Ns = Tuple(rodent_carrycap .* u"ha")
-for i in 1:100
-    Ns = hanski_multi(P, Ns, Ds, αs, ks, cs, rt, t)
-    P = hanski_pred(P, v, q, e, d_high, Ns, ys, Es, Ds, t)
-    @show (Ns, P)
-end
 
 hunted_rodent_mass = NamedVector(norway_rat=110, black_rat=90, mouse=15) .* u"g"
 assimilated_energy_per_individual = hunted_rodent_mass .* rodent_energy_content .* assimilation_efficiency
@@ -670,6 +650,9 @@ individuals_per_cat = cat_energy_intake ./ assimilated_energy_per_individual
 mean_prey_size = 60u"g" 
 mean_prey_n = cat_energy_intake / (mean_prey_size * rodent_energy_content * assimilation_efficiency)
 
+P = 0.00001
+cs = individuals_per_cat
+ys = max_yield_fraction ./ t
 v = eachrow(pred_df)[1].rmax * u"yr^-1"
 Ds = (4, 4, 4)
 q = eachrow(pred_df)[1].carrycap
@@ -679,5 +662,19 @@ Ncrit = 4 / u"d"
 d_high = 0.2 / t
 P = 0.01
 Ns1 = 2 .* Ns
-Ds
-P, Ns1 = hanski_multi(P, v, d_high, e, Ns1, Ds, βs, Es, αs, ks, cs, rt, t)
+Ds = (1.0, 1.0, 1.0)
+Ns = Tuple(rodent_carrycap .* u"ha")
+
+for i in 1:100
+    Ns = hanski_multi(P, Ns, Ds, Es, ys, αs, ks, cs, rt, d_high, t)
+    P = hanski_pred(P, v, q, e, d_high, Ns, ys, Es, Ds, t)
+    P
+    @show (Ns, P)
+end
+
+
+simple_growth(N, k, r, t) = (N .* k) ./ (N .+ (k.- N) .* exp.(.-(r * t)))
+
+N = 10
+simple_growth(P, q, v, t)
+

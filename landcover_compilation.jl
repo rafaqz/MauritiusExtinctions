@@ -7,7 +7,17 @@
 include("travel_cost.jl")
 include("tabular_data.jl")
 include("map_file_functions.jl")
-include("landcover_shared.jl")
+# include("landcover_shared.jl")
+using LandscapeChange
+const NV = NamedVector
+transitions = NV(
+    native    = NV(native=true,  cleared=false, abandoned=false, urban=false, forestry=false,  water=false),
+    cleared   = NV(native=true,  cleared=true,  abandoned=true,  urban=false, forestry=false,  water=false),
+    abandoned = NV(native=false, cleared=true,  abandoned=true,  urban=false,  forestry=false,  water=false),
+    urban     = NV(native=false,  cleared=true,  abandoned=true,  urban=true,  forestry=false,  water=false),
+    forestry  = NV(native=false,  cleared=true,  abandoned=true,  urban=false, forestry=true,   water=false),
+    water     = NV(native=false,  cleared=true,  abandoned=true,  urban=true,  forestry=true,  water=true),
+)
 
 include("map_file_list.jl")
 compiled = compile_timeline(define_map_files(), masks, keys(lc_categories))

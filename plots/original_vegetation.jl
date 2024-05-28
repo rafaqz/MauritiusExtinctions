@@ -2,7 +2,7 @@ using Rasters, GLMakie, ColorSchemes, Extents
 using DBFTables
 # using CairoMakie
 GLMakie.activate!()
-include("landcover_compilation.jl")
+include("../landcover_compilation.jl")
 
 function plot_habitats!(fig, data; 
     colormap, nrows, ncols, show_uncertain=true
@@ -145,7 +145,7 @@ plot_aggregate!(line_ax, data, habitat_colors)
 # rowgap!(fig.layout, 5, 40)
 # Title
 fig[5, :] = Label(fig, "Mauritius Habitat Loss (striped/transparent areas uncertain)"; fontsize=30)
-save("images/mauritius_habitat_loss.png", fig)
+# save("images/mauritius_habitat_loss.png", fig)
 display(fig)
 
 # Reunion
@@ -168,7 +168,7 @@ plot_aggregate!(line_ax, data, habitat_colors)
 # rowgap!(fig.layout, 4, 100)
 # Title
 fig[4, :] = Label(fig, "Reunion Habitat Loss (striped/transparent areas uncertain)"; fontsize=30)
-save("images/reunion_habitat_loss.png", fig)
+# save("images/reunion_habitat_loss.png", fig)
 display(fig)
 
 p = Makie.heatmap(uncleared.mus.certain[Ti=End-2])
