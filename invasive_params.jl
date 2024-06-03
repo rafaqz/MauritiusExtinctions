@@ -137,6 +137,8 @@ using OptimizationOptimJL
 using CSV, DataFrames, StaticArrays
 using LandscapeChange
 using Unitful
+using CairoMakie
+CairoMakie.activate!()
 
 seasonal_k(k, seasonality, nsteps, s) = k + k * seasonality * sin(2π * s / nsteps)
 
@@ -245,35 +247,37 @@ fraction_eaten = 0.72 # McGregor 2015
 seasonality = 0.5
 replicates = 1
 
-seasonality_rates = map(0.0:0.1:0.9) do seasonality
-    rodent_params = map(R(rodent_names)) do rodent
-        (; k=k[rodent], rt=rt[rodent], fixed_take=true, std=0.1, replicates=100, seasonality, nsteps, years, fraction_eaten)
-    end
-    optimise_hunting(rodent_params)
-end |> DataFrame
+# seasonality_rates = map(0.0:0.1:0.9) do seasonality
+#     rodent_params = map(R(rodent_names)) do rodent
+#         (; k=k[rodent], rt=rt[rodent], fixed_take=true, std=0.1, replicates=100, seasonality, nsteps, years, fraction_eaten)
+#     end
+#     optimise_hunting(rodent_params)
+# end |> DataFrame
 
-rodent_params = map(R(rodent_names)) do rodent
-    (; k=k[rodent], rt=rt[rodent], fixed_take=true, std=0.2, nsteps, years, seasonality, fraction_eaten, replicates)
-end
-p = rodent_params[3]
-x0 = 0.075
-rodent_func(x0, p)
-optimise_hunting(rodent_params)
+# rodent_params = map(R(rodent_names)) do rodent
+#     (; k=k[rodent], rt=rt[rodent], fixed_take=true, std=0.2, nsteps, years, seasonality, fraction_eaten, replicates)
+# end
+# p = rodent_params[3]
+# x0 = 0.075
+# rodent_func(x0, p)
+# optimise_hunting(rodent_params)
 
 stochastic_rates = map((0.0:0.2:1.5).^2) do std
     rodent_params = map(R(rodent_names)) do rodent
         (; k=k[rodent], rt=rt[rodent], replicates=25, fixed_take=false, nsteps, years, std, seasonality, fraction_eaten)
     end
     optimise_hunting(rodent_params)
-end
+end |> DataFrame
 stochastic_rates
-max_yield_fraction = Tuple(stochastic_rates[1, 3:5])
+max_yield_fraction = Tuple(DataFrame(stochastic_rates)[1, 3:5])
 # Why is this relationship slightly under 1
-max_yield_fraction ./ (takes[1] / ustrip(rt[1]))
+# max_yield_fraction ./ (takes[1] / ustrip(rt[1]))
 
 # k does not matter - we get the same yield rate regardless of k
 # so the model is general to any k
 
+
+# Stochasticity reduces yield
 colors = [:red, :lightblue, :yellow]
 x = stochastic_rates.std
 fig = Figure(; title="Effects of monthly stochasticity on optimal hunting yields", size=(600, 800));
@@ -307,8 +311,9 @@ axislegend(axs[1])
 display(fig)
 save("images/cat_hunting_stochasticty.png", fig)
 
+
 using Distributions
-using NLopt
+using NLopt, OptimizationNLopt
 
 # Childs 1986
 max_rat_size = 100:100:700
@@ -351,44 +356,41 @@ function get_pref(x, p)
     sum((killed_means .- predicted_means) .^ 2)
 end
 
-# x = [90.0, 0.6]
-# p = (; trapped_rats, killed_rats, center_rat_size)
-# prob = OptimizationProblem(get_pref, x, p; lb=[0.0, 0.0], ub=[500.0, 10.0])
-# get_pref(x, p)
-# sol = solve(prob, NLopt.LN_NELDERMEAD())
-# x = sol.u
-# get_pref(x, p)
-# μ, σ = x
-# cat_preference = LogNormal(log(μ), σ)
-# Makie.plot(cat_preference)
+x = [90.0, 0.6]
+p = (; trapped_rats, killed_rats, center_rat_size)
+prob = OptimizationProblem(get_pref, x, p; lb=[0.0, 0.0], ub=[500.0, 10.0])
+get_pref(x, p)
+sol = solve(prob, NLopt.LN_NELDERMEAD())
+x = sol.u
+get_pref(x, p)
+μ, σ = x
+cat_preference = LogNormal(log(μ), σ)
+Makie.plot(cat_preference)
 
 
 # From the diet review paper
 # these are means prey size accross whole studies
-using Statistics
+# using Statistics
+
+# x0 = [20.0, -10.0]
+# p = (; cat_mean_prey_sizes)
+# get_pref(x0, p)
+# prob = OptimizationProblem(prey_size, x0, p)
+# sol = solve(prob, NelderMead())
+
+# x0 = [0.1]
+# p = (; cat_mean_prey_sizes)
+# prey_size(x0, p)
+# prob = OptimizationProblem(prey_size, x0, p)
+# sol = solve(prob, NelderMead(); )
+# Makie.hist!(cat_mean_prey_sizes)
+# p = Makie.plot(cat_preference)
+# xlims!(p.axis, (0, 300))
+
 cat_mean_prey_sizes = [11.0, 33.0, 17.9, 4.3, 15.5, 23.6, 24.0, 31.2, 26.5, 23.3, 9.3, 26.2, 29.0, 21.2, 349.7, 3.64, 21.8, 35.9, 13.6, 8.2, 228.6, 249.0, 42.7, 16.5, 15.5, 60.7, 32.8, 184.9, 34.1, 36.8, 7.4, 102.0, 241.2, 38.5, 13.3, 26.4, 7.6, 24.3, 123.2, 39.2, 1.77, 76.7, 13.5, 18.3, 30.3, 34.4]
 sort!(cat_mean_prey_sizes)
 mean(cat_mean_prey_sizes)
-Statistics.std(cat_mean_prey_sizes)
-sort!(rand(cat_preference, length(cat_mean_prey_sizes)))
-
-x0 = [20.0, -10.0]
-p = (; cat_mean_prey_sizes)
-get_pref(x0, p)
-prob = OptimizationProblem(prey_size, x0, p)
-sol = solve(prob, NelderMead())
-
 cat_preference = LogNormal(log(50), 0.8);
-x0 = [0.1]
-p = (; cat_mean_prey_sizes)
-prey_size(x0, p)
-prob = OptimizationProblem(prey_size, x0, p)
-sol = solve(prob, NelderMead(); )
-Makie.hist!(cat_mean_prey_sizes)
-p = Makie.plot(cat_preference)
-xlims!(p.axis, (0, 300))
-
-
 
 # Wilson et al 2007
 black_rat_max_mass = 40:40:240
@@ -452,36 +454,39 @@ Ds = predation_rates ./ predation_rates[1]
 #
 # rodents are ~80% of cat diet and they do not switch to natives much (Harper thesis etc)
 
-fig = Figure(; size=(600, 800));
-ax1 = Axis(fig[1, 1]; ylabel="Cat mass preference")
-ax2 = Axis(fig[1, 1]; ylabel="Rodent mass fractions", yaxisposition=:right)
-# ax3 = Axis(fig[2, 1])
-hidexdecorations!(ax2)
-hidespines!(ax2)
-linkxaxes!(ax1, ax2, ax3)
+fig = Figure(; size=(800, 600));
+ax1 = Axis(fig[1, 1]; ylabel="Fraction trapped")
+ax2 = Axis(fig[2, 1]; ylabel="Fraction killed")
+ax3 = Axis(fig[3, 1]; xlabel="Prey size", ylabel="Reported means")
+ax4 = Axis(fig[4, 1]; ylabel="Probability")
+axs = ax1, ax2, ax3, ax4
+hidexdecorations!.(axs[1:3]; grid=false)
+hidespines!.(axs)
+linkxaxes!(axs...)
 alpha = 0.7
-b1 = Makie.lines!(ax2, norway_rat_center_mass, norway_rat_trap_rate;
+b1 = Makie.lines!(ax1, norway_rat_center_mass, norway_rat_trap_rate;
     color=(colors[1], alpha), label=rodent_labels[1] * " trapped sizes",
 )
-b2 = Makie.lines!(ax2, black_rat_center_mass, black_rat_trap_rate;
+b2 = Makie.lines!(ax1, black_rat_center_mass, black_rat_trap_rate;
     color=(colors[2], alpha), label=rodent_labels[2] * " trapped sizes",
 )
-b3 = Makie.lines!(ax2, mouse_center_mass, mouse_trap_rate;
+b3 = Makie.lines!(ax1, mouse_center_mass, mouse_trap_rate;
     color=(colors[3], alpha), label=rodent_labels[3] * " trapped sizes",
 )
-l = Makie.plot!(ax1, cat_preference; color=:black, label="Log-normal preference model")
-d = Makie.density!(ax2, cat_mean_prey_sizes; color=:grey, label="Literature mean prey sizes")
-axislegend(ax1; position=:rc)
-axislegend(ax2)
-xlims!(ax1, (0, 500))
-xlims!(ax2, (0, 500))
-# xlims!(ax3, (0, 500))
+b4 = Makie.lines!(ax2, center_rat_size, killed_rats ./ sum(killed_rats);
+    color=(colors[1], alpha), label="Norway rat killed sizes",
+)
+d = Makie.density!(ax3, cat_mean_prey_sizes; color=:grey, label="Literature mean prey sizes")
+l = Makie.plot!(ax4, cat_preference; color=:black, label="Preference model")
+axislegend.(axs; position=:rc)
+Makie.xlims!.(axs, ((0, 600),))
+display(fig)
 save("images/cat_rodent_predation.png", fig)
 
-Makie.lines!(ax3, center_rat_size, killed_rats_glass ./ sum(killed_rats_glass))
-Makie.barplot!(ax3, center_rat_size, trapped_rats_childs ./ sum(trapped_rats_childs))
-Makie.lines!(ax3, center_rat_25_size, killed_rats_25_childs ./ sum(killed_rats_25_childs) .* 4)
-display(fig)
+# Makie.lines!(ax3, center_rat_size, killed_rats_glass ./ sum(killed_rats_glass))
+# Makie.barplot!(ax3, center_rat_size, trapped_rats_childs ./ sum(trapped_rats_childs))
+# Makie.lines!(ax3, center_rat_25_size, killed_rats_25_childs ./ sum(killed_rats_25_childs) .* 4)
+# display(fig)
 
 
 #=

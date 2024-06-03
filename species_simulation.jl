@@ -25,14 +25,16 @@ end
     pred_pops_aux = map(_ -> nothing, dems),
     # pred_funcs,
     island_recouperation_rates = map(EndemicNVs) do EndemicNV
-        Float32.(ones(EndemicNV) .* 0.1)
+        Float32.(ones(EndemicNV) .* 0.05)
     end,
 );
 (; output, endemic_output, pred_output, init, output_kw) = islands[k];
-@time sim!(output, ruleset; proc=SingleCPU(), printframe=true);
+k
+sim!(output, ruleset; proc=SingleCPU(), printframe=true, tspan=1600:1610);
 
-mkoutput = mk_pred(init, pred_ruleset; landcover=lc_all[k], output_kw...)
+# mkoutput = mk_pred(init, pred_ruleset; landcover=lc_all[k], output_kw...)
 mkoutput = mk(init, ruleset; landcover=lc_all[k], output_kw..., ncolumns=4)
+# display(mkoutput)
 
 
 # Optimisation

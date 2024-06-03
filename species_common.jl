@@ -28,7 +28,7 @@ last_year = 2018
 extant_extension = 0
 
 f = jldopen("sym_setup2_$aggfactor.jld2", "r")
-pred_pops_aux = f["pred_pops_aux"];
+# pred_pops_aux = f["pred_pops_aux"];
 auxs = f["auxs"];
 close(f)
 
@@ -55,7 +55,7 @@ lc_predictions_paths = (
 # auxs = agg_aux(masks, slope_stacks, dems, lc_predictions, aggfactor, last_year)
 # # auxs = agg_aux(masks.rod, slope_stacks.rod, dems.rod, lc_predictions.rod, aggfactor, last_year)
 # jldsave("sym_setup2_$aggfactor.jld2";
-#     auxs, pred_pops_aux,
+#     auxs#, pred_pops_aux,
 # );
 
 # just for makie, kind of merges the pixel colors...

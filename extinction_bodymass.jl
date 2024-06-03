@@ -2,7 +2,7 @@ using GLMakie, Unitful
 using CairoMakie
 using DataFrames, Dates
 CairoMakie.activate!()
-GLMakie.activate!()
+# GLMakie.activate!()
 
 include("species_tables.jl")
 include("tabular_data.jl")
@@ -35,6 +35,10 @@ introductions = map(island_keys) do k
         subset(introductions_df, :species => ByRow(==(x)), :island => ByRow(==(string(k)))).year[1]
     end
 end
+
+extinct = subset(island_endemic_tables.mus, :extinct => ByRow(!ismissing))
+extinct = subset(island_endemic_tables.reu, :extinct => ByRow(!ismissing))
+extinct = subset(island_endemic_tables.rod, :extinct => ByRow(!ismissing))
 
 human_bird_consumption = human_bird_diet_fraction * human_energy_intake / (bird_energy_content * assimilation_efficiency)
 cat_bird_consumption = cat_bird_diet_fraction * cat_energy_intake / (bird_energy_content * assimilation_efficiency)
@@ -71,7 +75,7 @@ eaten_by_pigs = map(introductions, areas) do (; pig), area
     uconvert.(u"g/d", pig_pops .* pig_bird_consumption)
 end
 
-function plot_consumption!(ax, by_cats, by_rats, by_pigs, by_humans, i; fontsize=9)
+function plot_consumption!(ax, by_cats, by_rats, by_pigs, by_humans, i; fontsize=12)
     Makie.lines!(ax, lookup(by_cats, Ti), ustrip.(u"g/d", by_cats); color=:orange, label="Cats 10% bird diet")
     Makie.lines!(ax, lookup(by_cats, Ti), ustrip.(u"g/d", by_cats .* 5); color=(:orange, 0.5), label="Cats 50% bird diet")
     Makie.lines!(ax, lookup(by_rats, Ti), ustrip.(u"g/d", by_rats); color="#067dd1", label="Rats 0.01% bird diet")
@@ -81,21 +85,22 @@ function plot_consumption!(ax, by_cats, by_rats, by_pigs, by_humans, i; fontsize
     # i == 1 && axislegend(ax; position=:lt)
     if length(by_pigs) > 0 && by_pigs[Near(1650)] > 0u"g/d"
         Makie.lines!(ax, lookup(by_pigs, Ti), ustrip.(u"g/d", by_pigs); color=:green, label="Pig 1% bird diet")
-        Makie.text!(ax, 1650, ustrip(u"g/d", by_pigs[Near(1650)]); text="Pig 1% bird diet", fontsize)
+        Makie.text!(ax, 1660, ustrip(u"g/d", by_pigs[Near(1660)]); text="Pig 1% bird diet", fontsize)
     end
-    Makie.text!(ax, 1750, ustrip(u"g/d", by_rats[Near(1750)]); text="Black rat 0.01% bird diet", fontsize)
-    Makie.text!(ax, 1750, ustrip(u"g/d", by_rats[Near(1750)] * 5); text="Black rat 0.05% bird diet", fontsize)
+    Makie.text!(ax, 1600, ustrip(u"g/d", by_rats[Near(1600)]); text="Black rat 0.01% bird diet", fontsize)
+    Makie.text!(ax, 1600, ustrip(u"g/d", by_rats[Near(1600)] * 5); text="Black rat 0.05% bird diet", fontsize)
     Makie.text!(ax, 1750, ustrip(u"g/d", by_cats[Near(1750)]); text="Cat 10% bird diet", fontsize)
     Makie.text!(ax, 1750, ustrip(u"g/d", by_cats[Near(1750)] * 5); text="Cat 50% bird diet", fontsize)
-    Makie.text!(ax, 1721, ustrip(u"g/d", by_humans[Near(1730)]); text="Human 10% bird diet", fontsize)
-    Makie.text!(ax, 2000, ustrip(u"g/d", by_humans[Near(2000)] / 200); text="Human 0.05% bird diet", fontsize)
+    Makie.text!(ax, 1741, ustrip(u"g/d", by_humans[Near(1739)]); text="Human 10% bird diet", fontsize)
+    Makie.text!(ax, 1980, ustrip(u"g/d", by_humans[Near(1980)] / 500); align=(:right, :center), text="Human 0.05% bird diet", fontsize)
 end
 
 function extinction_plot!(ax, table; 
     label, 
     textcolumn=:LostLand_name, 
-    fontsize=8,
+    fontsize=10,
     color=:black,
+    text=true,
 ) 
     extinct = subset(table, :extinct => ByRow(!ismissing))
     extinct.extinct1 = map(extinct.extinct) do r
@@ -105,25 +110,28 @@ function extinction_plot!(ax, table;
             first(r), last(r)
         end
     end
-    period_len = 50
-    extinct.decade = round.(Int, (mean.(extinct.extinct1))) .÷ period_len .* period_len
-    period_mean_mass = map(df -> mean(df.Mass), collect(DataFrames.groupby(extinct, :decade; sort=true)))
-    periods = sort!(union(extinct.decade)) .+ (period_len / 2)
-    hunted = subset(extinct, :Hunting_preference => ByRow(>(0)))
+    # period_len = 50
+    # extinct.decade = round.(Int, (mean.(extinct.extinct1))) .÷ period_len .* period_len
+    # period_mean_mass = map(df -> mean(df.Mass), collect(DataFrames.groupby(extinct, :decade; sort=true)))
+    # periods = sort!(union(extinct.decade)) .+ (period_len / 2)
+    # hunted = subset(extinct, :Hunting_preference => ByRow(>(0)))
     # p = Makie.scatter(hunted.extinct1, hunted.Mass; markersize=30, color=(:red, 0.2), axis=())
     segments = map(extinct.extinct1, extinct.Mass) do (x1, x2), y
         (Makie.Point(x1, y), Makie.Point(x2, y)) 
     end
     Makie.linesegments!(ax, segments; color, label, linewidth=1.5)
-    Makie.lines!(ax, periods, period_mean_mass; color=(color, 0.5), linewidth=1, label="Mean 50yr mass")
+    # Makie.lines!(ax, periods, period_mean_mass; color=(color, 0.5), linewidth=1, label="Mean 50yr mass")
     Makie.hlines!(ax, median(extinct.Mass); color=(color, 0.5), linewidth=1, linestyle=:dash, label="Median mass")
-    Makie.text!(ax, mean.(extinct.extinct1), extinct.Mass .* 1.15; 
-        text=map(s -> ismissing(s) ? "" : s, getproperty(extinct, textcolumn)), # .* '\n' .* extinct.Species)
-        align=(:center, :baseline),
-        fontsize,
-    )
+    if text
+        Makie.text!(ax, mean.(extinct.extinct1), extinct.Mass .* 1.15; 
+            text=map(s -> ismissing(s) ? "" : s, getproperty(extinct, textcolumn)), # .* '\n' .* extinct.Species)
+            align=(:center, :baseline),
+            fontsize,
+        )
+    end
 end
 
+###############################################################################################
 # Whole page plot
 fig = Figure(; size=(800, 800), title="Extinction times by Mass");
 weights = [1, 10, 100, 1000, 10000]
@@ -163,7 +171,7 @@ end
 axs3 = map(1:3) do i
     ax = Axis(fig[i * 3, 2];
         xlabel="Year", 
-        ylabel="Mass\nconsumed (kg)",
+        ylabel="Bird mass\nconsumed (kg)",
     )
     Makie.ylims!(ax, (10, 3e5))
     i == 3 || hidexdecorations!(ax; grid=false)
@@ -180,7 +188,7 @@ foreach(plot_aggregate!, axs2, uncleared, habitat_colors)
 linkxaxes!(axs1..., axs2..., axs2b..., axs3...)
 Makie.xlims!(axs1[1], (1600, 2020))
 foreach(axs1, island_endemic_tables, labels) do ax, tbl, label
-    extinction_plot!(ax, tbl; label="Extinction date range", color=:darkgrey)
+    extinction_plot!(ax, tbl; label="Extinction date range", color=:black)
     axislegend(ax; framevisible=false, labelsize=11)
 end
 foreach(axs2b, human_habitation_periods) do ax, human_pops
@@ -196,16 +204,15 @@ foreach(axs3, eaten_by_cats, eaten_by_rats, eaten_by_pigs, eaten_by_humans, 1:3)
     plot_consumption!(args...)
 end
 colsize!(fig.layout, 1, 10)
-display(fig)
 Makie.xlims!(axs1[3], (1600, 2025))
 Makie.xlims!(axs2[2], (1600, 2025))
 Makie.xlims!(axs2b[3], (1600, 2025))
+display(fig)
 save("images/extinction_year_mass.png", fig)
-
 
 ###############################################################################################
 # Separate slide plots
-figs = map(title -> Figure(; size=(800, 800), title), labels) 
+figs = map(title -> Figure(; size=(1200, 600), title), labels) 
 axs1 = map(figs) do fig
     ax = Axis(fig[1, 1]; 
         xlabel="Year", 
@@ -242,7 +249,7 @@ axs3 = map(figs, [4e5, 4e5, 2e4]) do fig, ymax
         ylabel="Mass\nconsumed (kg)",
     )
     Makie.ylims!(ax, (10, ymax))
-    hidedecorations!(ax; grid=false, label=false)
+    hidexdecorations!(ax; grid=false, label=false)
     hidespines!(ax)
     ax
 end
@@ -250,7 +257,7 @@ foreach(plot_aggregate!, axs2, uncleared, habitat_colors)
 linkxaxes!.(axs1, axs2, axs2b, axs3)
 Makie.xlims!(axs1[1], (1600, 2020))
 foreach(axs1, island_endemic_tables, labels) do ax, tbl, label
-    extinction_plot!(ax, tbl; label="Extinction date range", color=:darkgrey)
+    extinction_plot!(ax, tbl; label="Extinction date range", color=:red, text=false)
     axislegend(ax; framevisible=false, labelsize=11)
 end
 foreach(axs2b, human_habitation_periods) do ax, human_pops
@@ -260,12 +267,16 @@ end
 foreach(axs3, eaten_by_cats, eaten_by_rats, eaten_by_pigs, eaten_by_humans, 1:3) do args...
     plot_consumption!(args...)
 end
+Makie.xlims!.(axs1, ((1600, 2025),))
+Makie.xlims!.(axs2, ((1600, 2025),))
+Makie.xlims!.(axs3, ((1600, 2025),))
 display(figs[1])
-Makie.xlims!.(axs1, ((1600, 2025),))
+
 display(figs[2])
-Makie.xlims!.(axs1, ((1600, 2025),))
 display(figs[3])
-Makie.xlims!.(axs1, ((1600, 2025),))
+map(island_keys, figs) do key, fig
+    save("images/extinction_year_mass_$key.png", fig)
+end
 
 
 ################################################################

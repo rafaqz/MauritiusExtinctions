@@ -163,13 +163,13 @@ end
     @set rule.pred_response = nothing # Simplify for GPU argument size
 end
 
-Base.@assume_effects :foldable function predator_effects(pred_pop, pred_suscept)
-    is = ntuple(identity, length(first(pred_suscept)))
+Base.@assume_effects :foldable function predator_effects(pred_pop, pred_suscept::NamedVector{<:Any,<:Any,<:NamedVector{K}}) where K
+    is = ntuple(identity, length(K))
     map(is) do i
         map(pred_suscept, pred_pop) do ps, pp
             Float32(ps[i] * pp)
         end
-    end |> NamedVector{propertynames(first(pred_suscept))}
+    end |> NamedVector{K,length(K)}
 end
 Base.@assume_effects :foldable function predator_effect(pred_pop, pred_suscept)
     mapreduce(+, pred_suscept, pred_pop) do ps, pp
@@ -788,18 +788,18 @@ function predator_response_params(pred_keys)
             macaque =     0.1,
         ),
         isbird = (;
-            cat =         0.1,
-            black_rat =   0.1,
-            norway_rat =  0.1,
+            cat =         0.3,
+            black_rat =   0.3,
+            norway_rat =  0.3,
             mouse =       0.1,
             pig =         0.1,
             wolf_snake =  0.1,
             macaque =     0.1,
         ),
         isreptile = (;
-            cat =         0.1,
-            black_rat =   0.1,
-            norway_rat =  0.1,
+            cat =         0.3,
+            black_rat =   0.3,
+            norway_rat =  0.3,
             mouse =       0.1,
             pig =         0.1,
             wolf_snake =  0.1,
@@ -815,9 +815,9 @@ function predator_response_params(pred_keys)
         #     macaque =     0.0,
         # ),
         flightlessness = (;
-            cat =         0.1,
-            black_rat =   0.1,
-            norway_rat =  0.1,
+            cat =         0.4,
+            black_rat =   0.2,
+            norway_rat =  0.4,
             mouse =       0.1,
             pig =         0.1,
             wolf_snake =  0.1,
