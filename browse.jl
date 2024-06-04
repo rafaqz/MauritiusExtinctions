@@ -47,3 +47,15 @@ for row in Tables.rows(extinct_plants)
     # run(`chromium https\://www.google.com/search\?q=$(search)\&tbm=isch\&tbs=isz:cl`)
     run(`chromium https\://www.google.com/search\?q=$(search)`)
 end
+
+macro strings(args)
+    Expr(:vect, map(string, args.args[2:2:end])...)
+end
+
+species = @strings begin
+end
+
+for sp in species
+    search = replace(sp, "_" => "+")
+    run(`chromium https\://www.google.com/search\?q=$(search)`)
+end

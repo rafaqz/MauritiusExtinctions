@@ -20,6 +20,17 @@ areas = (mus=2040u"km^2", reu=2512u"km^2", rod=108u"km^2")
 kcats = 1u"km^-2"
 krats = 30u"ha^-1"
 
+maximum(island_endemic_tables.mus.Mass)
+maximum(island_endemic_tables.rod.Mass)
+
+birds_by_humans = nhumans * 0.2u"d^-1" * 365u"d" / 2040u"km^2"
+
+birds_by_cats = ncats * 0.02u"d^-1" * 365u"d" / 2040u"km^2"
+
+max_cats = 1u"km^-2" * 2040u"km^2" # ?
+max_rats = 30u"ha^-1" * 2040u"km^2" # ?
+cat_introduced = 1688
+
 human_energy_intake = 8700u"kJ/d"
 cat_energy_intake = 2000u"kJ/d"
 rat_energy_intake = 350u"kJ/d"
@@ -44,6 +55,14 @@ human_bird_consumption = human_bird_diet_fraction * human_energy_intake / (bird_
 cat_bird_consumption = cat_bird_diet_fraction * cat_energy_intake / (bird_energy_content * assimilation_efficiency)
 rat_bird_consumption = rat_bird_diet_fraction * rat_energy_intake / (bird_energy_content * assimilation_efficiency)
 pig_bird_consumption = pig_bird_diet_fraction * pig_energy_intake / (bird_energy_content * assimilation_efficiency)
+
+eaten_by_humans = human_pop_timelines.mus[1600 .. 1720] .* human_bird_consumption
+eaten_by_cats = max_cats * length((cat_introduced+10):1720) *  human_bird_consumption
+eaten_by_rats = max_rats * length(1600:1720) * rat_bird_consumption
+
+human_consumption_rate = uconvert(u"kg/yr*km^(-2)", mean(eaten_by_humans) / 2040u"km^2")
+cat_consumption_rate = uconvert(u"kg/yr*km^(-2)", mean(eaten_by_cats) / 2040u"km^2")
+rat_consumption_rate = uconvert(u"kg/yr*km^(-2)", mean(eaten_by_rats) / 2040u"km^2")
 
 eaten_by_humans = map(human_habitation_periods) do human_pops
     uconvert.(u"g/d", human_pops .* human_bird_consumption)
