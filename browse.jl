@@ -52,10 +52,70 @@ macro strings(args)
     Expr(:vect, map(string, args.args[2:2:end])...)
 end
 
-species = @strings begin
+xs = @strings begin
+Christmas_Island
+Christmas_Island
+Christmas_Island
+Christmas_Island
+Christmas_Island
+Christmas_Island
+Corsica,_Sardinia
+Fraser_Island
+Hainan_Island
+Isla_Guadalupe
+Isla_Guadalupe
+Kangaroo_Island
+Lord_Howe_Island
+Lord_Howe_Island
+Lord_Howe_Island
+Lord_Howe_Island
+Madagascar
+Madagascar
+Madagascar
+Madagascar
+Madagascar
+Madagascar
+Madagascar
+Madagascar
+Madagascar
+Madagascar
+Madagascar
+Madagascar
+Madagascar
+Madagascar
+San_Pedro_Nolasco_Island
+Soqotra
+Soqotra
+Sri_Lanka
+Sri_Lanka
+Sri_Lanka
+Sri_Lanka
+Sri_Lanka
+Sri_Lanka
+Sri_Lanka
+Sri_Lanka
+Sri_Lanka
+Sri_Lanka
+Sri_Lanka
+Sri_Lanka
+Sri_Lanka
+Sri_Lanka
+Sri_Lanka
+Sri_Lanka
+Sri_Lanka
+Sri_Lanka
+Sri_Lanka
+Tasmania
+Tasmania
+Vancouver_Island
 end
 
-for sp in species
-    search = replace(sp, "_" => "+")
+xs1 = map(x -> replace(x, "_" => " "), xs)
+clipboard(join(union(xs1), "\n"))
+
+# xs = sort(union(skipmissing(s.Archepelago)))
+for x in union(xs)
+    search = replace(x, "_" => "+")
     run(`chromium https\://www.google.com/search\?q=$(search)`)
 end
+

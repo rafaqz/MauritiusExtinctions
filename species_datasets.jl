@@ -4,7 +4,40 @@ using StatsBase
 using Shapefile
 using CSV, DataFrames, XLSX, TerminalPager
 using GBIF2
-# includet("raster_common.jl")
+using CairoMakie
+using GLMakie
+using Loess
+using Random
+
+function set_gbif_species!(df, specieskey)
+    if !("GBIFSpecies" in names(df))
+        df.GBIFSpecies .= ""
+    end
+    specvec = collect(getproperty(df, specieskey))
+    for i in eachindex(specvec) 
+        current = df.GBIFSpecies[i]
+        ismissing(current) || current == "" || continue
+        sp = specvec[i]
+        ismissing(sp) && continue
+        match = GBIF2.species_match(sp)
+        df.GBIFSpecies[i] = if isnothing(match) || ismissing(match.species) 
+            specvec[i]
+        else
+            match.species 
+        end
+    end
+end
+
+function meanmass(xs) 
+    xs1 = filter(skipmissing(xs)) do x
+        x > 0 
+    end
+    if length(xs1) > 0
+        mean(xs1)
+    else
+        missing
+    end
+end
 
 # IUCNRedList.set_token("486f559a61285ba396234fc186897b94eda1bd15aa4216a8e1d9f4a8cf40d4c7")
 # spec = species_by_category("EX") 
@@ -66,45 +99,34 @@ using GBIF2
 # end
 # CSV.write("/home/raf/Data/Extinction/redlist/extinct_species.csv", ex_ew; transform=(col, val) -> something(val, missing))
 
-function set_gbif_species!(df, specieskey)
-    if !("GBIFSpecies" in names(df))
-        df.GBIFSpecies .= ""
-    end
-    specvec = getproperty(df, specieskey)
-    for i in eachindex(specvec) 
-        df.GBIFSpecies[i] == "" || continue
-        sp = specvec[i]
-        ismissing(sp) && continue
-        @show sp
-        match = GBIF2.species_match(sp)
-        isnothing(match) || ismissing(match.species) && continue
-        df.GBIFSpecies[i] = match.species 
-    end
+# names(s)
+# set_gbif_species!(s, :Species)
+# CSV.write(hawaii_csv_path, s)
+
+extinctions_csv_path = "/home/raf/PhD/Mascarenes/MauritiusExtinctions/tables/IUCN_extinctions.csv"
+extinctions_download = "/home/raf/Downloads/IUCN Extinctions - assessments_gbif.csv"
+mv(extinctions_download, extinctions_csv_path; force=true)
+s = filter(CSV.read(extinctions_csv_path, DataFrame)) do row
+    !ismissing(row.kingdomName) &&
+    row.kingdomName == "ANIMALIA" &&
+    row.scientificName != "Chenonetta finschi" && # From Mauris, not europeans
+    row.className != "GASTROPODA" && # No snails or molluscs
+    row.systems != "Terrestrial|Marine" # No marine species 
 end
+set_gbif_species!(s, :scientificName)
 
-mascarene_species_csv = "/home/raf/PhD/Mascarenes/MauritiusExtinctions/tables/mascarene_species.csv"
+# mascarene_species_csv = "/home/raf/PhD/Mascarenes/MauritiusExtinctions/tables/mascarene_species.csv"
+# s = CSV.read(mascarene_species_csv, DataFrame)# |> 
 # @async run(`libreoffice $mascarene_species_csv`)
-s = CSV.read(mascarene_species_csv, DataFrame)# |> 
     # x -> subset(x, :Species => ByRow(!ismissing), :GBIFSpecies => ByRow(!ismissing))
-
-# s.GBIFSpecies = copy(s.Species)
-# for i in eachindex(s.Species) 
-#     sp = s.Species[i]
-#     ismissing(sp) && continue
-#     match = species_match(sp)
-#     isnothing(match) && continue
-#     s.GBIFSpecies[i] = match.species 
-# end
-# s.GBIFSpecies
-
 # CSV.write(mascarene_species_csv, s)
-iucn_extinct = CSV.read("/home/raf/Data/Extinction/redlist/extinct_species.csv", DataFrame)
+#
+# iucn_extinct = CSV.read("/home/raf/Data/Extinction/redlist/extinct_species.csv", DataFrame)
 # iucn_extinct.threats |> pager
-iucn_csv = "/home/raf/Data/Extinction/redlist/redlist_species_data_39da78ce-d594-4968-8043-489f2765d687/assessments_gbif.csv"
-iucn_df = CSV.read(iucn_csv, DataFrame)
-set_gbif_species!(iucn_df, :scientificName)
-CSV.write(iucn_csv, iucn_df)
-
+# iucn_csv = "/home/raf/Data/Extinction/redlist/redlist_species_data_39da78ce-d594-4968-8043-489f2765d687/assessments_gbif.csv"
+# iucn_df = CSV.read(iucn_csv, DataFrame)
+# set_gbif_species!(iucn_df, :scientificName)
+# CSV.write(iucn_csv, iucn_df)
 # run(`libreoffice /home/raf/Data/Extinction/redlist/redlist_species_data_39da78ce-d594-4968-8043-489f2765d687/assessments_gbif.csv`)
 
 # s_iucn = leftjoin(s, iucn_df; on=:GBIFSpecies, matchmissing=:notequal, makeunique=true)
@@ -118,7 +140,6 @@ CSV.write(iucn_csv, iucn_df)
 # joined[!, [:Species, :threats]] |> pager
 # broadcast(string, joined.Species, Ref(": "), joined.threats) |> pager
 
-
 # sp_nothing = filter(x -> isnothing(x[2]), sp_pairs)
 # sp = filter(x -> !isnothing(x[2]), sp_pairs)
 # gbif_sp = DataFrame(last.(sp)
@@ -127,140 +148,232 @@ CSV.write(iucn_csv, iucn_df)
 # redlist_extinct_csv = "/home/raf/Data/Traits/redlist_species_data_1f74a1f8-0b29-4567-9766-046807e966ca/taxonomy.csv"
 # redlist = CSV.read(redlist_extinct_csv, DataFrame; normalizenames=true)
 
-pantheria_csv = "/home/raf/Data/Biodiversity/Traits/PanTHERIA/ECOL_90_184/PanTHERIA_1-0_WR05_Aug2008.txt"
-# pantheria = CSV.read(pantheria_csv, DataFrame; normalizenames=true, quoted=false)
-# set_gbif_species!(pantheria, :MSW05_Binomial)
-pantheria_csv = "/home/raf/Data/Biodiversity/Traits/PanTHERIA/ECOL_90_184/PanTHERIA_1-0_WR05_Aug2008_gbif.csv"
-# CSV.write(pantheria_csv, pantheria)
-CSV.read(pantheria_csv, DataFrame)
-pantheria_mass = pantheria[!, [:GBIFSpecies, :AdultBodyMass_g]]
-s_pantheria = leftjoin(s, pantheria_mass; on=:GBIFSpecies, matchmissing=:notequal, makeunique=true)
-sort!(s_pantheria, :GBIFSpecies)
+# lizzard = CSV.read(lizzard_csv, DataFrame; normalizenames=true)
+# mass_cols = ["Binomial", "mass_equation_Feldman_et_al_2016_unless_stated_", "intercept", "slope"]
+# lizzard_mass = lizzard[!, mass_cols]
+# s_lizzard = leftjoin(s, lizzard_mass; on=:GBIFSpecies => :Binomial, matchmissing=:notequal, makeunique=true)
 
-avonet_csv = "/home/raf/Data/Traits/Avonet/ELEData/ELEData/TraitData/AVONET1_BirdLife_gbif.csv"
-avonet = CSV.read(avonet_csv, DataFrame; normalizenames=true)
-filter(:GBIFSpecies => s -> !ismissing(s) && contains(s, "Crypt"), avonet)
-# set_gbif_species!(avonet, :Species1)
-# CSV.write(avonet_csv, avonet)
-avonet_mass = avonet[!, [:GBIFSpecies, :Mass]]
-s_avonet = unique(leftjoin(s, avonet; on=:GBIFSpecies, matchmissing=:notequal, makeunique=true), 3)
+# Define all trait dataframes, with key column names
+trait_csvs = (;
+    hawaii=(csv="/home/raf/PhD/Mascarenes/MauritiusExtinctions/tables/FE.Case.Tarwater_2020.csv", mass=Symbol("Body.mass_grams"), binomial=:Species),
+    mascarene=(csv="tables/mascarene_species.csv", mass=:Mass, binomial=:Species),
+    pantheria=(csv="/home/raf/Data/Traits/PanTHERIA/ECOL_90_184/PanTHERIA_1-0_WR05_Aug2008_gbif.csv", mass=:AdultBodyMass_g, binomial=:MSW05_Binomial),
+    avonet = (csv="/home/raf/Data/Traits/Avonet/ELEData/ELEData/TraitData/AVONET1_BirdLife_gbif.csv", mass=:Mass, binomial=:Species1),
+    # lizzard = (csv="/home/raf/Data/Traits/Lizards/Appendix S1 - Lizard data version 1.0.csv" binomial=:XX),
+    elton_mammal = (csv="/home/raf/Data/Traits/EltonTraits/MamFuncDat_gbif.csv", mass=:BodyMass_Value, binomial=:Scientific),
+    elton_bird = (csv="/home/raf/Data/Traits/EltonTraits/BirdFuncDat_gbif.txt", mass=:BodyMass_Value, binomial=:Scientific),
+    reptile_mass = (csv="/home/raf/PhD/Mascarenes/Tables/Reptile body mass database Meiri 2010_gbif.csv", mass=Symbol("Weight (g)"), binomial=:Name),
+    bird_mass = (csv="/home/raf/PhD/Mascarenes/Tables/Bird Mass filled (Jan 22 2015)_WDK_gbif.csv", mass=:filledmass, binomial=:BirdLife_SpecName),
+    frugivores = (csv="tables/Dryad frugivore occurrence database 1-3-17.csv", mass=:Body_mass, binomial=:Species_name),
+)
 
-filter(r -> r.Species == "Gallinula chloropus", s_avonet)
+# Open all csvs as DataFrames
+trait_dfs = map(trait_csvs) do props
+    df = CSV.read(props.csv, DataFrame)
+    merge((; df), props, )
+end
 
-lizzard_csv = "/home/raf/Data/Traits/Lizards/Appendix S1 - Lizard data version 1.0.csv"
-lizzard = CSV.read(lizzard_csv, DataFrame; normalizenames=true)
+# Make sure to update all the names from GBIF
+map(trait_dfs, keys(trait_dfs)) do props, key
+    set_gbif_species!(props.df, props.binomial)
+end
 
-mass_cols = ["Binomial", "mass_equation_Feldman_et_al_2016_unless_stated_", "intercept", "slope"]
-lizzard_mass = lizzard[!, mass_cols]
-filter(:Binomial => g -> !ismissing(g) && g == "Proscelotes arnoldi", lizzard_mass)
-s_lizzard = leftjoin(s, lizzard_mass; on=:GBIFSpecies, matchmissing=:notequal, makeunique=true)
-lizzard_end = filter(r -> !ismissing(r.intercept) && r.Origin == "Endemic", s_lizzard)
-# lizzard_end |> pager
+# Combined all the trait dataframes into one
+mega_mass_df = map(trait_dfs, keys(trait_csvs)) do (; df, mass), db
+    df.Database .= db
+    # Standardize mass column
+    dropmissing(select(df, :GBIFSpecies, mass => :Mass, :Database), :GBIFSpecies)
+end |> splat(vcat) |> sort
 
-elton_bird_csv = "/home/raf/Data/Traits/EltonTraits/BirdFuncDat_gbif.txt"
-elton_bird = CSV.read(elton_bird_csv, DataFrame; normalizenames=true)
-set_gbif_species!(elton_bird, :Scientific)
-CSV.write(elton_bird_csv, elton_bird)
-names(elton_bird)
+# Split and combine taking the mean, will tracking the source databases
+mean_mass_df = DataFrames.combine(
+    groupby(mega_mass_df, :GBIFSpecies),
+    [:Mass => meanmass => :Mass_mean, :Database => Tuple => :Mass_sources],
+) |> sort
 
-# elton_mammal_csv = "/home/raf/Data/Traits/EltonTraits/MamFuncDat_csv.txt"
-# set_gbif_species!(elton_mammal, :Scientific)
-elton_mammal_csv = "/home/raf/Data/Traits/EltonTraits/MamFuncDat_gbif.csv"
-elton_mammal = CSV.read(elton_mammal_csv, DataFrame; normalizenames=true)
-# CSV.write(elton_mammal_csv, elton_mammal)
-names(elton_mammal)
-elton_mass = vcat(elton_mammal[!, [:GBIFSpecies, :BodyMass_Value]], elton_bird[!, [:GBIFSpecies, :BodyMass_Value]])
-s_elton = leftjoin(s, elton_mass; on=:GBIFSpecies, matchmissing=:notequal)
+# Split out the Genus field to another column
+mean_mass_df.Genus = map(mean_mass_df.GBIFSpecies) do s
+    ismissing(s) ? missing : split(s, ' ')[1]
+end
+s.Genus = map(s.GBIFSpecies) do s
+    ismissing(s) ? missing : split(s, ' ')[1]
+end
 
-# bird_mass_path = "/home/raf/PhD/Mascarenes/Tables/Bird Mass filled (Jan 22 2015)_WDK.xlsx"
-# bird_mass_xl = XLSX.readxlsx(bird_mass_path)
-# bird_mass_df = DataFrame(XLSX.eachtablerow(bird_mass_xl["Bird Mass filled"]))
-# set_gbif_species!(bird_mass_df, :BirdLife_SpecName)
-# CSV.write(bird_mass_csv, bird_mass_df)
-bird_mass_csv = "/home/raf/PhD/Mascarenes/Tables/Bird Mass filled (Jan 22 2015)_WDK_gbif.csv"
-bird_mass_df = CSV.read(bird_mass_csv, DataFrame)
-s_bird_mass = leftjoin(s, bird_mass_df; on=:GBIFSpecies, matchmissing=:notequal, makeunique=true, order=:left)
-mean(skipmissing(filter(r -> r.Genus == "Anas", bird_mass_df).MeanBodyMass))
-filter(:GBIFSpecies => s -> s === "Cryptopsar", bird_mass_df)
+genus_mean_mass_df = DataFrames.combine(
+    groupby(mean_mass_df, :Genus),
+    [:Mass_mean => meanmass => :Genus_mass_mean, :Mass_sources => Tuple => :Genus_mass_sources],
+) |> sort
+
+s_mass = leftjoin(s, mean_mass_df; on=:GBIFSpecies, matchmissing=:notequal, makeunique=true) |> 
+     x -> leftjoin(x, genus_mean_mass_df; on=:Genus, matchmissing=:notequal)
+
+s_mass.EstimatedMass = map(s_mass.Mass_mean, s_mass.Genus_mass_mean) do m, gm
+    x = (ismissing(m) || isnan(m)) ? gm : m
+    (ismissing(x) || isnan(x)) ? missing : x
+end
+
+length(collect(skipmissing(s_mass.EstimatedMass)))
 
 
-# reptile_mass_path = "/home/raf/PhD/Mascarenes/Tables/Reptile body mass database Meiri 2010.xlsx"
-# reptile_mass_xl = XLSX.readxlsx(reptile_mass_path)
-# reptile_mass_df = DataFrame(XLSX.eachtablerow(reptile_mass_xl[1]))
-# set_gbif_species!(reptile_mass_df, :Name)
-# CSV.write(reptile_mass_csv, reptile_mass_df)
-reptile_mass_csv = "/home/raf/PhD/Mascarenes/Tables/Reptile body mass database Meiri 2010_gbif.csv"
-reptile_mass_df = CSV.read(reptile_mass_csv, DataFrame)
-s_reptile_mass = leftjoin(s, reptile_mass_df; on=:GBIFSpecies, matchmissing=:notequal, makeunique=true, order=:left)
-filter(r -> contains(r.Order, "Squa"), reptile_mass_df)
-
-# frugivores_path = "/home/raf/PhD/Mascarenes/Tables/Dryad frugivore occurrence database 1-3-17.xlsx"
-# frugivores_xl = XLSX.readxlsx(frugivores_path)
-# frugivores_df = DataFrame(XLSX.eachtablerow(frugivores_xl["Frugivore occurrence and traits"]))
-frugivores_path = "Dryad frugivore occurrence database 1-3-17.csv"
-frugivores_df = CSV.read(frugivores_path, DataFrame)
-filter(r -> contains(r.Species_name, "Cylindraspis"), frugivores_df)
-s_frugivores = leftjoin(s, frugivores_df; on=:GBIFSpecies, matchmissing=:notequal, makeunique=true, order=:left)
-s_frugivores_mass = DataFrames.combine(groupby(s_frugivores, :GBIFSpecies), :Body_mass => mean)
-# s_not_frugivores = antijoin(s, frugivores_df; on=:GBIFSpecies=>:Species_name, matchmissing=:notequal, makeunique=true)
-# subset(s_not_frugivores, :Origin => ByRow(==("Endemic")))
-# subset(s, :Origin => ByRow(==("Endemic")))
-
-# frugivores_df.GBIFSpecies = copy(frugivores_df.Species_name)
-# for i in eachindex(frugivores_df.Species_name) 
-#     sp = frugivores_df.Species_name[i]
-#     ismissing(sp) && continue
-#     @show sp
-#     match = species_match(sp)
-#     isnothing(match) && continue
-#     frugivores_df.GBIFSpecies[i] = match.species 
-# end
-# frugivores_df.GBIFSpecies
-# CSV.write(frugivores_path, frugivores_df)
-
-# subset(s_not_frugivores, :Origin => ByRow(==("Endemic")))
-
-sort!(s_elton, :GBIFSpecies)
-sort!(s_avonet, :GBIFSpecies)
-sort!(s_pantheria, :GBIFSpecies)
-sort!(s_frugivores_mass, :GBIFSpecies)
-sort!(s_bird_mass, :GBIFSpecies)
-sort!(s_reptile_mass, :GBIFSpecies)
-sort!(s, :GBIFSpecies)
-# filter(r -> ismissing(r.Mass), s)
-
-function combine_mass(a, b)
-    @assert length(a) == length(b)
-    map(a, b) do s1, s2
-        if ismissing(s1) 
-            ismissing(s2) ? missing : s2
+s_mass.colonised = map(s_mass.ArchipelagoColonised, s_mass.LocationColonised) do a, i
+    ismissing(i) ? a : i
+end
+s_mass.isisland = s_mass.Island .== "Yes"
+s_mass.wasuninhabited = map(s_mass.ArchipelagoPreviouslyInhabited .== ("No",), s_mass.LocationPreviouslyInhabited .== ("No",)) do a, i
+    if ismissing(a)
+        if ismissing(i)
+            false
         else
-            s1
+            i
         end
+    elseif ismissing(i)
+        a
+    else
+        a || i
     end
 end
-s.Mass .= missing
-s.Mass = combine_mass(s.Mass, s_avonet.Mass_1)
-s.Mass = combine_mass(s.Mass, s_elton.BodyMass_Value)
-s.Mass = combine_mass(s.Mass, s_pantheria.AdultBodyMass_g)
-s.Mass = combine_mass(s.Mass, s_reptile_mass[!, "Weight (g)"])
-s.Mass = combine_mass(s.Mass, s_frugivores_mass.Body_mass_mean)
-s.Mass = combine_mass(s.Mass, s_bird_mass.filledmass)
-subset(s, :Mass => x -> ismissing.(x), :Origin => ByRow(==("Endemic")))
 
-s.Mass_Avonet = s_avonet.Mass_1 
-s.Mass_Pantheria = s_pantheria.AdultBodyMass_g 
-s.Mass_Elton = s_elton.BodyMass_Value 
-s.Mass_Frugivores = s_frugivores_mass.Body_mass_mean
-s.Mass_bird_mass = s_bird_mass.filledmass
-s.Mass_reptile_mass = s_reptile_mass[!, "Weight (g)"]
-s.Mass
+s1 = dropmissing(s_mass, [:EstimatedMass, :yearLastSeen_cleaned, :colonised])
+sort(s1.Location |> countmap |> pairs |> collect; by=last)
+sort(s1.Archipelago |> countmap |> pairs |> collect; by=last)
+sort(s1.SuperArchipelago |> countmap |> pairs |> collect; by=last)
 
-masses = (s.Mass_Avonet, s.Mass_Pantheria, s.Mass_Elton, s.Mass_Frugivores, s.Mass_bird_mass, s.Mass_reptile_mass)
-collect(skipmissing(s.Mass_Frugivores))
-map(masses) do m
-    8196 in m
+weigelt_csv = "/home/raf/Data/Extinction/Islands/Weigelt/Weigelt_etal_2013_PNAS_islanddata.csv"
+weigelt_islands = CSV.read(weigelt_csv, DataFrame)
+weigelt_islands.Archip
+subset(weigelt_islands, :Archip => ByRow(==("New Caledonia")))
+leftjoin(s1, weigelt_islands; on=:Location => :Island, makeunique=true, matchmissing=:notequal)
+
+function plot_extinctions!(ax, df; colonised=false, names=nothing)
+    longlived = subset(df, :EstimatedMass => ByRow(>(1e4)))
+    xlims!(ax, (1480, 2020))
+    ylims!(ax, (1.0, 1e6))
+    xs, ys = df.yearLastSeen_cleaned, df.EstimatedMass
+    # xs, ys = s1.yearLastSeen_cleaned .- s1.colonised, log.(s1.Mass)
+    # ys = shuffle(ys)
+    p = Makie.plot!(ax, xs, ys; 
+        label="Extinctions", 
+        color=df.colonised, 
+        colorrange=(1500, 1900), 
+        colormap=:viridis,
+        inspector_label=(_, i, _) -> "$(df.GBIFSpecies[i])\nMass: $(ys[i])\nExtinct: $(xs[i])",
+    )
+    if names == :text
+        Makie.text!(ax, xs, ys; text=df.GBIFSpecies)
+    end
+    # p = Makie.plot!(ax, longlived.yearLastSeen_cleaned, longlived.EstimatedMass; color=(:yellow, 0.5), label="Long lived")#; color=df.colonised, colormap=:viridis)
+
+    model = loess(xs, log.(ys), span=1.0, degree=2)
+    us = range(extrema(xs)...; step=1)
+    vs = exp.(predict(model, us))
+    Makie.plot!(ax, us, vs; label="Loess regression")
+    Makie.hlines!(ax, median(ys); label="Median mass")
+    if colonised
+        Makie.vlines!(ax, minimum(df.colonised); color=:grey, label="Colonisation")
+    end
+    DataInspector(ax)
+    return nothing
 end
+
+
+sort(collect(s1.Archipelago |> countmap); by=last)
+subset_queries = (;
+    all=(title="All colonised", query=()),
+    islands=(title="All Islands", query=(:isisland,)),
+    continents=(title="Continents", query=(:isisland => .!,)),
+    inhabited_islands=(title="Inhabited", query=(:isisland, :wasuninhabited => .!,)),
+    uninhabited_islands=(title="Uninhabited", query=(:isisland, :wasuninhabited,)),
+    indian_ocean=(title="Indian ocean", query=(:SuperArchipelago=>ByRow(==("Indian Ocean")),)),
+    mascarenes=(title="Mascarenes", query=(:Archipelago=>ByRow(==("Mascarenes")),)),
+    non_mascarene_uninhabited=(title="Non-Mascarene Uninhabited", query=(:isisland, :wasuninhabited, :Archipelago=>ByRow(!=("Mascarenes")),)),
+    mauritius=(title="Mauritius", query=(:Location=>ByRow(==("Mauritius")),)), 
+    reunion=(title="Reunion", query=(:Location=>ByRow(==("Reunion")),)), 
+    rodrigues=(title="Rodrigues", query=(:Location=>ByRow(==("Rodrigues")),)), 
+    australia=(title="Australia", query=(:Location=>ByRow(==("Australia")),)),
+    new_zealand=(title="New Zealand", query=(:SuperArchipelago=>ByRow(==("New Zealand")),)),
+    st_helena=(title="St Helena", query=(:SuperArchipelago=>ByRow(==("St Helena")),)),
+    west_indies=(title="West Indies", query=(:SuperArchipelago=>ByRow(==("West Indies")),)),
+    hawaiian_islands=(title="Hawaiian Islands", query=(:Archipelago=>ByRow(==("Hawaiian Islands")),)),
+    polynesia=(title="Polynesia", query=(:SuperArchipelago=>ByRow(==("Polynesia")),)),
+    micronesia=(title="Micronesia", query=(:SuperArchipelago=>ByRow(==("Micronesia")),)),
+    galapagos=(title="Galapagos", query=(:Archipelago=>ByRow(==("Galapagos")),)),
+    australian_continent=(title="Australian Continent", query=(:isisland => .!, :SuperArchipelago=>ByRow(==("Australia")),)),
+    australian_inhabited_islands=(title="Australian Inhabited Islands", query=(:isisland, :wasuninhabited => .!, :SuperArchipelago=>ByRow(==("Australia")),)),
+    australian_uninhabited_islands=(title="Australian Uninhabited Islands", query=(:isisland, :wasuninhabited, :SuperArchipelago=>ByRow(==("Australia")),)),
+    all_early=(title="All Early Colonisation", query=(:isisland, :colonised=>ByRow(<(1750)),)),
+    all_late=(title="All Late Colonisation", query=(:isisland, :colonised=>ByRow(>=(1750)),)),
+    inhabited_early=(title="Inhabited Early Colonisation", query=(:isisland, :wasuninhabited => .!, :colonised=>ByRow(<(1750)),)),
+    inhabited_late=(title="Inhabited Late Colonisation", query=(:isisland, :wasuninhabited => .!, :colonised=>ByRow(>=(1750)),)),
+    uninhabited_early=(title="Uninhabited Early Colonisation", query=(:isisland, :wasuninhabited, :colonised=>ByRow(<(1750)),)),
+    uninhabited_late=(title="Uninhabited Late Colonisation", query=(:isisland, :wasuninhabited, :colonised=>ByRow(>=(1750)),)),
+)
+subs = map(subset_queries) do qs
+    df = subset(s1, qs.query...; skipmissing=true)
+    merge(qs, (; df))
+end
+subs.uninhabited_islands.df.Location |> union
+subs.uninhabited_islands.df.SuperArchipelago |> union
+subs.uninhabited_islands.df.SuperArchipelago |> countmap
+subs.uninhabited_islands.df.Archipelago |> countmap
+subs.uninhabited_islands.df |> nrow
+
+subset_layout = [
+    :all                 :all_early         :all_late 
+    :inhabited_islands   :inhabited_early   :inhabited_late
+    :uninhabited_islands :uninhabited_early :uninhabited_late
+]
+kw = (; yscale=log10, xlabel="Year of extinction", ylabel="Mass")
+fig = Figure(; size=(1600,900));
+axs = map(subset_layout, CartesianIndices(subset_layout)) do key, I
+    if isnothing(key) 
+        ax = Axis(fig[Tuple(I)...])
+        xlims!(ax, (1400, 2020))
+        ylims!(ax, (1.0, 1e6))
+    else
+        @show key
+        subset = subs[key]
+        ax = Axis(fig[Tuple(I)...]; title=subset.title, kw...)
+        I[1] == size(subset_layout, 1) || hidexdecorations!(ax; grid=false)
+        I[2] == 1 || hideydecorations!(ax; grid=false)
+        plot_extinctions!(ax, subset.df; colonised=true, names=:tooltip)
+    end
+    ax
+end
+linkaxes!(axs...)
+# axislegend(axs[1]; position=:lt)
+fig[0, :] = Label(fig, "Patterns of mass and extinction date", fontsize=20)
+display(fig)
+# save("images/dome_extinction.png", fig)
+
+using GLMakie
+GLMakie.activate!()
+fig = Figure(; size=(900,600));
+kw = (; yscale=log10, xlabel="Year of extinction", ylabel="Mass")
+ax1 = Axis(fig[1, 1]; kw...)
+plot_extinctions!(ax1, subs.inhabited_islands.df; names=true)
+display(fig)
+
+# plot_extinctions!(ax4, subs.rodrigues; colonised=true)
+
+
+# Makie.vlines!([1890, 190, 1910]; color=:gray)
+# Makie.vlines!([1950]; color=:red)
+# Makie.vlines!([1955]; color=:blue)
+
+
+# g = groupby(s1, :Location; skipmissing=true)
+# keys(g)
+# sort(keys(g) .=> [nrow(x) for x in g]; by=last)
+# g[("Norfolk Island Group",)]
+# s1.Archipelago |> union |> sort
+
+# s1 = subset(dropmissing(s, [:Mass, :yearLastSeen_cleaned, :colonised]), :Island => ByRow(==("Yes"))) 
+
+
+# Late introductions
+# Mongoose introduced 1870, 1900, 1910
+# Brown tree snake introduced to guam 1945-1952
+# Rosy wolf snail 1955
 
 # filter(r -> ismissing(r.Mass) && r.Origin == "Endemic", s) |> pager
 
