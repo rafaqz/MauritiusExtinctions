@@ -58,11 +58,23 @@ end
 xs1 = map(x -> replace(x, "_" => " "), xs)
 clipboard(join(union(xs1), "\n"))
 
-xs = s1.Location
+xs = s2.Location
 
+xs = filter(s_mass) do r
+    ismissing(r.EstimatedMass) && ismissing(r.MassMesurement) && r.className in(("MAMMALIA", "REPTILIA"))
+end
+
+# xs = subset(s1, :Area => ByRow(ismissing)).Location |> union
 # xs = sort(union(skipmissing(s.Archepelago)))
 for x in union(xs)
+    clipboard(x)
     search = replace(x, "_" => "+")
-    run(`chromium https\://www.google.com/search\?q=$(search)`)
+    # run(`chromium https\://www.google.com/search\?q=$(search)`)
+    run(`chromium https://scholar.google.com.au/scholar\?hl=en\&as_sdt=0%2C5\&q=$search\&btnG=`)
 end
+
+snake_mass_from_svl(svl) = svl * 2.786 - 5.773
+snake_mass_from_svl(320)
+snake_mass_from_length(svl) = svl * 2.597 - 5.465
+snake_mass_from_svl(320)
 
